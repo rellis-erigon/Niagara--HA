@@ -8,11 +8,42 @@ This add-on reads points from a Niagara station via the oBIX REST interface and 
 
 ### On the Niagara station
 
-1. **Enable the oBIX servlet** — In Workbench, navigate to the station's `WebService` and enable `ObixServlet`. This exposes the oBIX REST API at `https://<station>/obix/`.
+Complete these four steps in Niagara Workbench. No paid modules or licenses are required.
 
-2. **Create a user account** — Add a user (e.g. `obix_reader`) with a role that has read permissions on the points you want to expose. For read-only access, a viewer role is sufficient.
+**Step 1 — Enable HTTPS**
 
-3. **Enable HTTPS** — The station should be serving HTTPS (the default on port 443). HTTP works but is not recommended.
+oBIX requires HTTPS on the Niagara station.
+
+1. Open **Station → Services → WebService**
+2. Open the **AX Property Sheet** view
+3. Turn on **HTTPS**
+4. Set the **HTTPS port** (default `443`)
+
+**Step 2 — Install the oBIX Network Driver**
+
+1. Navigate to **Station → Config → Drivers**
+2. Click **New**
+3. Set **Type to Add** = `Obix Network`
+
+**Step 3 — Add HTTPBasicScheme Authentication**
+
+oBIX requires a non-default authentication scheme.
+
+1. Navigate to **Station → Services → AuthenticationService → AuthenticationSchemes**
+2. Open the **Palette** (sidebar)
+3. Browse to **baja → AuthenticationSchemes → WebServicesSchemes → HTTPBasicScheme**
+4. **Add** it to the AuthenticationSchemes list
+
+**Step 4 — Create an oBIX User Account**
+
+1. Navigate to **Station → Services → UserService**
+2. **Duplicate** the Admin user
+3. Rename the new user to `obixUser` (or any name you prefer)
+4. Open the new user's **AX Property Sheet**
+5. Set a **password**
+6. Change **AuthenticationSchemeName** to `HTTPBasicScheme`
+
+Use this username and password when configuring the add-on.
 
 ### On Home Assistant
 

@@ -71,12 +71,48 @@ This add-on reads points from a Niagara station via the **oBIX REST interface** 
 
 ### Niagara-Side Setup (One-Time)
 
-Only two things are needed on the BMS, no licenses or paid modules:
+Four steps in Workbench to prepare your Niagara 4 station for oBIX communication. No paid modules or licenses required.
 
-1. **Enable oBIX** — In Workbench, go to the station's `WebService` → enable `ObixServlet`
-2. **Create a user** — Add a user (e.g. `obix_reader`) with read permissions on the points you want
+#### Step 1 — Enable HTTPS
 
-That's it. Detailed instructions are in the [add-on docs](niagara-ha/DOCS.md).
+oBIX requires HTTPS on the Niagara station.
+
+1. Open **Station → Services → WebService**
+2. Open the **AX Property Sheet** view
+3. Turn on **HTTPS**
+4. Set the **HTTPS port** (default `443`)
+
+#### Step 2 — Install the oBIX Network Driver
+
+The station needs the oBIX driver to serve oBIX requests.
+
+1. Navigate to **Station → Config → Drivers**
+2. Click **New**
+3. Set **Type to Add** = `Obix Network`
+
+#### Step 3 — Add HTTPBasicScheme Authentication
+
+oBIX requires a non-default authentication scheme.
+
+1. Navigate to **Station → Services → AuthenticationService → AuthenticationSchemes**
+2. Open the **Palette** (sidebar)
+3. Browse to **baja → AuthenticationSchemes → WebServicesSchemes → HTTPBasicScheme**
+4. **Add** it to the AuthenticationSchemes list
+
+#### Step 4 — Create an oBIX User Account
+
+The add-on needs a dedicated user with admin rights to read all points.
+
+1. Navigate to **Station → Services → UserService**
+2. **Duplicate** the Admin user
+3. Rename the new user to `obixUser` (or any name you prefer)
+4. Open the new user's **AX Property Sheet**
+5. Set a **password**
+6. Change **AuthenticationSchemeName** to `HTTPBasicScheme`
+
+Use this username and password in the add-on configuration.
+
+> **Tip:** For more details, see the full [add-on documentation](niagara-ha/DOCS.md).
 
 ---
 
