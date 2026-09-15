@@ -78,6 +78,7 @@ def map_point(
 
     base_topic = f"{topic_prefix}/{object_id}"
     state_topic = f"{base_topic}/state"
+    availability_topic = f"{topic_prefix}/bridge/availability"
 
     device_info = {
         "identifiers": [f"niagara_{_stable_id(topic_prefix)}"],
@@ -88,13 +89,13 @@ def map_point(
     }
 
     if point.point_type == "boolean":
-        return _map_binary_sensor(point, object_id, friendly, state_topic, device_info)
+        return _map_binary_sensor(point, object_id, friendly, state_topic, availability_topic, device_info)
     elif point.point_type in ("numeric", "integer"):
-        return _map_sensor_numeric(point, object_id, friendly, state_topic, device_info)
+        return _map_sensor_numeric(point, object_id, friendly, state_topic, availability_topic, device_info)
     elif point.point_type == "enum":
-        return _map_sensor_enum(point, object_id, friendly, state_topic, device_info)
+        return _map_sensor_enum(point, object_id, friendly, state_topic, availability_topic, device_info)
     elif point.point_type == "string":
-        return _map_sensor_string(point, object_id, friendly, state_topic, device_info)
+        return _map_sensor_string(point, object_id, friendly, state_topic, availability_topic, device_info)
     else:
         return None
 
@@ -104,6 +105,7 @@ def _map_binary_sensor(
     object_id: str,
     friendly: str,
     state_topic: str,
+    availability_topic: str,
     device_info: dict,
 ) -> dict:
     payload: dict[str, Any] = {
@@ -115,6 +117,9 @@ def _map_binary_sensor(
             "state_topic": state_topic,
             "payload_on": "true",
             "payload_off": "false",
+            "availability_topic": availability_topic,
+            "payload_available": "online",
+            "payload_not_available": "offline",
             "device": device_info,
         },
         "state_topic": state_topic,
@@ -129,12 +134,16 @@ def _map_sensor_numeric(
     object_id: str,
     friendly: str,
     state_topic: str,
+    availability_topic: str,
     device_info: dict,
 ) -> dict:
     config: dict[str, Any] = {
         "name": friendly,
         "unique_id": f"niagara_{object_id}",
         "state_topic": state_topic,
+        "availability_topic": availability_topic,
+        "payload_available": "online",
+        "payload_not_available": "offline",
         "device": device_info,
     }
 
@@ -159,12 +168,16 @@ def _map_sensor_enum(
     object_id: str,
     friendly: str,
     state_topic: str,
+    availability_topic: str,
     device_info: dict,
 ) -> dict:
     config: dict[str, Any] = {
         "name": friendly,
         "unique_id": f"niagara_{object_id}",
         "state_topic": state_topic,
+        "availability_topic": availability_topic,
+        "payload_available": "online",
+        "payload_not_available": "offline",
         "device": device_info,
     }
     if point.enum_range:
@@ -183,6 +196,7 @@ def _map_sensor_string(
     object_id: str,
     friendly: str,
     state_topic: str,
+    availability_topic: str,
     device_info: dict,
 ) -> dict:
     return {
@@ -192,6 +206,9 @@ def _map_sensor_string(
             "name": friendly,
             "unique_id": f"niagara_{object_id}",
             "state_topic": state_topic,
+            "availability_topic": availability_topic,
+            "payload_available": "online",
+            "payload_not_available": "offline",
             "device": device_info,
         },
         "state_topic": state_topic,
