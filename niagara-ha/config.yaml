@@ -45,4 +45,3 @@ schema:
   log_level: list(debug|info|warning|error)
 services:
   - mqtt:need
-image: "ghcr.io/rellis-erigon/niagara-ha-{arch}"
