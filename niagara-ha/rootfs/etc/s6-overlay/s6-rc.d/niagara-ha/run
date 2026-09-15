@@ -1,4 +1,4 @@
-#!/usr/bin/with-contenv bashio
+#!/command/with-contenv bashio
 
 bashio::log.info "Starting Niagara BMS Bridge..."
 
