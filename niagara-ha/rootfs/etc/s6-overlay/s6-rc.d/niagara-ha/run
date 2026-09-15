@@ -2,4 +2,12 @@
 
 bashio::log.info "Starting Niagara BMS Bridge..."
 
+# Read MQTT connection from HA service discovery
+export MQTT_HOST="$(bashio::services mqtt 'host')"
+export MQTT_PORT="$(bashio::services mqtt 'port')"
+export MQTT_USER="$(bashio::services mqtt 'username')"
+export MQTT_PASSWORD="$(bashio::services mqtt 'password')"
+
+bashio::log.info "MQTT broker: ${MQTT_HOST}:${MQTT_PORT}"
+
 exec python3 /app/src/main.py

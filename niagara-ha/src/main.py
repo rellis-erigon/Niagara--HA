@@ -6,6 +6,7 @@ and publishes them to Home Assistant via MQTT Discovery on a polling loop.
 
 import json
 import logging
+import os
 import signal
 import sys
 import time
@@ -58,7 +59,7 @@ def main() -> None:
     opts = load_options()
     setup_logging(opts.get("log_level", "info"))
 
-    logger.info("Niagara BMS Bridge v0.1.0 starting")
+    logger.info("Niagara BMS Bridge v0.1.2 starting")
     logger.info("Target: %s:%d (HTTPS=%s)", opts["niagara_host"], opts["niagara_port"], opts["use_https"])
 
     if not opts.get("niagara_host"):
@@ -75,10 +76,10 @@ def main() -> None:
     )
 
     mqtt_pub = MqttPublisher(
-        host=opts.get("mqtt_host", "core-mosquitto"),
-        port=opts.get("mqtt_port", 1883),
-        username=opts.get("mqtt_user", ""),
-        password=opts.get("mqtt_password", ""),
+        host=os.environ.get("MQTT_HOST", "core-mosquitto"),
+        port=int(os.environ.get("MQTT_PORT", "1883")),
+        username=os.environ.get("MQTT_USER", ""),
+        password=os.environ.get("MQTT_PASSWORD", ""),
         topic_prefix=opts.get("mqtt_topic_prefix", "niagara"),
     )
 
