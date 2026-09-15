@@ -1,0 +1,43 @@
+configuration:
+  niagara_host:
+    name: Niagara Host
+    description: IP address or hostname of the Niagara 4 station
+  niagara_port:
+    name: Niagara Port
+    description: HTTPS port (default 443)
+  niagara_user:
+    name: Username
+    description: oBIX user account on the Niagara station
+  niagara_password:
+    name: Password
+    description: Password for the oBIX user account
+  use_https:
+    name: Use HTTPS
+    description: Connect over HTTPS (recommended)
+  verify_ssl:
+    name: Verify SSL
+    description: Verify the Niagara station's SSL certificate (disable for self-signed certs)
+  poll_interval_seconds:
+    name: Poll Interval
+    description: How often to read point values from Niagara (seconds)
+  point_filter:
+    name: Point Filter
+    description: Optional path prefix to limit discovery (e.g. /config/AHU/). Leave empty for all points.
+  mqtt_host:
+    name: MQTT Host
+    description: MQTT broker hostname (use core-mosquitto for the HA Mosquitto add-on)
+  mqtt_port:
+    name: MQTT Port
+    description: MQTT broker port
+  mqtt_user:
+    name: MQTT Username
+    description: MQTT broker username (leave empty if not required)
+  mqtt_password:
+    name: MQTT Password
+    description: MQTT broker password (leave empty if not required)
+  mqtt_topic_prefix:
+    name: MQTT Topic Prefix
+    description: Prefix for all MQTT topics published by this add-on
+  log_level:
+    name: Log Level
+    description: Logging verbosity
