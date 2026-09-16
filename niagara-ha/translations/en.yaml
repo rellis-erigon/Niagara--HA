@@ -23,6 +23,9 @@ configuration:
   point_filter:
     name: Point Filter
     description: Optional path prefix to limit discovery (e.g. /config/AHU/). Leave empty for all points.
+  poll_workers:
+    name: Poll Workers
+    description: Number of concurrent connections to Niagara during polling (1-20, higher = faster but more load)
   device_name:
     name: Device Name
     description: Base name for devices in Home Assistant (groups appear as "Name — Group")

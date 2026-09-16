@@ -1,0 +1,182 @@
+"""Niagara-HA point management web UI (served via HA ingress)."""
+
+import json
+import logging
+import os
+from pathlib import Path
+
+from flask import Flask, jsonify, request, send_from_directory
+
+from point_manager import POINTS_DIR, POINTS_FILE, load_point_selections
+
+logger = logging.getLogger("niagara-ha.web")
+
+app = Flask(__name__, static_folder="/app/static")
+
+PAGE_SIZE = 50
+
+
+def _load_points() -> list[dict]:
+    sel = load_point_selections()
+    return list(sel.values())
+
+
+@app.route("/")
+def index():
+    return send_from_directory("/app/static", "index.html")
+
+
+@app.route("/api/stats")
+def stats():
+    points = _load_points()
+    groups: dict[str, dict] = {}
+    for p in points:
+        g = p.get("group", "Ungrouped")
+        if g not in groups:
+            groups[g] = {"name": g, "total": 0, "enabled": 0}
+        groups[g]["total"] += 1
+        if p.get("enabled", False):
+            groups[g]["enabled"] += 1
+
+    total = len(points)
+    enabled = sum(1 for p in points if p.get("enabled", False))
+    return jsonify({
+        "total": total,
+        "enabled": enabled,
+        "disabled": total - enabled,
+        "groups": sorted(groups.values(), key=lambda g: g["name"]),
+    })
+
+
+@app.route("/api/points")
+def list_points():
+    points = _load_points()
+
+    group = request.args.get("group", "")
+    search = request.args.get("search", "").lower()
+    status = request.args.get("status", "")
+    page = int(request.args.get("page", "1"))
+
+    if group:
+        points = [p for p in points if p.get("group") == group]
+    if search:
+        points = [p for p in points if search in p.get("name", "").lower() or search in p.get("path", "").lower()]
+    if status == "enabled":
+        points = [p for p in points if p.get("enabled", False)]
+    elif status == "disabled":
+        points = [p for p in points if not p.get("enabled", False)]
+
+    points.sort(key=lambda p: (p.get("group", ""), p.get("name", "")))
+    total = len(points)
+    start = (page - 1) * PAGE_SIZE
+    page_points = points[start:start + PAGE_SIZE]
+
+    return jsonify({
+        "points": page_points,
+        "total": total,
+        "page": page,
+        "pages": max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE),
+    })
+
+
+@app.route("/api/points/toggle", methods=["POST"])
+def toggle_point():
+    data = request.get_json()
+    path = data.get("path")
+    enabled = data.get("enabled")
+    if not path:
+        return jsonify({"error": "path required"}), 400
+
+    selections = load_point_selections()
+    if path in selections:
+        selections[path]["enabled"] = bool(enabled)
+        _write_selections(selections)
+        return jsonify({"ok": True, "path": path, "enabled": selections[path]["enabled"]})
+    return jsonify({"error": "point not found"}), 404
+
+
+@app.route("/api/groups/toggle", methods=["POST"])
+def toggle_group():
+    data = request.get_json()
+    group = data.get("group")
+    enabled = data.get("enabled")
+    if not group:
+        return jsonify({"error": "group required"}), 400
+
+    selections = load_point_selections()
+    count = 0
+    for entry in selections.values():
+        if entry.get("group") == group:
+            entry["enabled"] = bool(enabled)
+            count += 1
+
+    _write_selections(selections)
+    return jsonify({"ok": True, "group": group, "enabled": bool(enabled), "count": count})
+
+
+@app.route("/api/bulk", methods=["POST"])
+def bulk_toggle():
+    data = request.get_json()
+    paths = data.get("paths", [])
+    enabled = data.get("enabled", False)
+
+    selections = load_point_selections()
+    count = 0
+    for path in paths:
+        if path in selections:
+            selections[path]["enabled"] = bool(enabled)
+            count += 1
+
+    _write_selections(selections)
+    return jsonify({"ok": True, "count": count, "enabled": bool(enabled)})
+
+
+@app.route("/api/all/toggle", methods=["POST"])
+def toggle_all():
+    data = request.get_json()
+    enabled = data.get("enabled", False)
+
+    selections = load_point_selections()
+    for entry in selections.values():
+        entry["enabled"] = bool(enabled)
+
+    _write_selections(selections)
+    return jsonify({"ok": True, "enabled": bool(enabled), "count": len(selections)})
+
+
+def _write_selections(selections: dict[str, dict]) -> None:
+    import yaml
+
+    POINTS_DIR.mkdir(parents=True, exist_ok=True)
+
+    groups: dict[str, list[dict]] = {}
+    for entry in selections.values():
+        g = entry.get("group", "Ungrouped")
+        groups.setdefault(g, []).append(entry)
+
+    ordered = []
+    for g in sorted(groups):
+        ordered.extend(sorted(groups[g], key=lambda e: e["name"]))
+
+    output = {
+        "_comment": (
+            "Edit this file to enable/disable points. "
+            "Set enabled: true to include a point in Home Assistant. "
+            "New points discovered on restart are disabled by default."
+        ),
+        "points": ordered,
+    }
+
+    with open(POINTS_FILE, "w") as f:
+        yaml.dump(output, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
+
+
+if __name__ == "__main__":
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+    port = int(os.environ.get("INGRESS_PORT", "8099"))
+    logger.info("Starting web UI on port %d", port)
+    app.run(host="0.0.0.0", port=port, debug=False)

@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Niagara BMS Bridge</title>
+<style>
+:root {
+  --bg: #f5f6fa;
+  --card: #ffffff;
+  --border: #e0e3eb;
+  --text: #1a1d23;
+  --muted: #6b7280;
+  --primary: #3b82f6;
+  --primary-hover: #2563eb;
+  --success: #22c55e;
+  --danger: #ef4444;
+  --tag-bg: #e5e7eb;
+  --toggle-off: #d1d5db;
+  --toggle-on: #3b82f6;
+  --row-hover: #f0f4ff;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #111318;
+    --card: #1c1f26;
+    --border: #2d3140;
+    --text: #e5e7eb;
+    --muted: #9ca3af;
+    --tag-bg: #374151;
+    --toggle-off: #4b5563;
+    --row-hover: #1e2432;
+  }
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.5;
+  padding: 16px;
+}
+h1 { font-size: 1.4rem; font-weight: 600; }
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.stats {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.stat {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 20px;
+  text-align: center;
+  min-width: 100px;
+}
+.stat-value { font-size: 1.6rem; font-weight: 700; }
+.stat-label { font-size: 0.75rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+.stat-enabled .stat-value { color: var(--success); }
+.stat-disabled .stat-value { color: var(--danger); }
+
+.layout { display: flex; gap: 16px; }
+@media (max-width: 768px) { .layout { flex-direction: column; } }
+
+.sidebar {
+  width: 280px;
+  flex-shrink: 0;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+@media (max-width: 768px) { .sidebar { width: 100%; max-height: 300px; overflow-y: auto; } }
+.sidebar-header {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  font-weight: 600;
+  font-size: 0.9rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.group-list { max-height: calc(100vh - 260px); overflow-y: auto; }
+.group-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border);
+  transition: background 0.15s;
+}
+.group-item:hover { background: var(--row-hover); }
+.group-item.active { background: var(--row-hover); border-left: 3px solid var(--primary); padding-left: 13px; }
+.group-name { font-size: 0.9rem; font-weight: 500; flex: 1; }
+.group-counts {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  font-size: 0.75rem;
+}
+.group-badge {
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-weight: 500;
+}
+.badge-total { background: var(--tag-bg); color: var(--muted); }
+.badge-enabled { background: #dcfce7; color: #166534; }
+@media (prefers-color-scheme: dark) { .badge-enabled { background: #14532d; color: #86efac; } }
+.group-toggle {
+  width: 20px;
+  height: 20px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.7rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-left: 8px;
+}
+.group-toggle-on { background: var(--success); color: white; }
+.group-toggle-off { background: var(--tag-bg); color: var(--muted); }
+
+.main { flex: 1; min-width: 0; }
+.toolbar {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.search-box {
+  flex: 1;
+  min-width: 200px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--card);
+  color: var(--text);
+  font-size: 0.9rem;
+}
+.search-box:focus { outline: 2px solid var(--primary); border-color: transparent; }
+.btn {
+  padding: 8px 16px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--card);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 500;
+  white-space: nowrap;
+  transition: background 0.15s;
+}
+.btn:hover { background: var(--row-hover); }
+.btn-primary { background: var(--primary); color: white; border-color: var(--primary); }
+.btn-primary:hover { background: var(--primary-hover); }
+.btn-sm { padding: 4px 10px; font-size: 0.8rem; }
+.filter-btns { display: flex; gap: 4px; }
+.filter-btns .btn.active { background: var(--primary); color: white; border-color: var(--primary); }
+
+.table-wrap {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+table { width: 100%; border-collapse: collapse; }
+th {
+  text-align: left;
+  padding: 10px 16px;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  border-bottom: 1px solid var(--border);
+  background: var(--card);
+  position: sticky;
+  top: 0;
+}
+td {
+  padding: 8px 16px;
+  font-size: 0.85rem;
+  border-bottom: 1px solid var(--border);
+}
+tr:hover td { background: var(--row-hover); }
+.point-path { color: var(--muted); font-size: 0.75rem; word-break: break-all; }
+.point-type {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  background: var(--tag-bg);
+  color: var(--muted);
+  text-transform: uppercase;
+}
+
+.toggle {
+  position: relative;
+  width: 40px;
+  height: 22px;
+  cursor: pointer;
+}
+.toggle input { opacity: 0; width: 0; height: 0; position: absolute; }
+.toggle-slider {
+  position: absolute;
+  inset: 0;
+  background: var(--toggle-off);
+  border-radius: 11px;
+  transition: background 0.2s;
+}
+.toggle-slider::before {
+  content: "";
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  left: 3px;
+  top: 3px;
+  background: white;
+  border-radius: 50%;
+  transition: transform 0.2s;
+}
+.toggle input:checked + .toggle-slider { background: var(--toggle-on); }
+.toggle input:checked + .toggle-slider::before { transform: translateX(18px); }
+
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px;
+}
+.page-info { font-size: 0.85rem; color: var(--muted); }
+.empty {
+  text-align: center;
+  padding: 48px 16px;
+  color: var(--muted);
+}
+.empty-icon { font-size: 2rem; margin-bottom: 8px; }
+.toast {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  background: #1a1d23;
+  color: white;
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  opacity: 0;
+  transform: translateY(10px);
+  transition: all 0.3s;
+  z-index: 100;
+}
+.toast.show { opacity: 1; transform: translateY(0); }
+@media (prefers-color-scheme: dark) { .toast { background: #374151; } }
+.loading { text-align: center; padding: 24px; color: var(--muted); }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Niagara BMS Bridge</h1>
+  <div class="stats" id="stats"></div>
+</div>
+
+<div class="layout">
+  <div class="sidebar">
+    <div class="sidebar-header">
+      <span>Groups</span>
+      <span style="font-size:0.75rem;color:var(--muted)" id="group-count"></span>
+    </div>
+    <div class="group-list" id="group-list">
+      <div class="loading">Loading...</div>
+    </div>
+  </div>
+  <div class="main">
+    <div class="toolbar">
+      <input type="text" class="search-box" id="search" placeholder="Search points by name or path...">
+      <div class="filter-btns">
+        <button class="btn btn-sm active" data-status="" id="filter-all">All</button>
+        <button class="btn btn-sm" data-status="enabled" id="filter-enabled">Enabled</button>
+        <button class="btn btn-sm" data-status="disabled" id="filter-disabled">Disabled</button>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:50px">On</th>
+            <th>Name</th>
+            <th style="width:80px">Type</th>
+            <th>Group</th>
+          </tr>
+        </thead>
+        <tbody id="point-table">
+          <tr><td colspan="4" class="loading">Select a group or search</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="pagination" id="pagination"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = s => document.querySelector(s);
+let state = { group: '', search: '', status: '', page: 1 };
+let debounceTimer;
+
+async function api(path, opts) {
+  const res = await fetch(path, opts);
+  return res.json();
+}
+
+function toast(msg) {
+  const el = $('#toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 2000);
+}
+
+async function loadStats() {
+  const data = await api('/api/stats');
+  $('#stats').innerHTML = `
+    <div class="stat"><div class="stat-value">${data.total.toLocaleString()}</div><div class="stat-label">Total Points</div></div>
+    <div class="stat stat-enabled"><div class="stat-value">${data.enabled.toLocaleString()}</div><div class="stat-label">Enabled</div></div>
+    <div class="stat stat-disabled"><div class="stat-value">${data.disabled.toLocaleString()}</div><div class="stat-label">Disabled</div></div>
+    <div class="stat"><div class="stat-value">${data.groups.length}</div><div class="stat-label">Groups</div></div>
+  `;
+  renderGroups(data.groups);
+}
+
+function renderGroups(groups) {
+  $('#group-count').textContent = groups.length + ' groups';
+  const allItem = `<div class="group-item ${!state.group ? 'active' : ''}" data-group="">
+    <span class="group-name">All Points</span>
+    <div class="group-counts">
+      <span class="group-badge badge-total">${groups.reduce((s,g) => s+g.total, 0).toLocaleString()}</span>
+    </div>
+  </div>`;
+
+  const items = groups.map(g => {
+    const allEnabled = g.enabled === g.total && g.total > 0;
+    const someEnabled = g.enabled > 0;
+    return `<div class="group-item ${state.group === g.name ? 'active' : ''}" data-group="${esc(g.name)}">
+      <span class="group-name">${esc(g.name)}</span>
+      <div class="group-counts">
+        ${g.enabled > 0 ? `<span class="group-badge badge-enabled">${g.enabled}</span>` : ''}
+        <span class="group-badge badge-total">${g.total.toLocaleString()}</span>
+        <button class="group-toggle ${someEnabled ? 'group-toggle-on' : 'group-toggle-off'}"
+                data-group-toggle="${esc(g.name)}" data-enabled="${!allEnabled}"
+                title="${allEnabled ? 'Disable all' : 'Enable all'}">
+          ${allEnabled ? '&#10003;' : '&#9711;'}
+        </button>
+      </div>
+    </div>`;
+  }).join('');
+
+  $('#group-list').innerHTML = allItem + items;
+
+  $('#group-list').querySelectorAll('.group-item').forEach(el => {
+    el.addEventListener('click', e => {
+      if (e.target.closest('.group-toggle')) return;
+      state.group = el.dataset.group;
+      state.page = 1;
+      loadStats();
+      loadPoints();
+    });
+  });
+
+  $('#group-list').querySelectorAll('.group-toggle').forEach(btn => {
+    btn.addEventListener('click', async e => {
+      e.stopPropagation();
+      const group = btn.dataset.groupToggle;
+      const enabled = btn.dataset.enabled === 'true';
+      const data = await api('/api/groups/toggle', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ group, enabled }),
+      });
+      toast(`${data.count} points ${enabled ? 'enabled' : 'disabled'} in ${group}`);
+      loadStats();
+      loadPoints();
+    });
+  });
+}
+
+async function loadPoints() {
+  const params = new URLSearchParams();
+  if (state.group) params.set('group', state.group);
+  if (state.search) params.set('search', state.search);
+  if (state.status) params.set('status', state.status);
+  params.set('page', state.page);
+
+  const data = await api('/api/points?' + params);
+
+  if (data.points.length === 0) {
+    $('#point-table').innerHTML = `<tr><td colspan="4"><div class="empty">
+      <div class="empty-icon">&#128269;</div>
+      No points found${state.search ? ' matching "' + esc(state.search) + '"' : ''}
+    </div></td></tr>`;
+    $('#pagination').innerHTML = '';
+    return;
+  }
+
+  $('#point-table').innerHTML = data.points.map(p => `<tr>
+    <td>
+      <label class="toggle">
+        <input type="checkbox" ${p.enabled ? 'checked' : ''} data-path="${esc(p.path)}">
+        <span class="toggle-slider"></span>
+      </label>
+    </td>
+    <td>
+      <div>${esc(p.name)}</div>
+      <div class="point-path">${esc(p.path)}</div>
+    </td>
+    <td><span class="point-type">${esc(p.type)}</span></td>
+    <td>${esc(p.group)}</td>
+  </tr>`).join('');
+
+  $('#point-table').querySelectorAll('input[type=checkbox]').forEach(cb => {
+    cb.addEventListener('change', async () => {
+      await api('/api/points/toggle', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ path: cb.dataset.path, enabled: cb.checked }),
+      });
+      loadStats();
+    });
+  });
+
+  const { page, pages, total } = data;
+  let pagHtml = `<span class="page-info">${total.toLocaleString()} points &mdash; page ${page} of ${pages}</span>`;
+  if (pages > 1) {
+    pagHtml += `<button class="btn btn-sm" ${page <= 1 ? 'disabled' : ''} id="prev-page">&laquo; Prev</button>`;
+    pagHtml += `<button class="btn btn-sm" ${page >= pages ? 'disabled' : ''} id="next-page">Next &raquo;</button>`;
+  }
+  $('#pagination').innerHTML = pagHtml;
+  if ($('#prev-page')) $('#prev-page').onclick = () => { state.page--; loadPoints(); };
+  if ($('#next-page')) $('#next-page').onclick = () => { state.page++; loadPoints(); };
+}
+
+function esc(s) {
+  const d = document.createElement('div');
+  d.textContent = s || '';
+  return d.innerHTML;
+}
+
+$('#search').addEventListener('input', e => {
+  clearTimeout(debounceTimer);
+  debounceTimer = setTimeout(() => {
+    state.search = e.target.value;
+    state.page = 1;
+    loadPoints();
+  }, 300);
+});
+
+document.querySelectorAll('.filter-btns .btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.filter-btns .btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    state.status = btn.dataset.status;
+    state.page = 1;
+    loadPoints();
+  });
+});
+
+loadStats();
+loadPoints();
+</script>
+</body>
+</html>

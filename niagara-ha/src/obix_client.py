@@ -234,17 +234,36 @@ class ObixClient:
         point = self.read_point(path)
         return point.value if point else None
 
-    def poll_points(self, points: list[NiagaraPoint]) -> list[NiagaraPoint]:
-        """Re-read the current value of each point. Returns updated list."""
-        updated = []
-        for pt in points:
-            refreshed = self.read_point(pt.path)
-            if refreshed:
-                updated.append(refreshed)
-            else:
-                pt.status = "fault"
-                updated.append(pt)
-        return updated
+    def poll_points(
+        self, points: list[NiagaraPoint], max_workers: int = 5,
+    ) -> list[NiagaraPoint]:
+        """Re-read the current value of each point using concurrent requests."""
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        results: dict[str, NiagaraPoint] = {}
+
+        def _read_one(pt: NiagaraPoint) -> tuple[str, NiagaraPoint]:
+            try:
+                refreshed = self.read_point(pt.path)
+                if refreshed:
+                    return pt.path, refreshed
+            except Exception as e:
+                logger.debug("Poll error for %s: %s", pt.path, e)
+            pt.status = "fault"
+            return pt.path, pt
+
+        with ThreadPoolExecutor(max_workers=max_workers) as pool:
+            futures = {pool.submit(_read_one, pt): pt for pt in points}
+            for future in as_completed(futures):
+                try:
+                    path, point = future.result()
+                    results[path] = point
+                except Exception:
+                    pt = futures[future]
+                    pt.status = "fault"
+                    results[pt.path] = pt
+
+        return [results[pt.path] for pt in points if pt.path in results]
 
     def close(self) -> None:
         self._session.close()
