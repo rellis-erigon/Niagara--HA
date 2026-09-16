@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.2
+
+- **Feature**: Live point values displayed in the web UI with auto-refresh every 10 seconds
+- **Fix**: Disabled points are now fully cleared from MQTT broker on startup and hot-reload
+- **Fix**: Auto-reconnect when all point reads fail (detects dead Niagara sessions)
+- **Fix**: Partial poll failures logged with count for easier troubleshooting
+
 ## 0.3.1
 
 - **Performance**: Only publish MQTT state updates when values actually change (~90% reduction in MQTT traffic)
