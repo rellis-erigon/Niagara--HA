@@ -274,6 +274,50 @@ tr:hover td { background: var(--row-hover); }
   white-space: nowrap;
 }
 .point-value-na { color: var(--muted); font-style: italic; font-family: inherit; }
+.category-select {
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--card);
+  color: var(--text);
+  font-size: 0.85rem;
+  cursor: pointer;
+  min-width: 140px;
+}
+.category-select:focus { outline: 2px solid var(--primary); border-color: transparent; }
+.cat-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  font-weight: 500;
+  text-transform: uppercase;
+}
+.cat-Temperature { background: #fef3c7; color: #92400e; }
+.cat-Fan { background: #dbeafe; color: #1e40af; }
+.cat-Pump { background: #e0e7ff; color: #3730a3; }
+.cat-Valve { background: #fce7f3; color: #9d174d; }
+.cat-Pressure { background: #fde68a; color: #78350f; }
+.cat-Power { background: #fecaca; color: #991b1b; }
+.cat-Humidity { background: #d1fae5; color: #065f46; }
+.cat-Flow { background: #cffafe; color: #155e75; }
+.cat-Setpoint { background: #ede9fe; color: #5b21b6; }
+.cat-Status { background: #e5e7eb; color: #374151; }
+.cat-CO2 { background: #f3e8ff; color: #6b21a8; }
+.cat-Other { background: var(--tag-bg); color: var(--muted); }
+@media (prefers-color-scheme: dark) {
+  .cat-Temperature { background: #78350f; color: #fef3c7; }
+  .cat-Fan { background: #1e3a5f; color: #93c5fd; }
+  .cat-Pump { background: #312e81; color: #c7d2fe; }
+  .cat-Valve { background: #831843; color: #fbcfe8; }
+  .cat-Pressure { background: #713f12; color: #fde68a; }
+  .cat-Power { background: #7f1d1d; color: #fecaca; }
+  .cat-Humidity { background: #064e3b; color: #a7f3d0; }
+  .cat-Flow { background: #164e63; color: #a5f3fc; }
+  .cat-Setpoint { background: #4c1d95; color: #ddd6fe; }
+  .cat-Status { background: #374151; color: #d1d5db; }
+  .cat-CO2 { background: #581c87; color: #e9d5ff; }
+}
 </style>
 </head>
 <body>
@@ -296,6 +340,9 @@ tr:hover td { background: var(--row-hover); }
   <div class="main">
     <div class="toolbar">
       <input type="text" class="search-box" id="search" placeholder="Search points by name or path...">
+      <select class="category-select" id="category-filter">
+        <option value="">All Categories</option>
+      </select>
       <div class="filter-btns">
         <button class="btn btn-sm active" data-status="" id="filter-all">All</button>
         <button class="btn btn-sm" data-status="enabled" id="filter-enabled">Enabled</button>
@@ -309,12 +356,13 @@ tr:hover td { background: var(--row-hover); }
             <th style="width:50px">On</th>
             <th>Name</th>
             <th style="width:120px">Value</th>
+            <th style="width:100px">Category</th>
             <th style="width:80px">Type</th>
             <th>Group</th>
           </tr>
         </thead>
         <tbody id="point-table">
-          <tr><td colspan="5" class="loading">Select a group or search</td></tr>
+          <tr><td colspan="6" class="loading">Select a group or search</td></tr>
         </tbody>
       </table>
     </div>
@@ -327,7 +375,7 @@ tr:hover td { background: var(--row-hover); }
 <script>
 const $ = s => document.querySelector(s);
 const BASE = window.location.pathname.replace(/\/+$/, '');
-let state = { group: '', search: '', status: '', page: 1 };
+let state = { group: '', search: '', status: '', category: '', page: 1 };
 let debounceTimer;
 
 async function api(path, opts) {
@@ -366,6 +414,7 @@ async function loadStats() {
       <div class="stat"><div class="stat-value">${data.groups.length}</div><div class="stat-label">Groups</div></div>
     `;
     renderGroups(data.groups);
+    renderCategories(data.categories || []);
   } catch (e) {
     $('#group-list').innerHTML = `<div class="empty" style="padding:24px">
       <div class="empty-icon">&#9888;</div>
@@ -430,24 +479,32 @@ function renderGroups(groups) {
   });
 }
 
+function renderCategories(categories) {
+  const sel = $('#category-filter');
+  const current = sel.value;
+  sel.innerHTML = '<option value="">All Categories</option>' +
+    categories.map(c => `<option value="${esc(c.name)}" ${state.category === c.name ? 'selected' : ''}>${esc(c.name)} (${c.count.toLocaleString()})</option>`).join('');
+}
+
 async function loadPoints() {
   const params = new URLSearchParams();
   if (state.group) params.set('group', state.group);
   if (state.search) params.set('search', state.search);
   if (state.status) params.set('status', state.status);
+  if (state.category) params.set('category', state.category);
   params.set('page', state.page);
 
   let data;
   try {
     data = await api('/api/points?' + params);
   } catch (e) {
-    $('#point-table').innerHTML = `<tr><td colspan="5"><div class="empty">
+    $('#point-table').innerHTML = `<tr><td colspan="6"><div class="empty">
       <div class="empty-icon">&#9888;</div>Failed to load points</div></td></tr>`;
     return;
   }
 
   if (data.points.length === 0) {
-    $('#point-table').innerHTML = `<tr><td colspan="5"><div class="empty">
+    $('#point-table').innerHTML = `<tr><td colspan="6"><div class="empty">
       <div class="empty-icon">&#128269;</div>
       No points found${state.search ? ' matching "' + esc(state.search) + '"' : ''}
     </div></td></tr>`;
@@ -467,6 +524,7 @@ async function loadPoints() {
       <div class="point-path">${esc(p.path)}</div>
     </td>
     <td><span class="point-value point-value-na" data-value-path="${esc(p.path)}">&mdash;</span></td>
+    <td><span class="cat-badge cat-${p.category || 'Other'}">${esc(p.category || 'Other')}</span></td>
     <td><span class="point-type">${esc(p.type)}</span></td>
     <td>${esc(p.group)}</td>
   </tr>`).join('');
@@ -531,6 +589,12 @@ $('#search').addEventListener('input', e => {
     state.page = 1;
     loadPoints();
   }, 300);
+});
+
+$('#category-filter').addEventListener('change', e => {
+  state.category = e.target.value;
+  state.page = 1;
+  loadPoints();
 });
 
 document.querySelectorAll('.filter-btns .btn').forEach(btn => {

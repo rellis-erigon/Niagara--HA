@@ -13,6 +13,38 @@ VALUES_FILE = POINTS_DIR / "values.json"
 
 logger = logging.getLogger("niagara-ha.web")
 
+import re
+
+CATEGORY_RULES = [
+    ("Temperature", re.compile(r"temp|tmp|zone.?t|supply.?air|return.?air|discharge|duct.?t|room.?t|outside.?air|oat|sat|rat|dat|chwt|hwt|clg.?t|htg.?t", re.I), {"°F", "°C"}),
+    ("Fan", re.compile(r"fan|sf|rf|ef|supply.?fan|return.?fan|exhaust.?fan|vfd", re.I), set()),
+    ("Pump", re.compile(r"pump|chw.?p|hw.?p|cw.?p|cdw.?p", re.I), set()),
+    ("Valve", re.compile(r"valve|vlv|damper|dpr|dmpr", re.I), set()),
+    ("Pressure", re.compile(r"press|psi|static", re.I), {"psi", "kPa", "Pa", "in. w.c."}),
+    ("Power", re.compile(r"power|energy|kwh|kw|watt|elec|demand", re.I), {"kW", "W", "kWh", "Wh"}),
+    ("Humidity", re.compile(r"humid|rh|dew.?point", re.I), {"%"}),
+    ("Flow", re.compile(r"flow|cfm|gpm|velocity|air.?vol", re.I), {"cfm", "l/s", "gpm"}),
+    ("Setpoint", re.compile(r"setpoint|set.?pt|sp|stpt|spt|limit", re.I), set()),
+    ("Status", re.compile(r"status|state|alarm|fault|enable|disable|occup|mode|cmd|command|run|stop", re.I), set()),
+    ("CO2", re.compile(r"co2|carbon", re.I), {"ppm"}),
+]
+
+
+def _categorize(point: dict) -> str:
+    name = point.get("name", "")
+    path = point.get("path", "")
+    ptype = point.get("type", "")
+    unit = point.get("unit", "")
+    text = f"{name} {path}"
+    for cat_name, pattern, units in CATEGORY_RULES:
+        if pattern.search(text):
+            return cat_name
+        if units and unit in units:
+            return cat_name
+    if ptype == "boolean":
+        return "Status"
+    return "Other"
+
 app = Flask(__name__, static_folder="/app/static")
 
 PAGE_SIZE = 50
@@ -42,6 +74,7 @@ def index():
 def stats():
     points = _load_points()
     groups: dict[str, dict] = {}
+    categories: dict[str, int] = {}
     for p in points:
         g = p.get("group", "Ungrouped")
         if g not in groups:
@@ -50,6 +83,9 @@ def stats():
         if p.get("enabled", False):
             groups[g]["enabled"] += 1
 
+        cat = _categorize(p)
+        categories[cat] = categories.get(cat, 0) + 1
+
     total = len(points)
     enabled = sum(1 for p in points if p.get("enabled", False))
     return jsonify({
@@ -57,6 +93,10 @@ def stats():
         "enabled": enabled,
         "disabled": total - enabled,
         "groups": sorted(groups.values(), key=lambda g: g["name"]),
+        "categories": sorted(
+            [{"name": k, "count": v} for k, v in categories.items()],
+            key=lambda c: c["name"],
+        ),
     })
 
 
@@ -91,6 +131,7 @@ def list_points():
     group = request.args.get("group", "")
     search = request.args.get("search", "").lower()
     status = request.args.get("status", "")
+    category = request.args.get("category", "")
     page = int(request.args.get("page", "1"))
 
     if group:
@@ -101,6 +142,12 @@ def list_points():
         points = [p for p in points if p.get("enabled", False)]
     elif status == "disabled":
         points = [p for p in points if not p.get("enabled", False)]
+
+    for p in points:
+        p["category"] = _categorize(p)
+
+    if category:
+        points = [p for p in points if p["category"] == category]
 
     points.sort(key=lambda p: (p.get("group", ""), p.get("name", "")))
     total = len(points)

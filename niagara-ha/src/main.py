@@ -74,7 +74,7 @@ def main() -> None:
     opts = load_options()
     setup_logging(opts.get("log_level", "info"))
 
-    logger.info("Niagara BMS Bridge v0.3.2 starting")
+    logger.info("Niagara BMS Bridge v0.3.3 starting")
     logger.info("Target: %s:%d (HTTPS=%s)", opts["niagara_host"], opts["niagara_port"], opts["use_https"])
 
     if not opts.get("niagara_host"):

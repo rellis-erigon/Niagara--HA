@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.3
+
+- **Feature**: Category-based filtering — points auto-classified as Temperature, Fan, Pump, Valve, Pressure, Power, Humidity, Flow, Setpoint, Status, CO2, or Other
+- **Feature**: Category dropdown filter in toolbar to quickly find specific point types
+- **Feature**: Color-coded category badges on each point row
+- **Feature**: Category counts shown in stats API
+
 ## 0.3.2
 
 - **Feature**: Live point values displayed in the web UI with auto-refresh every 10 seconds
