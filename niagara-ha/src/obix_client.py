@@ -11,6 +11,7 @@ from typing import Optional
 from urllib.parse import quote
 
 import requests
+import urllib3
 from requests.auth import HTTPBasicAuth
 
 logger = logging.getLogger(__name__)
@@ -52,6 +53,8 @@ class ObixClient:
         self._session = requests.Session()
         self._session.auth = self._auth
         self._session.verify = verify_ssl
+        if not verify_ssl:
+            urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
         self._session.headers.update({"Accept": "text/xml", "Content-Type": "text/xml"})
         self._connected = False
 
