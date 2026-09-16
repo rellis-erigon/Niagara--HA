@@ -136,7 +136,7 @@ def main() -> None:
                     len(active_points), len(discovered_points),
                 )
 
-                entity_maps = _publish_entities(active_points, selections, mqtt_pub, topic_prefix, device_name)
+                entity_maps = _publish_entities(active_points, discovered_points, selections, mqtt_pub, topic_prefix, device_name)
                 last_values.clear()
                 last_statuses.clear()
             else:
@@ -153,7 +153,7 @@ def main() -> None:
             logger.info("points.yaml changed — reloading selections")
             selections = load_point_selections()
             active_points = filter_enabled(discovered_points, selections)
-            entity_maps = _publish_entities(active_points, selections, mqtt_pub, topic_prefix, device_name)
+            entity_maps = _publish_entities(active_points, discovered_points, selections, mqtt_pub, topic_prefix, device_name)
             last_values.clear()
             last_statuses.clear()
             logger.info("Reloaded: %d active points", len(active_points))
@@ -203,7 +203,7 @@ def main() -> None:
 
 
 def _publish_entities(
-    active_points, selections, mqtt_pub, topic_prefix, device_name,
+    active_points, all_points, selections, mqtt_pub, topic_prefix, device_name,
 ) -> dict:
     entity_maps = {}
     for pt in active_points:
@@ -213,8 +213,16 @@ def _publish_entities(
             entity_maps[pt.path] = mapped
             mqtt_pub.publish_discovery(mapped)
 
+    disabled_topics = set()
+    for pt in all_points:
+        if pt.path not in entity_maps:
+            group = selections.get(pt.path, {}).get("group", "")
+            mapped = map_point(pt, topic_prefix, device_name, group)
+            if mapped:
+                disabled_topics.add(mapped["discovery_topic"])
+
     current_topics = {m["discovery_topic"] for m in entity_maps.values()}
-    mqtt_pub.remove_stale_discoveries(current_topics)
+    mqtt_pub.remove_stale_discoveries(current_topics, disabled_topics)
     mqtt_pub.publish_availability(True)
 
     initial_values = 0
@@ -225,8 +233,8 @@ def _publish_entities(
             initial_values += 1
 
     logger.info(
-        "Published %d entities to HA (%d with initial values)",
-        len(entity_maps), initial_values,
+        "Published %d entities to HA, cleared %d disabled (%d with initial values)",
+        len(entity_maps), len(disabled_topics), initial_values,
     )
     return entity_maps
 

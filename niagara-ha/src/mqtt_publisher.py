@@ -86,11 +86,16 @@ class MqttPublisher:
         payload = "online" if available else "offline"
         self._client.publish(topic, payload, qos=1, retain=True)
 
-    def remove_stale_discoveries(self, current_topics: set[str]) -> None:
+    def remove_stale_discoveries(
+        self, current_topics: set[str], disabled_topics: set[str] | None = None,
+    ) -> None:
         stale = self._published_discoveries - current_topics
+        if disabled_topics:
+            stale |= disabled_topics
         for topic in stale:
             self._client.publish(topic, "", qos=1, retain=True)
-            logger.info("Removed stale discovery: %s", topic)
+        if stale:
+            logger.info("Cleared %d stale/disabled discovery topics", len(stale))
         self._published_discoveries = current_topics
 
     def disconnect(self) -> None:
