@@ -264,6 +264,16 @@ tr:hover td { background: var(--row-hover); }
 .toast.show { opacity: 1; transform: translateY(0); }
 @media (prefers-color-scheme: dark) { .toast { background: #374151; } }
 .loading { text-align: center; padding: 24px; color: var(--muted); }
+.point-value {
+  font-family: "SF Mono", "Cascadia Code", "Consolas", monospace;
+  font-size: 0.8rem;
+  color: var(--text);
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.point-value-na { color: var(--muted); font-style: italic; font-family: inherit; }
 </style>
 </head>
 <body>
@@ -298,12 +308,13 @@ tr:hover td { background: var(--row-hover); }
           <tr>
             <th style="width:50px">On</th>
             <th>Name</th>
+            <th style="width:120px">Value</th>
             <th style="width:80px">Type</th>
             <th>Group</th>
           </tr>
         </thead>
         <tbody id="point-table">
-          <tr><td colspan="4" class="loading">Select a group or search</td></tr>
+          <tr><td colspan="5" class="loading">Select a group or search</td></tr>
         </tbody>
       </table>
     </div>
@@ -430,13 +441,13 @@ async function loadPoints() {
   try {
     data = await api('/api/points?' + params);
   } catch (e) {
-    $('#point-table').innerHTML = `<tr><td colspan="4"><div class="empty">
+    $('#point-table').innerHTML = `<tr><td colspan="5"><div class="empty">
       <div class="empty-icon">&#9888;</div>Failed to load points</div></td></tr>`;
     return;
   }
 
   if (data.points.length === 0) {
-    $('#point-table').innerHTML = `<tr><td colspan="4"><div class="empty">
+    $('#point-table').innerHTML = `<tr><td colspan="5"><div class="empty">
       <div class="empty-icon">&#128269;</div>
       No points found${state.search ? ' matching "' + esc(state.search) + '"' : ''}
     </div></td></tr>`;
@@ -455,6 +466,7 @@ async function loadPoints() {
       <div>${esc(p.name)}</div>
       <div class="point-path">${esc(p.path)}</div>
     </td>
+    <td><span class="point-value point-value-na" data-value-path="${esc(p.path)}">&mdash;</span></td>
     <td><span class="point-type">${esc(p.type)}</span></td>
     <td>${esc(p.group)}</td>
   </tr>`).join('');
@@ -470,6 +482,8 @@ async function loadPoints() {
     });
   });
 
+  loadValues(data.points.map(p => p.path));
+
   const { page, pages, total } = data;
   let pagHtml = `<span class="page-info">${total.toLocaleString()} points &mdash; page ${page} of ${pages}</span>`;
   if (pages > 1) {
@@ -479,6 +493,29 @@ async function loadPoints() {
   $('#pagination').innerHTML = pagHtml;
   if ($('#prev-page')) $('#prev-page').onclick = () => { state.page--; loadPoints(); };
   if ($('#next-page')) $('#next-page').onclick = () => { state.page++; loadPoints(); };
+}
+
+let valueRefreshTimer;
+async function loadValues(paths) {
+  try {
+    const params = new URLSearchParams();
+    paths.forEach(p => params.append('paths[]', p));
+    const vals = await api('/api/values?' + params);
+    document.querySelectorAll('[data-value-path]').forEach(el => {
+      const v = vals[el.dataset.valuePath];
+      if (v !== undefined) {
+        el.textContent = v;
+        el.classList.remove('point-value-na');
+      }
+    });
+  } catch (e) {}
+  clearTimeout(valueRefreshTimer);
+  valueRefreshTimer = setTimeout(() => {
+    const visible = document.querySelectorAll('[data-value-path]');
+    if (visible.length > 0) {
+      loadValues(Array.from(visible).map(el => el.dataset.valuePath));
+    }
+  }, 10000);
 }
 
 function esc(s) {

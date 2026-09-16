@@ -9,6 +9,8 @@ from flask import Flask, jsonify, request, send_from_directory
 
 from point_manager import POINTS_DIR, POINTS_FILE, load_point_selections
 
+VALUES_FILE = POINTS_DIR / "values.json"
+
 logger = logging.getLogger("niagara-ha.web")
 
 app = Flask(__name__, static_folder="/app/static")
@@ -16,6 +18,7 @@ app = Flask(__name__, static_folder="/app/static")
 PAGE_SIZE = 50
 
 _cache: dict = {"mtime": 0.0, "data": []}
+_values_cache: dict = {"mtime": 0.0, "data": {}}
 
 
 def _load_points() -> list[dict]:
@@ -55,6 +58,30 @@ def stats():
         "disabled": total - enabled,
         "groups": sorted(groups.values(), key=lambda g: g["name"]),
     })
+
+
+def _load_values() -> dict[str, str]:
+    try:
+        mtime = VALUES_FILE.stat().st_mtime
+    except OSError:
+        return {}
+    if mtime != _values_cache["mtime"]:
+        try:
+            with open(VALUES_FILE) as f:
+                _values_cache["data"] = json.load(f)
+        except (json.JSONDecodeError, OSError):
+            _values_cache["data"] = {}
+        _values_cache["mtime"] = mtime
+    return _values_cache["data"]
+
+
+@app.route("/api/values")
+def values():
+    vals = _load_values()
+    paths = request.args.getlist("paths[]")
+    if paths:
+        vals = {p: vals[p] for p in paths if p in vals}
+    return jsonify(vals)
 
 
 @app.route("/api/points")

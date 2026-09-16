@@ -15,6 +15,7 @@ from pathlib import Path
 from mqtt_publisher import MqttPublisher
 from obix_client import ObixClient, ObixError
 from point_manager import (
+    POINTS_DIR,
     POINTS_FILE,
     filter_enabled,
     load_point_selections,
@@ -23,6 +24,7 @@ from point_manager import (
 from point_mapper import map_point
 
 OPTIONS_PATH = Path("/data/options.json")
+VALUES_FILE = POINTS_DIR / "values.json"
 RECONNECT_DELAY = 10
 MAX_RECONNECT_DELAY = 300
 
@@ -187,6 +189,8 @@ def main() -> None:
 
         logger.debug("Poll: %d changed, %d unchanged, %d faulted", changed, unchanged, faulted)
 
+        _write_values_cache(last_values)
+
         if not obix.connected:
             mqtt_pub.publish_availability(False)
             continue
@@ -225,6 +229,17 @@ def _publish_entities(
         len(entity_maps), initial_values,
     )
     return entity_maps
+
+
+def _write_values_cache(values: dict[str, str]) -> None:
+    try:
+        POINTS_DIR.mkdir(parents=True, exist_ok=True)
+        tmp = VALUES_FILE.with_suffix(".tmp")
+        with open(tmp, "w") as f:
+            json.dump(values, f)
+        tmp.replace(VALUES_FILE)
+    except OSError as e:
+        logger.debug("Failed to write values cache: %s", e)
 
 
 def _sleep_interruptible(seconds: int) -> None:
