@@ -65,8 +65,17 @@ def _friendly_name(point: NiagaraPoint) -> str:
     return " / ".join(relevant[-3:])
 
 
+def _get_group(point: NiagaraPoint) -> str:
+    skip = {"config", "Drivers", "points", "out", ""}
+    parts = [p for p in point.path.strip("/").split("/") if p not in skip]
+    if len(parts) >= 2:
+        return parts[0]
+    return "Ungrouped"
+
+
 def map_point(
-    point: NiagaraPoint, topic_prefix: str, device_name: str = "Niagara BMS"
+    point: NiagaraPoint, topic_prefix: str, device_name: str = "Niagara BMS",
+    group: str = "",
 ) -> Optional[dict[str, Any]]:
     """Convert a NiagaraPoint into an MQTT discovery payload dict.
 
@@ -80,12 +89,17 @@ def map_point(
     state_topic = f"{base_topic}/state"
     availability_topic = f"{topic_prefix}/bridge/availability"
 
+    group_name = group or _get_group(point)
+    device_id = f"niagara_{_stable_id(topic_prefix + '/' + group_name)}"
+    display_name = f"{device_name} — {group_name}"
+
     device_info = {
-        "identifiers": [f"niagara_{_stable_id(topic_prefix)}"],
-        "name": device_name,
+        "identifiers": [device_id],
+        "name": display_name,
         "manufacturer": "Tridium",
         "model": "Niagara 4",
         "sw_version": "oBIX",
+        "via_device": f"niagara_{_stable_id(topic_prefix)}",
     }
 
     if point.point_type == "boolean":

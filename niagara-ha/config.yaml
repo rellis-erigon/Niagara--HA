@@ -1,6 +1,6 @@
 name: "Niagara BMS Bridge"
 description: "Connect Tridium Niagara 4 BMS to Home Assistant via oBIX"
-version: "0.1.3"
+version: "0.2.0"
 slug: niagara-ha
 url: "https://github.com/rellis-erigon/niagara--ha"
 init: false
@@ -23,6 +23,7 @@ options:
   verify_ssl: false
   poll_interval_seconds: 30
   point_filter: ""
+  device_name: "Niagara BMS"
   mqtt_topic_prefix: "niagara"
   log_level: "info"
 schema:
@@ -34,6 +35,7 @@ schema:
   verify_ssl: bool
   poll_interval_seconds: int(5,3600)
   point_filter: str?
+  device_name: str
   mqtt_topic_prefix: str
   log_level: list(debug|info|warning|error)
 services:

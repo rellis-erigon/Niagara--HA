@@ -23,6 +23,9 @@ configuration:
   point_filter:
     name: Point Filter
     description: Optional path prefix to limit discovery (e.g. /config/AHU/). Leave empty for all points.
+  device_name:
+    name: Device Name
+    description: Base name for devices in Home Assistant (groups appear as "Name — Group")
   mqtt_topic_prefix:
     name: MQTT Topic Prefix
     description: Prefix for all MQTT topics published by this add-on

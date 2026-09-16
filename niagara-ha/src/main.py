@@ -14,6 +14,12 @@ from pathlib import Path
 
 from mqtt_publisher import MqttPublisher
 from obix_client import ObixClient, ObixError
+from point_manager import (
+    filter_enabled,
+    get_group,
+    load_point_selections,
+    save_point_selections,
+)
 from point_mapper import map_point
 
 OPTIONS_PATH = Path("/data/options.json")
@@ -59,7 +65,7 @@ def main() -> None:
     opts = load_options()
     setup_logging(opts.get("log_level", "info"))
 
-    logger.info("Niagara BMS Bridge v0.1.3 starting")
+    logger.info("Niagara BMS Bridge v0.2.0 starting")
     logger.info("Target: %s:%d (HTTPS=%s)", opts["niagara_host"], opts["niagara_port"], opts["use_https"])
 
     if not opts.get("niagara_host"):
@@ -86,6 +92,7 @@ def main() -> None:
     poll_interval = opts.get("poll_interval_seconds", 30)
     point_filter = opts.get("point_filter", "")
     topic_prefix = opts.get("mqtt_topic_prefix", "niagara")
+    device_name = opts.get("device_name", "Niagara BMS")
     reconnect_delay = RECONNECT_DELAY
 
     if not mqtt_pub.connect():
@@ -94,6 +101,7 @@ def main() -> None:
     time.sleep(2)
 
     discovered_points = []
+    active_points = []
     entity_maps = {}
 
     while not _shutdown:
@@ -105,9 +113,18 @@ def main() -> None:
                 discovered_points = obix.discover_points(point_filter)
                 logger.info("Found %d points", len(discovered_points))
 
+                existing_selections = load_point_selections()
+                selections = save_point_selections(discovered_points, existing_selections)
+                active_points = filter_enabled(discovered_points, selections)
+                logger.info(
+                    "Active points: %d of %d (edit /config/niagara-ha/points.yaml to change)",
+                    len(active_points), len(discovered_points),
+                )
+
                 entity_maps = {}
-                for pt in discovered_points:
-                    mapped = map_point(pt, topic_prefix)
+                for pt in active_points:
+                    group = selections.get(pt.path, {}).get("group", "")
+                    mapped = map_point(pt, topic_prefix, device_name, group)
                     if mapped:
                         entity_maps[pt.path] = mapped
                         mqtt_pub.publish_discovery(mapped)
@@ -117,7 +134,7 @@ def main() -> None:
                 mqtt_pub.publish_availability(True)
 
                 initial_values = 0
-                for pt in discovered_points:
+                for pt in active_points:
                     mapped = entity_maps.get(pt.path)
                     if mapped and pt.value is not None:
                         mqtt_pub.publish_state(mapped["state_topic"], str(pt.value))
@@ -135,8 +152,8 @@ def main() -> None:
                 reconnect_delay = min(reconnect_delay * 2, MAX_RECONNECT_DELAY)
                 continue
 
-        updated = obix.poll_points(discovered_points)
-        discovered_points = updated
+        updated = obix.poll_points(active_points)
+        active_points = updated
 
         published = 0
         faulted = 0
