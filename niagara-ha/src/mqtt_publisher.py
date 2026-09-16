@@ -75,11 +75,11 @@ class MqttPublisher:
             logger.warning("Failed to publish discovery to %s", topic)
 
     def publish_state(self, state_topic: str, value: str) -> None:
-        self._client.publish(state_topic, value, qos=0, retain=True)
+        self._client.publish(state_topic, value, qos=0, retain=False)
 
     def publish_attributes(self, state_topic: str, attributes: dict) -> None:
         attr_topic = f"{state_topic}/attributes"
-        self._client.publish(attr_topic, json.dumps(attributes), qos=0, retain=True)
+        self._client.publish(attr_topic, json.dumps(attributes), qos=0, retain=False)
 
     def publish_availability(self, available: bool) -> None:
         topic = f"{self._topic_prefix}/bridge/availability"

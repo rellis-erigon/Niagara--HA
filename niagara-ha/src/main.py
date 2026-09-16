@@ -72,7 +72,7 @@ def main() -> None:
     opts = load_options()
     setup_logging(opts.get("log_level", "info"))
 
-    logger.info("Niagara BMS Bridge v0.3.0 starting")
+    logger.info("Niagara BMS Bridge v0.3.1 starting")
     logger.info("Target: %s:%d (HTTPS=%s)", opts["niagara_host"], opts["niagara_port"], opts["use_https"])
 
     if not opts.get("niagara_host"):
@@ -113,6 +113,8 @@ def main() -> None:
     entity_maps = {}
     selections = {}
     points_mtime = 0.0
+    last_values: dict[str, str] = {}
+    last_statuses: dict[str, str] = {}
 
     while not _shutdown:
         if not obix.connected:
@@ -133,6 +135,8 @@ def main() -> None:
                 )
 
                 entity_maps = _publish_entities(active_points, selections, mqtt_pub, topic_prefix, device_name)
+                last_values.clear()
+                last_statuses.clear()
             else:
                 logger.warning(
                     "Connection failed — retrying in %ds", reconnect_delay
@@ -148,30 +152,40 @@ def main() -> None:
             selections = load_point_selections()
             active_points = filter_enabled(discovered_points, selections)
             entity_maps = _publish_entities(active_points, selections, mqtt_pub, topic_prefix, device_name)
+            last_values.clear()
+            last_statuses.clear()
             logger.info("Reloaded: %d active points", len(active_points))
 
         updated = obix.poll_points(active_points, max_workers=poll_workers)
         active_points = updated
 
-        published = 0
+        changed = 0
+        unchanged = 0
         faulted = 0
         for pt in updated:
             mapped = entity_maps.get(pt.path)
             if not mapped:
                 continue
             if pt.value is not None:
-                mqtt_pub.publish_state(mapped["state_topic"], str(pt.value))
-                published += 1
+                val_str = str(pt.value)
+                if last_values.get(pt.path) != val_str:
+                    mqtt_pub.publish_state(mapped["state_topic"], val_str)
+                    last_values[pt.path] = val_str
+                    changed += 1
+                else:
+                    unchanged += 1
             else:
                 faulted += 1
 
             if pt.status and pt.status != "ok":
-                mqtt_pub.publish_attributes(
-                    mapped["state_topic"],
-                    {"niagara_status": pt.status, "niagara_path": pt.path},
-                )
+                if last_statuses.get(pt.path) != pt.status:
+                    mqtt_pub.publish_attributes(
+                        mapped["state_topic"],
+                        {"niagara_status": pt.status, "niagara_path": pt.path},
+                    )
+                    last_statuses[pt.path] = pt.status
 
-        logger.debug("Poll: %d published, %d without value", published, faulted)
+        logger.debug("Poll: %d changed, %d unchanged, %d faulted", changed, unchanged, faulted)
 
         if not obix.connected:
             mqtt_pub.publish_availability(False)

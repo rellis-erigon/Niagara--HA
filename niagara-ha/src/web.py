@@ -15,10 +15,19 @@ app = Flask(__name__, static_folder="/app/static")
 
 PAGE_SIZE = 50
 
+_cache: dict = {"mtime": 0.0, "data": []}
+
 
 def _load_points() -> list[dict]:
-    sel = load_point_selections()
-    return list(sel.values())
+    try:
+        mtime = POINTS_FILE.stat().st_mtime
+    except OSError:
+        return []
+    if mtime != _cache["mtime"]:
+        sel = load_point_selections()
+        _cache["data"] = list(sel.values())
+        _cache["mtime"] = mtime
+    return _cache["data"]
 
 
 @app.route("/")
@@ -169,6 +178,7 @@ def _write_selections(selections: dict[str, dict]) -> None:
 
     with open(POINTS_FILE, "w") as f:
         yaml.dump(output, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
+    _cache["mtime"] = 0.0
 
 
 if __name__ == "__main__":
