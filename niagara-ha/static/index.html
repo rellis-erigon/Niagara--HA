@@ -315,11 +315,14 @@ tr:hover td { background: var(--row-hover); }
 
 <script>
 const $ = s => document.querySelector(s);
+const BASE = window.location.pathname.replace(/\/+$/, '');
 let state = { group: '', search: '', status: '', page: 1 };
 let debounceTimer;
 
 async function api(path, opts) {
-  const res = await fetch(path, opts);
+  const url = BASE + (path.startsWith('/') ? path : '/' + path);
+  const res = await fetch(url, opts);
+  if (!res.ok) throw new Error(res.statusText);
   return res.json();
 }
 
@@ -331,14 +334,34 @@ function toast(msg) {
 }
 
 async function loadStats() {
-  const data = await api('/api/stats');
-  $('#stats').innerHTML = `
-    <div class="stat"><div class="stat-value">${data.total.toLocaleString()}</div><div class="stat-label">Total Points</div></div>
-    <div class="stat stat-enabled"><div class="stat-value">${data.enabled.toLocaleString()}</div><div class="stat-label">Enabled</div></div>
-    <div class="stat stat-disabled"><div class="stat-value">${data.disabled.toLocaleString()}</div><div class="stat-label">Disabled</div></div>
-    <div class="stat"><div class="stat-value">${data.groups.length}</div><div class="stat-label">Groups</div></div>
-  `;
-  renderGroups(data.groups);
+  try {
+    const data = await api('/api/stats');
+    if (data.total === 0) {
+      $('#stats').innerHTML = '';
+      $('#group-list').innerHTML = `<div class="empty" style="padding:24px">
+        <div class="empty-icon">&#9203;</div>
+        <div>Waiting for point discovery&hellip;</div>
+        <div style="font-size:0.8rem;margin-top:8px">
+          Configure the Niagara connection in the add-on settings and restart.
+          Points will appear here once discovered.
+        </div>
+      </div>`;
+      return;
+    }
+    $('#stats').innerHTML = `
+      <div class="stat"><div class="stat-value">${data.total.toLocaleString()}</div><div class="stat-label">Total Points</div></div>
+      <div class="stat stat-enabled"><div class="stat-value">${data.enabled.toLocaleString()}</div><div class="stat-label">Enabled</div></div>
+      <div class="stat stat-disabled"><div class="stat-value">${data.disabled.toLocaleString()}</div><div class="stat-label">Disabled</div></div>
+      <div class="stat"><div class="stat-value">${data.groups.length}</div><div class="stat-label">Groups</div></div>
+    `;
+    renderGroups(data.groups);
+  } catch (e) {
+    $('#group-list').innerHTML = `<div class="empty" style="padding:24px">
+      <div class="empty-icon">&#9888;</div>
+      <div>Could not load points</div>
+      <div style="font-size:0.8rem;margin-top:8px">${esc(e.message)}</div>
+    </div>`;
+  }
 }
 
 function renderGroups(groups) {
@@ -403,7 +426,14 @@ async function loadPoints() {
   if (state.status) params.set('status', state.status);
   params.set('page', state.page);
 
-  const data = await api('/api/points?' + params);
+  let data;
+  try {
+    data = await api('/api/points?' + params);
+  } catch (e) {
+    $('#point-table').innerHTML = `<tr><td colspan="4"><div class="empty">
+      <div class="empty-icon">&#9888;</div>Failed to load points</div></td></tr>`;
+    return;
+  }
 
   if (data.points.length === 0) {
     $('#point-table').innerHTML = `<tr><td colspan="4"><div class="empty">
