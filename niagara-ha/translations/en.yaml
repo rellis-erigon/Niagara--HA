@@ -26,6 +26,18 @@ configuration:
   device_name:
     name: Device Name
     description: Base name for devices in Home Assistant (groups appear as "Name — Group")
+  mqtt_host:
+    name: MQTT Host
+    description: Override MQTT broker hostname (leave empty to auto-detect from Home Assistant)
+  mqtt_port:
+    name: MQTT Port
+    description: MQTT broker port (default 1883)
+  mqtt_user:
+    name: MQTT Username
+    description: Override MQTT username (leave empty to auto-detect)
+  mqtt_password:
+    name: MQTT Password
+    description: Override MQTT password (leave empty to auto-detect)
   mqtt_topic_prefix:
     name: MQTT Topic Prefix
     description: Prefix for all MQTT topics published by this add-on

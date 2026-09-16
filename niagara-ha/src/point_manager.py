@@ -56,7 +56,7 @@ def save_point_selections(
                 "name": pt.name,
                 "group": group,
                 "type": pt.point_type,
-                "enabled": True,
+                "enabled": False,
             }
         merged[pt.path] = entry
 
@@ -72,8 +72,8 @@ def save_point_selections(
     output = {
         "_comment": (
             "Edit this file to enable/disable points. "
-            "Set enabled: false to exclude a point from Home Assistant. "
-            "New points discovered on restart are enabled by default."
+            "Set enabled: true to include a point in Home Assistant. "
+            "New points discovered on restart are disabled by default."
         ),
         "points": ordered,
     }
@@ -81,7 +81,7 @@ def save_point_selections(
     with open(POINTS_FILE, "w") as f:
         yaml.dump(output, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
 
-    enabled = sum(1 for e in merged.values() if e.get("enabled", True))
+    enabled = sum(1 for e in merged.values() if e.get("enabled", False))
     logger.info(
         "Point selections: %d total, %d enabled, %d disabled (file: %s)",
         len(merged), enabled, len(merged) - enabled, POINTS_FILE,
@@ -93,10 +93,10 @@ def filter_enabled(
     points: list[NiagaraPoint], selections: dict[str, dict]
 ) -> list[NiagaraPoint]:
     if not selections:
-        return points
+        return []
     enabled = []
     for pt in points:
         entry = selections.get(pt.path)
-        if entry is None or entry.get("enabled", True):
+        if entry and entry.get("enabled", False):
             enabled.append(pt)
     return enabled
