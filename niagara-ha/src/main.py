@@ -15,10 +15,12 @@ from pathlib import Path
 from mqtt_publisher import MqttPublisher
 from obix_client import ObixClient, ObixError
 from point_manager import (
+    DEVICE_FOLDERS_FILE,
     POINTS_DIR,
     POINTS_FILE,
     filter_enabled,
     load_auto_enable_rules,
+    load_device_folders,
     load_point_selections,
     save_point_selections,
 )
@@ -115,6 +117,7 @@ def main() -> None:
     active_points: list = []
     entity_maps: dict = {}
     points_mtime = 0.0
+    folders_mtime = 0.0
     discovered_count = 0
     last_values: dict[str, str] = _load_values_cache()
     last_statuses: dict[str, str] = {}
@@ -137,8 +140,10 @@ def main() -> None:
                 auto_patterns = list(dict.fromkeys(config_patterns + file_patterns))
                 if auto_patterns:
                     logger.info("Auto-enable rules: %d patterns active", len(auto_patterns))
-                selections = save_point_selections(discovered_points, existing_selections, auto_patterns, device_depth)
+                device_folders = load_device_folders()
+                selections = save_point_selections(discovered_points, existing_selections, auto_patterns, device_depth, device_folders)
                 points_mtime = _get_file_mtime(POINTS_FILE)
+                folders_mtime = _get_file_mtime(DEVICE_FOLDERS_FILE)
                 active_points = filter_enabled(discovered_points, selections)
                 logger.info(
                     "Active points: %d of %d (use the web UI or edit points.yaml)",
@@ -146,7 +151,7 @@ def main() -> None:
                 )
 
                 del discovered_points, existing_selections
-                entity_maps = _publish_entities(active_points, selections, mqtt_pub, topic_prefix, device_name, last_values, device_depth)
+                entity_maps = _publish_entities(active_points, selections, mqtt_pub, topic_prefix, device_name, last_values, device_depth, device_folders)
                 del selections
                 last_statuses.clear()
             else:
@@ -158,16 +163,22 @@ def main() -> None:
                 continue
 
         current_mtime = _get_file_mtime(POINTS_FILE)
-        if current_mtime > points_mtime:
+        current_folders_mtime = _get_file_mtime(DEVICE_FOLDERS_FILE)
+        if current_mtime > points_mtime or current_folders_mtime > folders_mtime:
+            if current_mtime > points_mtime:
+                logger.info("points.yaml changed — reloading selections")
+            if current_folders_mtime > folders_mtime:
+                logger.info("device_folders.yaml changed — reloading device grouping")
             points_mtime = current_mtime
-            logger.info("points.yaml changed — reloading selections")
+            folders_mtime = current_folders_mtime
             selections = load_point_selections()
+            device_folders = load_device_folders()
             enabled_paths = {p for p, e in selections.items() if e.get("enabled", False)}
             active_points = [pt for pt in active_points if pt.path in enabled_paths]
             new_paths = enabled_paths - {pt.path for pt in active_points}
             if new_paths:
                 logger.info("New enabled points detected (%d) — will pick up on next reconnect", len(new_paths))
-            entity_maps = _publish_entities(active_points, selections, mqtt_pub, topic_prefix, device_name, last_values, device_depth)
+            entity_maps = _publish_entities(active_points, selections, mqtt_pub, topic_prefix, device_name, last_values, device_depth, device_folders)
             del selections
             last_statuses.clear()
             logger.info("Reloaded: %d active points", len(active_points))
@@ -219,13 +230,14 @@ def main() -> None:
 def _publish_entities(
     active_points, selections, mqtt_pub, topic_prefix, device_name,
     cached_values: dict[str, str] | None = None, device_depth: int = 0,
+    device_folders: list[str] | None = None,
 ) -> dict:
     entity_maps = {}
     for pt in active_points:
         entry = selections.get(pt.path, {})
         group = entry.get("group", "")
         custom_name = entry.get("custom_name", "")
-        mapped = map_point(pt, topic_prefix, device_name, group, custom_name, device_depth)
+        mapped = map_point(pt, topic_prefix, device_name, group, custom_name, device_depth, device_folders)
         if mapped:
             entity_maps[pt.path] = mapped
             mqtt_pub.publish_discovery(mapped)

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.3
+
+- **Feature**: GUI-based device folder selection — click "Use as Device" on any folder in the tree to make all its sub-points (including subfolders) appear as one HA device
+- Device folders are saved in `device_folders.yaml` and hot-reloaded without restart
+- Replaces the need to set `device_depth` manually in config
+
 ## 0.5.2
 
 - **Feature**: `device_depth` config option — controls how many folder levels define a device. Set to 4 to group `JACE/BMS/HVAC/Room333/Cooling/Temp` under device "Room333" instead of splitting subfolders into separate devices. Default 0 uses the immediate parent folder.

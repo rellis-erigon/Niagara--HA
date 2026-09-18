@@ -453,6 +453,24 @@ tr:hover td { background: var(--row-hover); }
   justify-content: center;
   flex-shrink: 0;
 }
+.device-btn {
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.7rem;
+  background: var(--card);
+  color: var(--muted);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.device-btn:hover { border-color: var(--primary); color: var(--primary); }
+.device-btn.is-device {
+  background: var(--primary);
+  color: white;
+  border-color: var(--primary);
+}
+.device-btn.is-device:hover { background: var(--primary-hover); }
 </style>
 </head>
 <body>
@@ -516,6 +534,7 @@ tr:hover td { background: var(--row-hover); }
 const $ = s => document.querySelector(s);
 const BASE = window.location.pathname.replace(/\/+$/, '');
 let state = { prefix: '', search: '', status: '', page: 1 };
+let deviceFolders = [];
 let debounceTimer;
 
 async function api(path, opts) {
@@ -606,9 +625,15 @@ function renderTree(children) {
   el.innerHTML = children.map(c => {
     const allEnabled = c.enabled === c.total && c.total > 0;
     const someEnabled = c.enabled > 0;
+    const isDevice = deviceFolders.includes(c.path);
     return `<div class="tree-item" data-path="${esc(c.path)}">
       <span class="tree-item-name" title="${esc(c.name)}">${esc(c.name)}</span>
       <div class="tree-item-right">
+        <button class="device-btn ${isDevice ? 'is-device' : ''}"
+                data-device-path="${esc(c.path)}"
+                title="${isDevice ? 'Remove as HA device' : 'Use as HA device — all sub-points become one device'}">
+          ${isDevice ? '&#10003; Device' : 'Use as Device'}
+        </button>
         ${c.enabled > 0 ? `<span class="group-badge badge-enabled">${c.enabled}</span>` : ''}
         <span class="group-badge badge-total">${c.total.toLocaleString()}</span>
         <button class="tree-enable-btn ${someEnabled ? 'group-toggle-on' : 'group-toggle-off'}"
@@ -642,6 +667,21 @@ function renderTree(children) {
       loadStats();
       loadTree();
       loadPoints();
+    });
+  });
+
+  el.querySelectorAll('.device-btn').forEach(btn => {
+    btn.addEventListener('click', async e => {
+      e.stopPropagation();
+      const folder = btn.dataset.devicePath;
+      const data = await api('/api/device-folders/toggle', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ folder }),
+      });
+      deviceFolders = data.folders;
+      toast(data.action === 'added' ? `"${folder}" set as HA device` : `"${folder}" removed as device`);
+      loadTree();
     });
   });
 }
@@ -1024,9 +1064,20 @@ document.querySelectorAll('.filter-btns .btn').forEach(btn => {
   });
 });
 
-loadStats();
-loadTree();
-loadPoints();
+async function loadDeviceFolders() {
+  try {
+    const data = await api('/api/device-folders');
+    deviceFolders = data.folders || [];
+  } catch (e) {
+    deviceFolders = [];
+  }
+}
+
+loadDeviceFolders().then(() => {
+  loadStats();
+  loadTree();
+  loadPoints();
+});
 </script>
 </body>
 </html>

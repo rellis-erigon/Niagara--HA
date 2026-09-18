@@ -13,10 +13,12 @@ from point_manager import (
     PROFILES,
     get_tree_children,
     load_auto_enable_rules,
+    load_device_folders,
     load_point_selections,
     matches_auto_enable,
     parse_path_segments,
     save_auto_enable_rules,
+    save_device_folders,
 )
 
 VALUES_FILE = POINTS_DIR / "values.json"
@@ -180,6 +182,38 @@ def rename_point():
         _write_selections(selections)
         return jsonify({"ok": True, "path": path, "custom_name": custom_name})
     return jsonify({"error": "point not found"}), 404
+
+
+@app.route("/api/device-folders")
+def get_device_folders():
+    folders = load_device_folders()
+    return jsonify({"folders": folders})
+
+
+@app.route("/api/device-folders", methods=["POST"])
+def set_device_folders():
+    data = request.get_json()
+    folders = data.get("folders", [])
+    folders = [str(f).strip() for f in folders if str(f).strip()]
+    save_device_folders(folders)
+    return jsonify({"ok": True, "folders": folders})
+
+
+@app.route("/api/device-folders/toggle", methods=["POST"])
+def toggle_device_folder():
+    data = request.get_json()
+    folder = data.get("folder", "").strip()
+    if not folder:
+        return jsonify({"error": "folder required"}), 400
+    folders = load_device_folders()
+    if folder in folders:
+        folders.remove(folder)
+        action = "removed"
+    else:
+        folders.append(folder)
+        action = "added"
+    save_device_folders(folders)
+    return jsonify({"ok": True, "folder": folder, "action": action, "folders": folders})
 
 
 @app.route("/api/groups/toggle", methods=["POST"])

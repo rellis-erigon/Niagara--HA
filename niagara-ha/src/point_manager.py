@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 POINTS_DIR = Path("/config/niagara-ha")
 POINTS_FILE = POINTS_DIR / "points.yaml"
 RULES_FILE = POINTS_DIR / "auto_enable_rules.yaml"
+DEVICE_FOLDERS_FILE = POINTS_DIR / "device_folders.yaml"
 
 SKIP_SEGMENTS = {"config", "Drivers", "points", "out", "exports", ""}
 PATH_BOILERPLATE = {"config", "Drivers", "NiagaraNetwork", "ObixNetwork", "points", "out", "exports", ""}
@@ -68,13 +69,47 @@ PROFILES = {
 }
 
 
-def get_group(point: NiagaraPoint, device_depth: int = 0) -> str:
+def get_group(point: NiagaraPoint, device_depth: int = 0, device_folders: list[str] | None = None) -> str:
     parts = [p for p in point.path.strip("/").split("/") if p not in SKIP_SEGMENTS]
     if len(parts) < 2:
         return "Ungrouped"
+    point_path = "/".join(parts[:-1])
+    if device_folders:
+        best = ""
+        for folder in device_folders:
+            if point_path == folder or point_path.startswith(folder + "/"):
+                if len(folder) > len(best):
+                    best = folder
+        if best:
+            return best
     if device_depth > 0:
         return "/".join(parts[:device_depth])
-    return "/".join(parts[:-1])
+    return point_path
+
+
+def load_device_folders() -> list[str]:
+    if not DEVICE_FOLDERS_FILE.exists():
+        return []
+    try:
+        with open(DEVICE_FOLDERS_FILE) as f:
+            data = yaml.safe_load(f)
+        if isinstance(data, dict) and "folders" in data:
+            return [str(f) for f in data["folders"] if f]
+        return []
+    except Exception as e:
+        logger.warning("Failed to read %s: %s", DEVICE_FOLDERS_FILE, e)
+        return []
+
+
+def save_device_folders(folders: list[str]) -> None:
+    POINTS_DIR.mkdir(parents=True, exist_ok=True)
+    output = {
+        "_comment": "Folders marked as HA devices. All points under a folder are grouped into one device.",
+        "folders": sorted(set(folders)),
+    }
+    with open(DEVICE_FOLDERS_FILE, "w") as f:
+        yaml.safe_dump(output, f, default_flow_style=False, sort_keys=False, width=10000)
+    logger.info("Saved %d device folders", len(folders))
 
 
 def parse_path_segments(path: str) -> list[str]:
@@ -250,6 +285,7 @@ def save_point_selections(
     existing: dict[str, dict],
     auto_enable_patterns: list[str] | None = None,
     device_depth: int = 0,
+    device_folders: list[str] | None = None,
 ) -> dict[str, dict]:
     POINTS_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -259,7 +295,7 @@ def save_point_selections(
     auto_enabled_count = 0
     merged: dict[str, dict] = {}
     for pt in discovered:
-        group = get_group(pt, device_depth)
+        group = get_group(pt, device_depth, device_folders)
         if pt.path in existing:
             entry = existing[pt.path].copy()
             entry["name"] = pt.name
