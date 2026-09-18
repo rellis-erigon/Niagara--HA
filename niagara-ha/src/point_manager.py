@@ -135,16 +135,69 @@ def get_tree_children(points: list[dict], prefix: str = "") -> list[dict]:
 _last_good: dict[str, dict] = {}
 
 
+def _fast_load_points_yaml(filepath: Path) -> dict[str, dict]:
+    """Parse points.yaml without full YAML parsing.
+
+    The file is written by us in a predictable format: a flat list of
+    dicts under "points:" with keys path, name, group, type, enabled.
+    Reading it line-by-line avoids the massive memory overhead of
+    yaml.safe_load on 100K+ line files.
+    """
+    result: dict[str, dict] = {}
+    current: dict | None = None
+    in_points = False
+
+    with open(filepath) as f:
+        for line in f:
+            stripped = line.strip()
+            if not in_points:
+                if stripped == "points:":
+                    in_points = True
+                continue
+
+            if stripped.startswith("- "):
+                if current and "path" in current:
+                    result[current["path"]] = current
+                rest = stripped[2:]
+                current = {}
+                if rest:
+                    _parse_kv(rest, current)
+            elif stripped and current is not None:
+                _parse_kv(stripped, current)
+            elif not stripped:
+                continue
+            elif not stripped.startswith(" ") and not stripped.startswith("-"):
+                break
+
+    if current and "path" in current:
+        result[current["path"]] = current
+    return result
+
+
+def _parse_kv(text: str, target: dict) -> None:
+    colon = text.find(":")
+    if colon < 1:
+        return
+    key = text[:colon].strip()
+    val = text[colon + 1:].strip()
+    if val.startswith("'") and val.endswith("'"):
+        val = val[1:-1]
+    elif val.startswith('"') and val.endswith('"'):
+        val = val[1:-1]
+    if key == "enabled":
+        target[key] = val.lower() == "true"
+    else:
+        target[key] = val
+
+
 def load_point_selections() -> dict[str, dict]:
     global _last_good
     if not POINTS_FILE.exists():
         return {}
     try:
-        with open(POINTS_FILE) as f:
-            data = yaml.safe_load(f)
-        if not isinstance(data, dict) or "points" not in data:
+        result = _fast_load_points_yaml(POINTS_FILE)
+        if not result:
             return _last_good
-        result = {p["path"]: p for p in data["points"] if "path" in p}
         _last_good = result
         return result
     except Exception as e:

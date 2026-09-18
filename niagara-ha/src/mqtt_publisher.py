@@ -87,16 +87,14 @@ class MqttPublisher:
         self._client.publish(topic, payload, qos=1, retain=True)
 
     def remove_stale_discoveries(
-        self, current_topics: set[str], disabled_topics: set[str] | None = None,
+        self, current_topics: set[str],
     ) -> None:
         stale = self._published_discoveries - current_topics
-        if disabled_topics:
-            stale |= disabled_topics
         for topic in stale:
             self._client.publish(topic, "", qos=1, retain=True)
         if stale:
-            logger.info("Cleared %d stale/disabled discovery topics", len(stale))
-        self._published_discoveries = current_topics
+            logger.info("Cleared %d stale discovery topics", len(stale))
+        self._published_discoveries = current_topics.copy()
 
     def disconnect(self) -> None:
         self.publish_availability(False)
