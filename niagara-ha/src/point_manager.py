@@ -87,6 +87,24 @@ def get_group(point: NiagaraPoint, device_depth: int = 0, device_folders: list[s
     return point_path
 
 
+def get_group_from_path(path: str, device_depth: int = 0, device_folders: list[str] | None = None) -> str:
+    parts = [p for p in path.strip("/").split("/") if p not in SKIP_SEGMENTS]
+    if len(parts) < 2:
+        return "Ungrouped"
+    point_path = "/".join(parts[:-1])
+    if device_folders:
+        best = ""
+        for folder in device_folders:
+            if point_path == folder or point_path.startswith(folder + "/"):
+                if len(folder) > len(best):
+                    best = folder
+        if best:
+            return best
+    if device_depth > 0:
+        return "/".join(parts[:device_depth])
+    return point_path
+
+
 def load_device_folders() -> list[str]:
     if not DEVICE_FOLDERS_FILE.exists():
         return []

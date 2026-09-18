@@ -11,6 +11,7 @@ from point_manager import (
     POINTS_DIR,
     POINTS_FILE,
     PROFILES,
+    get_group_from_path,
     get_tree_children,
     load_auto_enable_rules,
     load_device_folders,
@@ -214,6 +215,21 @@ def toggle_device_folder():
         action = "added"
     save_device_folders(folders)
     return jsonify({"ok": True, "folder": folder, "action": action, "folders": folders})
+
+
+@app.route("/api/device-folders/apply", methods=["POST"])
+def apply_device_folders():
+    folders = load_device_folders()
+    selections = load_point_selections()
+    count = 0
+    for entry in selections.values():
+        path = entry.get("path", "")
+        new_group = get_group_from_path(path, device_folders=folders)
+        if entry.get("group") != new_group:
+            entry["group"] = new_group
+            count += 1
+    _write_selections(selections)
+    return jsonify({"ok": True, "updated": count, "folders": folders})
 
 
 @app.route("/api/groups/toggle", methods=["POST"])

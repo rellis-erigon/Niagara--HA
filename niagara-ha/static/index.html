@@ -484,7 +484,10 @@ tr:hover td { background: var(--row-hover); }
   <div class="sidebar">
     <div class="sidebar-header">
       <span>Browse</span>
-      <span style="font-size:0.75rem;color:var(--muted)" id="tree-count"></span>
+      <div style="display:flex;align-items:center;gap:8px">
+        <span style="font-size:0.75rem;color:var(--muted)" id="tree-count"></span>
+        <button class="btn btn-sm btn-primary" id="btn-apply-devices" style="display:none" title="Recalculate device groupings and update HA entities">Apply Changes</button>
+      </div>
     </div>
     <div class="breadcrumb" id="breadcrumb"></div>
     <div class="group-list" id="tree-list">
@@ -535,6 +538,7 @@ const $ = s => document.querySelector(s);
 const BASE = window.location.pathname.replace(/\/+$/, '');
 let state = { prefix: '', search: '', status: '', page: 1 };
 let deviceFolders = [];
+let deviceFoldersChanged = false;
 let debounceTimer;
 
 async function api(path, opts) {
@@ -680,6 +684,8 @@ function renderTree(children) {
         body: JSON.stringify({ folder }),
       });
       deviceFolders = data.folders;
+      deviceFoldersChanged = true;
+      $('#btn-apply-devices').style.display = '';
       toast(data.action === 'added' ? `"${folder}" set as HA device` : `"${folder}" removed as device`);
       loadTree();
     });
@@ -1062,6 +1068,30 @@ document.querySelectorAll('.filter-btns .btn').forEach(btn => {
     state.page = 1;
     loadPoints();
   });
+});
+
+$('#btn-apply-devices').addEventListener('click', async () => {
+  const btn = $('#btn-apply-devices');
+  btn.disabled = true;
+  btn.textContent = 'Applying...';
+  try {
+    const data = await api('/api/device-folders/apply', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({}),
+    });
+    deviceFoldersChanged = false;
+    btn.style.display = 'none';
+    toast(`Device groupings updated (${data.updated} points regrouped)`);
+    loadStats();
+    loadTree();
+    loadPoints();
+  } catch (e) {
+    toast('Failed to apply changes');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Apply Changes';
+  }
 });
 
 async function loadDeviceFolders() {
