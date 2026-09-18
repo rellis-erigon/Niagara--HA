@@ -7,7 +7,15 @@ from pathlib import Path
 
 from flask import Flask, jsonify, request, send_from_directory
 
-from point_manager import POINTS_DIR, POINTS_FILE, load_point_selections
+from point_manager import (
+    POINTS_DIR,
+    POINTS_FILE,
+    PROFILES,
+    load_auto_enable_rules,
+    load_point_selections,
+    matches_auto_enable,
+    save_auto_enable_rules,
+)
 
 VALUES_FILE = POINTS_DIR / "values.json"
 
@@ -178,6 +186,136 @@ def toggle_all():
 
     _write_selections(selections)
     return jsonify({"ok": True, "enabled": bool(enabled), "count": len(selections)})
+
+
+@app.route("/api/filtered/toggle", methods=["POST"])
+def toggle_filtered():
+    data = request.get_json()
+    search = data.get("search", "").lower()
+    group = data.get("group", "")
+    status_filter = data.get("status", "")
+    enabled = data.get("enabled", False)
+
+    selections = load_point_selections()
+    count = 0
+    for entry in selections.values():
+        if group and entry.get("group") != group:
+            continue
+        if search:
+            if search not in entry.get("name", "").lower() and search not in entry.get("path", "").lower():
+                continue
+        if status_filter == "enabled" and not entry.get("enabled", False):
+            continue
+        elif status_filter == "disabled" and entry.get("enabled", False):
+            continue
+        entry["enabled"] = bool(enabled)
+        count += 1
+
+    _write_selections(selections)
+    return jsonify({"ok": True, "count": count, "enabled": bool(enabled)})
+
+
+@app.route("/api/rules")
+def get_rules():
+    rules = load_auto_enable_rules()
+    return jsonify({"patterns": rules})
+
+
+@app.route("/api/rules", methods=["POST"])
+def set_rules():
+    data = request.get_json()
+    patterns = data.get("patterns", [])
+    patterns = [str(p).strip() for p in patterns if str(p).strip()]
+    save_auto_enable_rules(patterns)
+    return jsonify({"ok": True, "patterns": patterns})
+
+
+@app.route("/api/rules/apply", methods=["POST"])
+def apply_rules():
+    data = request.get_json()
+    patterns = data.get("patterns")
+    if patterns is None:
+        patterns = load_auto_enable_rules()
+    else:
+        patterns = [str(p).strip() for p in patterns if str(p).strip()]
+
+    selections = load_point_selections()
+    count = 0
+    for entry in selections.values():
+        if not entry.get("enabled", False):
+            if matches_auto_enable(entry.get("name", ""), entry.get("path", ""), patterns):
+                entry["enabled"] = True
+                count += 1
+
+    if count > 0:
+        _write_selections(selections)
+    return jsonify({"ok": True, "count": count})
+
+
+@app.route("/api/profiles")
+def list_profiles():
+    result = []
+    for key, profile in PROFILES.items():
+        result.append({
+            "id": key,
+            "name": profile["name"],
+            "description": profile["description"],
+            "pattern_count": len(profile["patterns"]),
+        })
+    return jsonify({"profiles": result})
+
+
+@app.route("/api/profiles/<profile_id>/preview")
+def preview_profile(profile_id):
+    profile = PROFILES.get(profile_id)
+    if not profile:
+        return jsonify({"error": "profile not found"}), 404
+
+    selections = load_point_selections()
+    would_enable = []
+    for entry in selections.values():
+        if not entry.get("enabled", False):
+            if matches_auto_enable(entry.get("name", ""), entry.get("path", ""), profile["patterns"]):
+                would_enable.append({
+                    "name": entry.get("name", ""),
+                    "path": entry.get("path", ""),
+                    "group": entry.get("group", ""),
+                })
+
+    return jsonify({
+        "profile": profile["name"],
+        "would_enable": len(would_enable),
+        "sample": would_enable[:20],
+        "patterns": profile["patterns"],
+    })
+
+
+@app.route("/api/profiles/<profile_id>/apply", methods=["POST"])
+def apply_profile(profile_id):
+    profile = PROFILES.get(profile_id)
+    if not profile:
+        return jsonify({"error": "profile not found"}), 404
+
+    data = request.get_json() or {}
+    save_rules = data.get("save_as_rules", False)
+
+    selections = load_point_selections()
+    count = 0
+    for entry in selections.values():
+        if not entry.get("enabled", False):
+            if matches_auto_enable(entry.get("name", ""), entry.get("path", ""), profile["patterns"]):
+                entry["enabled"] = True
+                count += 1
+
+    if count > 0:
+        _write_selections(selections)
+
+    if save_rules:
+        existing_rules = load_auto_enable_rules()
+        merged = list(dict.fromkeys(existing_rules + profile["patterns"]))
+        save_auto_enable_rules(merged)
+
+    return jsonify({"ok": True, "count": count, "profile": profile["name"], "rules_saved": save_rules})
 
 
 def _write_selections(selections: dict[str, dict]) -> None:

@@ -18,6 +18,7 @@ from point_manager import (
     POINTS_DIR,
     POINTS_FILE,
     filter_enabled,
+    load_auto_enable_rules,
     load_point_selections,
     save_point_selections,
 )
@@ -128,7 +129,12 @@ def main() -> None:
                 logger.info("Found %d points", len(discovered_points))
 
                 existing_selections = load_point_selections()
-                selections = save_point_selections(discovered_points, existing_selections)
+                config_patterns = opts.get("auto_enable_patterns", [])
+                file_patterns = load_auto_enable_rules()
+                auto_patterns = list(dict.fromkeys(config_patterns + file_patterns))
+                if auto_patterns:
+                    logger.info("Auto-enable rules: %d patterns active", len(auto_patterns))
+                selections = save_point_selections(discovered_points, existing_selections, auto_patterns)
                 points_mtime = _get_file_mtime(POINTS_FILE)
                 active_points = filter_enabled(discovered_points, selections)
                 logger.info(

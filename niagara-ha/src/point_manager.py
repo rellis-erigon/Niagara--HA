@@ -1,5 +1,6 @@
 """Manage point selection — discover, persist, and filter Niagara points."""
 
+import fnmatch
 import logging
 from pathlib import Path
 from typing import Optional
@@ -12,8 +13,58 @@ logger = logging.getLogger(__name__)
 
 POINTS_DIR = Path("/config/niagara-ha")
 POINTS_FILE = POINTS_DIR / "points.yaml"
+RULES_FILE = POINTS_DIR / "auto_enable_rules.yaml"
 
 SKIP_SEGMENTS = {"config", "Drivers", "points", "out", ""}
+
+PROFILES = {
+    "hvac_monitoring": {
+        "name": "HVAC Monitoring",
+        "description": "Zone temps, supply/return air, damper positions, fan status, heating/cooling valves",
+        "patterns": [
+            "*Temp*", "*Temperature*", "*Setpoint*", "*Setpt*",
+            "*Supply*Air*", "*Return*Air*", "*Discharge*Air*",
+            "*Damper*", "*Fan*Status*", "*Fan*Speed*",
+            "*Heating*Valve*", "*Cooling*Valve*", "*Valve*Pos*",
+            "*Occupancy*", "*Occupied*", "*Unoccupied*",
+            "*AHU*", "*FCU*", "*VAV*",
+        ],
+    },
+    "energy_metering": {
+        "name": "Energy Metering",
+        "description": "Power, energy consumption, voltage, current, demand",
+        "patterns": [
+            "*kW*", "*kWh*", "*Power*", "*Energy*",
+            "*Voltage*", "*Current*", "*Demand*",
+            "*Meter*", "*Consumption*",
+        ],
+    },
+    "alarms_only": {
+        "name": "Alarms & Faults",
+        "description": "Alarm and fault status points only",
+        "patterns": [
+            "*Alarm*", "*Fault*", "*Trip*", "*Alert*",
+            "*Emergency*", "*Smoke*", "*Fire*",
+        ],
+    },
+    "lighting": {
+        "name": "Lighting",
+        "description": "Lighting status, levels, and schedules",
+        "patterns": [
+            "*Light*", "*Lighting*", "*Lux*",
+            "*Dimmer*", "*Lamp*", "*Luminaire*",
+        ],
+    },
+    "zone_comfort": {
+        "name": "Zone Comfort",
+        "description": "Temperature, humidity, CO2, and air quality for occupied zones",
+        "patterns": [
+            "*Temp*", "*Temperature*", "*Humidity*", "*RH*",
+            "*CO2*", "*Air*Quality*", "*IAQ*",
+            "*Setpoint*", "*Setpt*", "*Comfort*",
+        ],
+    },
+}
 
 
 def get_group(point: NiagaraPoint) -> str:
@@ -46,11 +97,52 @@ def load_point_selections() -> dict[str, dict]:
         return {}
 
 
+def load_auto_enable_rules() -> list[str]:
+    if not RULES_FILE.exists():
+        return []
+    try:
+        with open(RULES_FILE) as f:
+            data = yaml.safe_load(f)
+        if isinstance(data, dict) and "patterns" in data:
+            return [str(p) for p in data["patterns"] if p]
+        return []
+    except Exception as e:
+        logger.warning("Failed to read %s: %s", RULES_FILE, e)
+        return []
+
+
+def save_auto_enable_rules(patterns: list[str]) -> None:
+    POINTS_DIR.mkdir(parents=True, exist_ok=True)
+    output = {
+        "_comment": "Glob patterns matched against point name and path. Matching points are auto-enabled on discovery.",
+        "patterns": patterns,
+    }
+    with open(RULES_FILE, "w") as f:
+        yaml.safe_dump(output, f, default_flow_style=False, sort_keys=False, width=10000)
+    logger.info("Saved %d auto-enable rules", len(patterns))
+
+
+def matches_auto_enable(name: str, path: str, patterns: list[str]) -> bool:
+    name_lower = name.lower()
+    path_lower = path.lower()
+    for pattern in patterns:
+        pat = pattern.lower()
+        if fnmatch.fnmatch(name_lower, pat) or fnmatch.fnmatch(path_lower, pat):
+            return True
+    return False
+
+
 def save_point_selections(
-    discovered: list[NiagaraPoint], existing: dict[str, dict]
+    discovered: list[NiagaraPoint],
+    existing: dict[str, dict],
+    auto_enable_patterns: list[str] | None = None,
 ) -> dict[str, dict]:
     POINTS_DIR.mkdir(parents=True, exist_ok=True)
 
+    if auto_enable_patterns is None:
+        auto_enable_patterns = load_auto_enable_rules()
+
+    auto_enabled_count = 0
     merged: dict[str, dict] = {}
     for pt in discovered:
         group = get_group(pt)
@@ -60,14 +152,20 @@ def save_point_selections(
             entry["group"] = group
             entry["type"] = pt.point_type
         else:
+            should_enable = bool(auto_enable_patterns) and matches_auto_enable(pt.name, pt.path, auto_enable_patterns)
             entry = {
                 "path": pt.path,
                 "name": pt.name,
                 "group": group,
                 "type": pt.point_type,
-                "enabled": False,
+                "enabled": should_enable,
             }
+            if should_enable:
+                auto_enabled_count += 1
         merged[pt.path] = entry
+
+    if auto_enabled_count > 0:
+        logger.info("Auto-enabled %d newly discovered points matching rules", auto_enabled_count)
 
     groups: dict[str, list[dict]] = {}
     for entry in merged.values():

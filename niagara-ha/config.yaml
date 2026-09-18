@@ -35,6 +35,7 @@ options:
   mqtt_user: ""
   mqtt_password: ""
   mqtt_topic_prefix: "niagara"
+  auto_enable_patterns: []
   log_level: "info"
 schema:
   niagara_host: str
@@ -52,6 +53,8 @@ schema:
   mqtt_user: str?
   mqtt_password: password?
   mqtt_topic_prefix: str
+  auto_enable_patterns:
+    - str
   log_level: list(debug|info|warning|error)
 services:
   - mqtt:need

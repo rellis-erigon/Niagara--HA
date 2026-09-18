@@ -264,6 +264,99 @@ tr:hover td { background: var(--row-hover); }
 .toast.show { opacity: 1; transform: translateY(0); }
 @media (prefers-color-scheme: dark) { .toast { background: #374151; } }
 .loading { text-align: center; padding: 24px; color: var(--muted); }
+.bulk-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--card);
+  border: 1px solid var(--primary);
+  border-radius: 6px;
+  margin-bottom: 12px;
+  font-size: 0.85rem;
+}
+.bulk-bar-count { font-weight: 600; }
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.5);
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.modal {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 24px;
+  max-width: 560px;
+  width: 90%;
+  max-height: 80vh;
+  overflow-y: auto;
+}
+.modal h2 { font-size: 1.1rem; margin-bottom: 16px; }
+.modal h3 { font-size: 0.95rem; margin: 16px 0 8px; }
+.profile-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin-bottom: 8px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.profile-card:hover { border-color: var(--primary); background: var(--row-hover); }
+.profile-name { font-weight: 600; font-size: 0.9rem; }
+.profile-desc { font-size: 0.8rem; color: var(--muted); margin-top: 2px; }
+.profile-meta { font-size: 0.75rem; color: var(--muted); margin-top: 4px; }
+.rule-list { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+.rule-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  background: var(--tag-bg);
+  border-radius: 12px;
+  font-size: 0.8rem;
+  font-family: "SF Mono", "Cascadia Code", monospace;
+}
+.rule-tag-remove {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 0.7rem;
+  padding: 0 2px;
+}
+.rule-tag-remove:hover { color: var(--danger); }
+.rule-input-row {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+.rule-input-row input {
+  flex: 1;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--card);
+  color: var(--text);
+  font-size: 0.85rem;
+  font-family: "SF Mono", "Cascadia Code", monospace;
+}
+.preview-list {
+  max-height: 200px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  margin: 8px 0;
+}
+.preview-item {
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.8rem;
+}
+.preview-item:last-child { border-bottom: none; }
+.preview-item-name { font-weight: 500; }
+.preview-item-path { color: var(--muted); font-size: 0.75rem; }
 .point-value {
   font-family: "SF Mono", "Cascadia Code", "Consolas", monospace;
   font-size: 0.8rem;
@@ -301,6 +394,13 @@ tr:hover td { background: var(--row-hover); }
         <button class="btn btn-sm" data-status="enabled" id="filter-enabled">Enabled</button>
         <button class="btn btn-sm" data-status="disabled" id="filter-disabled">Disabled</button>
       </div>
+      <button class="btn btn-sm" id="btn-profiles" title="Point profiles &amp; auto-enable rules">Profiles</button>
+      <button class="btn btn-sm" id="btn-rules" title="Auto-enable rules">Rules</button>
+    </div>
+    <div class="bulk-bar" id="bulk-bar" style="display:none">
+      <span>Filtered: <span class="bulk-bar-count" id="bulk-count">0</span> points</span>
+      <button class="btn btn-sm btn-primary" id="bulk-enable">Enable All Filtered</button>
+      <button class="btn btn-sm" id="bulk-disable">Disable All Filtered</button>
     </div>
     <div class="table-wrap">
       <table>
@@ -323,6 +423,7 @@ tr:hover td { background: var(--row-hover); }
 </div>
 
 <div class="toast" id="toast"></div>
+<div id="modal-root"></div>
 
 <script>
 const $ = s => document.querySelector(s);
@@ -446,6 +547,8 @@ async function loadPoints() {
     return;
   }
 
+  updateBulkBar(data.total);
+
   if (data.points.length === 0) {
     $('#point-table').innerHTML = `<tr><td colspan="5"><div class="empty">
       <div class="empty-icon">&#128269;</div>
@@ -493,6 +596,212 @@ async function loadPoints() {
   $('#pagination').innerHTML = pagHtml;
   if ($('#prev-page')) $('#prev-page').onclick = () => { state.page--; loadPoints(); };
   if ($('#next-page')) $('#next-page').onclick = () => { state.page++; loadPoints(); };
+}
+
+function updateBulkBar(total) {
+  const bar = $('#bulk-bar');
+  const hasFilter = state.search || state.group || state.status;
+  if (hasFilter && total > 0) {
+    bar.style.display = 'flex';
+    $('#bulk-count').textContent = total.toLocaleString();
+  } else {
+    bar.style.display = 'none';
+  }
+}
+
+$('#bulk-enable').addEventListener('click', async () => {
+  const data = await api('/api/filtered/toggle', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ search: state.search, group: state.group, status: state.status, enabled: true }),
+  });
+  toast(`${data.count} points enabled`);
+  loadStats();
+  loadPoints();
+});
+
+$('#bulk-disable').addEventListener('click', async () => {
+  const data = await api('/api/filtered/toggle', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ search: state.search, group: state.group, status: state.status, enabled: false }),
+  });
+  toast(`${data.count} points disabled`);
+  loadStats();
+  loadPoints();
+});
+
+function closeModal() {
+  $('#modal-root').innerHTML = '';
+}
+
+$('#btn-profiles').addEventListener('click', async () => {
+  const data = await api('/api/profiles');
+  let html = `<div class="modal-backdrop" onclick="if(event.target===this)closeModal()">
+    <div class="modal">
+      <h2>Point Profiles</h2>
+      <p style="font-size:0.85rem;color:var(--muted);margin-bottom:16px">
+        Apply a pre-built profile to enable common point patterns. Preview before applying.
+      </p>`;
+  for (const p of data.profiles) {
+    html += `<div class="profile-card" data-profile="${esc(p.id)}">
+      <div class="profile-name">${esc(p.name)}</div>
+      <div class="profile-desc">${esc(p.description)}</div>
+      <div class="profile-meta">${p.pattern_count} patterns</div>
+    </div>`;
+  }
+  html += `</div></div>`;
+  $('#modal-root').innerHTML = html;
+
+  document.querySelectorAll('.profile-card').forEach(card => {
+    card.addEventListener('click', () => showProfilePreview(card.dataset.profile));
+  });
+});
+
+async function showProfilePreview(profileId) {
+  const data = await api(`/api/profiles/${profileId}/preview`);
+  let html = `<div class="modal-backdrop" onclick="if(event.target===this)closeModal()">
+    <div class="modal">
+      <h2>${esc(data.profile)}</h2>
+      <p style="font-size:0.85rem;margin-bottom:8px">
+        <strong>${data.would_enable}</strong> points would be enabled.
+      </p>`;
+  if (data.sample.length > 0) {
+    html += `<div class="preview-list">`;
+    for (const s of data.sample) {
+      html += `<div class="preview-item">
+        <div class="preview-item-name">${esc(s.name)}</div>
+        <div class="preview-item-path">${esc(s.path)}</div>
+      </div>`;
+    }
+    if (data.would_enable > data.sample.length) {
+      html += `<div class="preview-item" style="text-align:center;color:var(--muted)">
+        &hellip; and ${data.would_enable - data.sample.length} more
+      </div>`;
+    }
+    html += `</div>`;
+  }
+  html += `<h3>Patterns</h3>
+    <div class="rule-list">`;
+  for (const pat of data.patterns) {
+    html += `<span class="rule-tag">${esc(pat)}</span>`;
+  }
+  html += `</div>
+    <div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap">
+      <button class="btn btn-primary" id="profile-apply">Apply Now</button>
+      <button class="btn" id="profile-apply-save">Apply &amp; Save as Rules</button>
+      <button class="btn" onclick="closeModal()">Cancel</button>
+    </div>
+    </div></div>`;
+  $('#modal-root').innerHTML = html;
+
+  $('#profile-apply').addEventListener('click', async () => {
+    const result = await api(`/api/profiles/${profileId}/apply`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ save_as_rules: false }),
+    });
+    closeModal();
+    toast(`${result.count} points enabled from ${result.profile}`);
+    loadStats();
+    loadPoints();
+  });
+
+  $('#profile-apply-save').addEventListener('click', async () => {
+    const result = await api(`/api/profiles/${profileId}/apply`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ save_as_rules: true }),
+    });
+    closeModal();
+    toast(`${result.count} points enabled, rules saved for future discovery`);
+    loadStats();
+    loadPoints();
+  });
+}
+
+$('#btn-rules').addEventListener('click', showRulesModal);
+
+async function showRulesModal() {
+  const data = await api('/api/rules');
+  let rules = data.patterns || [];
+
+  function render() {
+    let html = `<div class="modal-backdrop" onclick="if(event.target===this)closeModal()">
+      <div class="modal">
+        <h2>Auto-Enable Rules</h2>
+        <p style="font-size:0.85rem;color:var(--muted);margin-bottom:12px">
+          Glob patterns matched against point names and paths.
+          New points matching these rules are automatically enabled on discovery.
+        </p>
+        <div class="rule-list" id="rules-tags">`;
+    for (let i = 0; i < rules.length; i++) {
+      html += `<span class="rule-tag">${esc(rules[i])}
+        <span class="rule-tag-remove" data-idx="${i}">&times;</span></span>`;
+    }
+    if (rules.length === 0) {
+      html += `<span style="color:var(--muted);font-size:0.85rem">No rules configured</span>`;
+    }
+    html += `</div>
+        <div class="rule-input-row">
+          <input type="text" id="rule-input" placeholder="e.g. *Temp* or *AHU*Supply*">
+          <button class="btn btn-sm btn-primary" id="rule-add">Add</button>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap">
+          <button class="btn btn-primary" id="rules-save">Save Rules</button>
+          <button class="btn" id="rules-apply">Save &amp; Apply to Existing</button>
+          <button class="btn" onclick="closeModal()">Cancel</button>
+        </div>
+      </div></div>`;
+    $('#modal-root').innerHTML = html;
+
+    document.querySelectorAll('.rule-tag-remove').forEach(btn => {
+      btn.addEventListener('click', () => {
+        rules.splice(parseInt(btn.dataset.idx), 1);
+        render();
+      });
+    });
+
+    const inp = $('#rule-input');
+    const addRule = () => {
+      const v = inp.value.trim();
+      if (v && !rules.includes(v)) {
+        rules.push(v);
+        render();
+      }
+    };
+    $('#rule-add').addEventListener('click', addRule);
+    inp.addEventListener('keydown', e => { if (e.key === 'Enter') addRule(); });
+    inp.focus();
+
+    $('#rules-save').addEventListener('click', async () => {
+      await api('/api/rules', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ patterns: rules }),
+      });
+      closeModal();
+      toast(`${rules.length} auto-enable rules saved`);
+    });
+
+    $('#rules-apply').addEventListener('click', async () => {
+      await api('/api/rules', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ patterns: rules }),
+      });
+      const result = await api('/api/rules/apply', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ patterns: rules }),
+      });
+      closeModal();
+      toast(`Rules saved. ${result.count} existing points enabled.`);
+      loadStats();
+      loadPoints();
+    });
+  }
+  render();
 }
 
 let valueRefreshTimer;
