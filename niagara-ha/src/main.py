@@ -220,8 +220,10 @@ def _publish_entities(
 ) -> dict:
     entity_maps = {}
     for pt in active_points:
-        group = selections.get(pt.path, {}).get("group", "")
-        mapped = map_point(pt, topic_prefix, device_name, group)
+        entry = selections.get(pt.path, {})
+        group = entry.get("group", "")
+        custom_name = entry.get("custom_name", "")
+        mapped = map_point(pt, topic_prefix, device_name, group, custom_name)
         if mapped:
             entity_maps[pt.path] = mapped
             mqtt_pub.publish_discovery(mapped)

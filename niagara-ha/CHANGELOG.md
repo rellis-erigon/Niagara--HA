@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.3
+
+- **Feature**: Rename points in the web UI — custom names are used as the entity name in MQTT/Home Assistant
+- Click the pencil icon next to any point name to rename it
+- Custom names persist across restarts and show in the HA entity list
+- Reset button restores the original Niagara name
+
 ## 0.4.2
 
 - **Improvement**: Only discover points under oBIX `/exports/` folder — hides all config/metadata noise

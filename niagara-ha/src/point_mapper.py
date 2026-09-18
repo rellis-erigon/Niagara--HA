@@ -75,7 +75,7 @@ def _get_group(point: NiagaraPoint) -> str:
 
 def map_point(
     point: NiagaraPoint, topic_prefix: str, device_name: str = "Niagara BMS",
-    group: str = "",
+    group: str = "", custom_name: str = "",
 ) -> Optional[dict[str, Any]]:
     """Convert a NiagaraPoint into an MQTT discovery payload dict.
 
@@ -83,7 +83,7 @@ def map_point(
     """
     uid = _stable_id(point.path)
     object_id = _slugify(point.name) + "_" + uid
-    friendly = _friendly_name(point)
+    friendly = custom_name or _friendly_name(point)
 
     base_topic = f"{topic_prefix}/{object_id}"
     state_topic = f"{base_topic}/state"

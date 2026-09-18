@@ -163,6 +163,25 @@ def toggle_point():
     return jsonify({"error": "point not found"}), 404
 
 
+@app.route("/api/points/rename", methods=["POST"])
+def rename_point():
+    data = request.get_json()
+    path = data.get("path")
+    custom_name = data.get("custom_name", "").strip()
+    if not path:
+        return jsonify({"error": "path required"}), 400
+
+    selections = load_point_selections()
+    if path in selections:
+        if custom_name:
+            selections[path]["custom_name"] = custom_name
+        else:
+            selections[path].pop("custom_name", None)
+        _write_selections(selections)
+        return jsonify({"ok": True, "path": path, "custom_name": custom_name})
+    return jsonify({"error": "point not found"}), 404
+
+
 @app.route("/api/groups/toggle", methods=["POST"])
 def toggle_group():
     data = request.get_json()

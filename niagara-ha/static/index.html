@@ -367,6 +367,31 @@ tr:hover td { background: var(--row-hover); }
   white-space: nowrap;
 }
 .point-value-na { color: var(--muted); font-style: italic; font-family: inherit; }
+.point-name-row { display: flex; align-items: center; gap: 6px; }
+.point-custom-name { font-weight: 600; }
+.point-original-name { font-size: 0.8rem; color: var(--muted); }
+.rename-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 0.75rem;
+  padding: 2px 4px;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+.rename-btn:hover { color: var(--primary); background: var(--row-hover); }
+.rename-input {
+  padding: 4px 8px;
+  border: 1px solid var(--primary);
+  border-radius: 4px;
+  background: var(--card);
+  color: var(--text);
+  font-size: 0.85rem;
+  width: 100%;
+  max-width: 300px;
+}
+.rename-input:focus { outline: none; box-shadow: 0 0 0 2px rgba(59,130,246,0.3); }
 .breadcrumb {
   display: flex;
   align-items: center;
@@ -655,7 +680,9 @@ async function loadPoints() {
     return;
   }
 
-  $('#point-table').innerHTML = data.points.map(p => `<tr>
+  $('#point-table').innerHTML = data.points.map(p => {
+    const hasCustom = p.custom_name && p.custom_name !== p.name;
+    return `<tr>
     <td>
       <label class="toggle">
         <input type="checkbox" ${p.enabled ? 'checked' : ''} data-path="${esc(p.path)}">
@@ -663,13 +690,18 @@ async function loadPoints() {
       </label>
     </td>
     <td>
-      <div>${esc(p.name)}</div>
+      <div class="point-name-row">
+        <span class="point-name-display">${hasCustom ? `<span class="point-custom-name">${esc(p.custom_name)}</span>` : esc(p.name)}</span>
+        <button class="rename-btn" data-rename-path="${esc(p.path)}" data-current-name="${esc(p.custom_name || '')}" data-original-name="${esc(p.name)}" title="Rename">&#9998;</button>
+      </div>
+      ${hasCustom ? `<div class="point-original-name">${esc(p.name)}</div>` : ''}
       <div class="point-path">${esc(p.path)}</div>
     </td>
     <td><span class="point-value point-value-na" data-value-path="${esc(p.path)}">&mdash;</span></td>
     <td><span class="point-type">${esc(p.type)}</span></td>
     <td>${esc(p.group)}</td>
-  </tr>`).join('');
+  </tr>`;
+  }).join('');
 
   $('#point-table').querySelectorAll('input[type=checkbox]').forEach(cb => {
     cb.addEventListener('change', async () => {
@@ -679,6 +711,47 @@ async function loadPoints() {
         body: JSON.stringify({ path: cb.dataset.path, enabled: cb.checked }),
       });
       loadStats();
+    });
+  });
+
+  $('#point-table').querySelectorAll('.rename-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const path = btn.dataset.renamePath;
+      const current = btn.dataset.currentName;
+      const original = btn.dataset.originalName;
+      const td = btn.closest('td');
+      const nameRow = td.querySelector('.point-name-row');
+      nameRow.innerHTML = `<input type="text" class="rename-input" value="${esc(current || original)}" placeholder="${esc(original)}">
+        <button class="btn btn-sm btn-primary" id="rename-save">Save</button>
+        <button class="btn btn-sm" id="rename-cancel">Cancel</button>
+        <button class="btn btn-sm" id="rename-clear" title="Reset to original" style="${current ? '' : 'display:none'}">Reset</button>`;
+      const input = nameRow.querySelector('.rename-input');
+      input.focus();
+      input.select();
+      nameRow.querySelector('#rename-save').addEventListener('click', async () => {
+        const newName = input.value.trim();
+        await api('/api/points/rename', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ path, custom_name: newName === original ? '' : newName }),
+        });
+        toast(newName && newName !== original ? `Renamed to "${newName}"` : 'Name reset');
+        loadPoints();
+      });
+      nameRow.querySelector('#rename-cancel').addEventListener('click', () => loadPoints());
+      nameRow.querySelector('#rename-clear').addEventListener('click', async () => {
+        await api('/api/points/rename', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ path, custom_name: '' }),
+        });
+        toast('Name reset to original');
+        loadPoints();
+      });
+      input.addEventListener('keydown', e => {
+        if (e.key === 'Enter') nameRow.querySelector('#rename-save').click();
+        if (e.key === 'Escape') loadPoints();
+      });
     });
   });
 
