@@ -32,6 +32,9 @@ SKIP_POINT_NAMES = frozenset({
     "pollFrequency", "pollEnabled",
     "tuningPolicyRef", "proxyExt",
     "facets", "icon", "href",
+    "enabled", "overridden", "actions",
+    "watchCount", "lease", "pollRate",
+    "type", "is", "display", "displayName",
 })
 
 
@@ -164,9 +167,6 @@ class ObixClient:
         href = elem.get("href", "")
         full_path = self._resolve_href(parent_path, href) or f"{parent_path}{name}"
 
-        if "/points/" not in full_path:
-            logger.debug("Skipping non-point property: %s", full_path)
-            return None
 
         type_map = {
             "real": "numeric",

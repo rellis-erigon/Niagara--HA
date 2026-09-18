@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.1
+
+- **Fix**: Removed overly aggressive `/points/` path filter that was hiding legitimate BMS points
+
 ## 0.4.0
 
 - **Feature**: Smart point import — bulk toggle, auto-enable rules (glob patterns), and 5 built-in profiles (HVAC, Energy, Alarms, Lighting, Zone Comfort)
