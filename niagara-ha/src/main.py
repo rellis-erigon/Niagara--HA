@@ -115,8 +115,10 @@ def main() -> None:
     entity_maps: dict = {}
     points_mtime = 0.0
     discovered_count = 0
-    last_values: dict[str, str] = {}
+    last_values: dict[str, str] = _load_values_cache()
     last_statuses: dict[str, str] = {}
+    if last_values:
+        logger.info("Loaded %d cached point values from previous session", len(last_values))
 
     while not _shutdown:
         if not obix.connected:
@@ -143,9 +145,8 @@ def main() -> None:
                 )
 
                 del discovered_points, existing_selections
-                entity_maps = _publish_entities(active_points, selections, mqtt_pub, topic_prefix, device_name)
+                entity_maps = _publish_entities(active_points, selections, mqtt_pub, topic_prefix, device_name, last_values)
                 del selections
-                last_values.clear()
                 last_statuses.clear()
             else:
                 logger.warning(
@@ -165,9 +166,8 @@ def main() -> None:
             new_paths = enabled_paths - {pt.path for pt in active_points}
             if new_paths:
                 logger.info("New enabled points detected (%d) — will pick up on next reconnect", len(new_paths))
-            entity_maps = _publish_entities(active_points, selections, mqtt_pub, topic_prefix, device_name)
+            entity_maps = _publish_entities(active_points, selections, mqtt_pub, topic_prefix, device_name, last_values)
             del selections
-            last_values.clear()
             last_statuses.clear()
             logger.info("Reloaded: %d active points", len(active_points))
 
@@ -217,6 +217,7 @@ def main() -> None:
 
 def _publish_entities(
     active_points, selections, mqtt_pub, topic_prefix, device_name,
+    cached_values: dict[str, str] | None = None,
 ) -> dict:
     entity_maps = {}
     for pt in active_points:
@@ -235,8 +236,11 @@ def _publish_entities(
     initial_values = 0
     for pt in active_points:
         mapped = entity_maps.get(pt.path)
-        if mapped and pt.value is not None:
-            mqtt_pub.publish_state(mapped["state_topic"], str(pt.value))
+        if not mapped:
+            continue
+        val = str(pt.value) if pt.value is not None else (cached_values or {}).get(pt.path)
+        if val is not None:
+            mqtt_pub.publish_state(mapped["state_topic"], val)
             initial_values += 1
 
     logger.info(
@@ -244,6 +248,16 @@ def _publish_entities(
         len(entity_maps), initial_values,
     )
     return entity_maps
+
+
+def _load_values_cache() -> dict[str, str]:
+    try:
+        if VALUES_FILE.exists():
+            with open(VALUES_FILE) as f:
+                return json.load(f)
+    except (json.JSONDecodeError, OSError) as e:
+        logger.debug("Failed to read values cache: %s", e)
+    return {}
 
 
 def _write_values_cache(values: dict[str, str]) -> None:

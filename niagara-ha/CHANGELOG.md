@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.1
+
+- **Feature**: Last known point values persist across restarts — HA entities show cached values immediately on startup instead of "unavailable"
+- Values are stored in `values.json` and restored on next launch
+
 ## 0.5.0
 
 - **Feature**: Each Niagara folder becomes its own HA device — points in `HVAC/Room333/` create a "Niagara BMS — HVAC / Room333" device with just those points as entities
