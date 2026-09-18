@@ -19,6 +19,21 @@ logger = logging.getLogger(__name__)
 OBIX_NS = "http://obix.org/ns/schema/1.0"
 NS = {"o": OBIX_NS}
 
+SKIP_POINT_NAMES = frozenset({
+    "stationName", "hostName", "hostId",
+    "platformVersion", "niagaraVersion", "softwareVersion",
+    "osName", "osVersion", "osArch",
+    "vmName", "vmVersion", "vmVendor",
+    "timeZoneId", "stationStartTime",
+    "vendorName", "modelName", "serialNumber",
+    "firmwareVersion", "hardwareVersion",
+    "healthStatus", "health", "faultCause",
+    "deviceName", "driverName",
+    "pollFrequency", "pollEnabled",
+    "tuningPolicyRef", "proxyExt",
+    "facets", "icon", "href",
+})
+
 
 @dataclass
 class NiagaraPoint:
@@ -143,9 +158,15 @@ class ObixClient:
     ) -> Optional[NiagaraPoint]:
         if not name:
             return None
+        if name in SKIP_POINT_NAMES:
+            return None
 
         href = elem.get("href", "")
         full_path = self._resolve_href(parent_path, href) or f"{parent_path}{name}"
+
+        if "/points/" not in full_path:
+            logger.debug("Skipping non-point property: %s", full_path)
+            return None
 
         type_map = {
             "real": "numeric",
