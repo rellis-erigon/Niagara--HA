@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.4
+
+- **Fix**: YAML write now quotes strings containing special characters (colons, brackets, etc.) to prevent points.yaml corruption with 42K+ BMS points
+- **Fix**: Toggle endpoints no longer return 404 when points.yaml was unreadable due to unquoted colons in Niagara point names
+
 ## 0.3.3
 
 - **Feature**: Category-based filtering — points auto-classified as Temperature, Fan, Pump, Valve, Pressure, Power, Humidity, Flow, Setpoint, Status, CO2, or Other

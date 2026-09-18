@@ -10,6 +10,16 @@ from obix_client import NiagaraPoint
 
 logger = logging.getLogger(__name__)
 
+
+class _SafeDumper(yaml.SafeDumper):
+    pass
+
+
+_SafeDumper.add_representer(
+    str,
+    lambda dumper, data: dumper.represent_scalar("tag:yaml.org,2002:str", data, style="'" if any(c in data for c in ":{}[]|>&*!#%@`") else None),
+)
+
 POINTS_DIR = Path("/config/niagara-ha")
 POINTS_FILE = POINTS_DIR / "points.yaml"
 
@@ -79,7 +89,7 @@ def save_point_selections(
     }
 
     with open(POINTS_FILE, "w") as f:
-        yaml.dump(output, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
+        yaml.dump(output, f, Dumper=_SafeDumper, default_flow_style=False, sort_keys=False, allow_unicode=True)
 
     enabled = sum(1 for e in merged.values() if e.get("enabled", False))
     logger.info(

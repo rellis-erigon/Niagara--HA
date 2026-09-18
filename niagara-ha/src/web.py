@@ -229,6 +229,7 @@ def toggle_all():
 
 def _write_selections(selections: dict[str, dict]) -> None:
     import yaml
+    from point_manager import _SafeDumper
 
     POINTS_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -251,7 +252,7 @@ def _write_selections(selections: dict[str, dict]) -> None:
     }
 
     with open(POINTS_FILE, "w") as f:
-        yaml.dump(output, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
+        yaml.dump(output, f, Dumper=_SafeDumper, default_flow_style=False, sort_keys=False, allow_unicode=True)
     _cache["mtime"] = 0.0
 
 
