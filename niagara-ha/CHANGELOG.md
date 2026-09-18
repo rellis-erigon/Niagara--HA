@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.4
+
+- **Improvement**: Browse sidebar auto-fits to folder names and buttons instead of truncating
+- **Feature**: "Apply Changes" button appears after toggling device folders — recalculates groupings and updates HA entities immediately
+
 ## 0.5.3
 
 - **Feature**: GUI-based device folder selection — click "Use as Device" on any folder in the tree to make all its sub-points (including subfolders) appear as one HA device
