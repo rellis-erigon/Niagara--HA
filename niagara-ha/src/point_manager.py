@@ -16,6 +16,7 @@ POINTS_FILE = POINTS_DIR / "points.yaml"
 RULES_FILE = POINTS_DIR / "auto_enable_rules.yaml"
 
 SKIP_SEGMENTS = {"config", "Drivers", "points", "out", ""}
+PATH_BOILERPLATE = {"config", "Drivers", "NiagaraNetwork", "points", "out", ""}
 
 PROFILES = {
     "hvac_monitoring": {
@@ -72,6 +73,63 @@ def get_group(point: NiagaraPoint) -> str:
     if len(parts) >= 2:
         return parts[0]
     return "Ungrouped"
+
+
+def parse_path_segments(path: str) -> list[str]:
+    raw = path.strip("/").split("/")
+    return [s for s in raw if s and s not in PATH_BOILERPLATE]
+
+
+def build_point_tree(points: list[dict]) -> dict:
+    tree: dict = {}
+    for p in points:
+        segs = parse_path_segments(p.get("path", ""))
+        if len(segs) < 2:
+            continue
+        node = tree
+        for seg in segs[:-1]:
+            if seg not in node:
+                node[seg] = {"_total": 0, "_enabled": 0}
+            node[seg]["_total"] += 1
+            if p.get("enabled", False):
+                node[seg]["_enabled"] += 1
+            node = node[seg]
+
+    def to_list(node: dict, prefix: list[str]) -> list[dict]:
+        result = []
+        for key in sorted(node):
+            if key.startswith("_"):
+                continue
+            child = node[key]
+            full = prefix + [key]
+            entry = {
+                "name": key,
+                "path": "/".join(full),
+                "total": child.get("_total", 0),
+                "enabled": child.get("_enabled", 0),
+                "has_children": any(not k.startswith("_") for k in child),
+            }
+            result.append(entry)
+        return result
+
+    return {"_tree": tree, "_to_list": to_list}
+
+
+def get_tree_children(points: list[dict], prefix: str = "") -> list[dict]:
+    tree_data = build_point_tree(points)
+    tree = tree_data["_tree"]
+    to_list = tree_data["_to_list"]
+
+    if not prefix:
+        return to_list(tree, [])
+
+    parts = prefix.split("/")
+    node = tree
+    for part in parts:
+        if part not in node:
+            return []
+        node = node[part]
+    return to_list(node, parts)
 
 
 _last_good: dict[str, dict] = {}

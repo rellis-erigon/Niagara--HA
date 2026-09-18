@@ -367,6 +367,67 @@ tr:hover td { background: var(--row-hover); }
   white-space: nowrap;
 }
 .point-value-na { color: var(--muted); font-style: italic; font-family: inherit; }
+.breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 16px;
+  font-size: 0.8rem;
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+  min-height: 36px;
+}
+.breadcrumb-seg {
+  cursor: pointer;
+  color: var(--primary);
+  font-weight: 500;
+}
+.breadcrumb-seg:hover { text-decoration: underline; }
+.breadcrumb-current { color: var(--text); font-weight: 600; cursor: default; }
+.breadcrumb-sep { color: var(--muted); font-size: 0.7rem; }
+.tree-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 16px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border);
+  transition: background 0.15s;
+  gap: 8px;
+}
+.tree-item:hover { background: var(--row-hover); }
+.tree-item-name {
+  font-size: 0.85rem;
+  font-weight: 500;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tree-item-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.tree-arrow {
+  color: var(--muted);
+  font-size: 0.7rem;
+  flex-shrink: 0;
+}
+.tree-enable-btn {
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.7rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
 </style>
 </head>
 <body>
@@ -379,10 +440,11 @@ tr:hover td { background: var(--row-hover); }
 <div class="layout">
   <div class="sidebar">
     <div class="sidebar-header">
-      <span>Groups</span>
-      <span style="font-size:0.75rem;color:var(--muted)" id="group-count"></span>
+      <span>Browse</span>
+      <span style="font-size:0.75rem;color:var(--muted)" id="tree-count"></span>
     </div>
-    <div class="group-list" id="group-list">
+    <div class="breadcrumb" id="breadcrumb"></div>
+    <div class="group-list" id="tree-list">
       <div class="loading">Loading...</div>
     </div>
   </div>
@@ -428,7 +490,7 @@ tr:hover td { background: var(--row-hover); }
 <script>
 const $ = s => document.querySelector(s);
 const BASE = window.location.pathname.replace(/\/+$/, '');
-let state = { group: '', search: '', status: '', page: 1 };
+let state = { prefix: '', search: '', status: '', page: 1 };
 let debounceTimer;
 
 async function api(path, opts) {
@@ -450,7 +512,7 @@ async function loadStats() {
     const data = await api('/api/stats');
     if (data.total === 0) {
       $('#stats').innerHTML = '';
-      $('#group-list').innerHTML = `<div class="empty" style="padding:24px">
+      $('#tree-list').innerHTML = `<div class="empty" style="padding:24px">
         <div class="empty-icon">&#9203;</div>
         <div>Waiting for point discovery&hellip;</div>
         <div style="font-size:0.8rem;margin-top:8px">
@@ -464,11 +526,9 @@ async function loadStats() {
       <div class="stat"><div class="stat-value">${data.total.toLocaleString()}</div><div class="stat-label">Total Points</div></div>
       <div class="stat stat-enabled"><div class="stat-value">${data.enabled.toLocaleString()}</div><div class="stat-label">Enabled</div></div>
       <div class="stat stat-disabled"><div class="stat-value">${data.disabled.toLocaleString()}</div><div class="stat-label">Disabled</div></div>
-      <div class="stat"><div class="stat-value">${data.groups.length}</div><div class="stat-label">Groups</div></div>
     `;
-    renderGroups(data.groups);
   } catch (e) {
-    $('#group-list').innerHTML = `<div class="empty" style="padding:24px">
+    $('#tree-list').innerHTML = `<div class="empty" style="padding:24px">
       <div class="empty-icon">&#9888;</div>
       <div>Could not load points</div>
       <div style="font-size:0.8rem;margin-top:8px">${esc(e.message)}</div>
@@ -476,64 +536,101 @@ async function loadStats() {
   }
 }
 
-function renderGroups(groups) {
-  $('#group-count').textContent = groups.length + ' groups';
-  const allItem = `<div class="group-item ${!state.group ? 'active' : ''}" data-group="">
-    <span class="group-name">All Points</span>
-    <div class="group-counts">
-      <span class="group-badge badge-total">${groups.reduce((s,g) => s+g.total, 0).toLocaleString()}</span>
-    </div>
-  </div>`;
+async function loadTree() {
+  try {
+    const data = await api('/api/tree?prefix=' + encodeURIComponent(state.prefix));
+    renderBreadcrumb();
+    renderTree(data.children);
+  } catch (e) {
+    $('#tree-list').innerHTML = `<div class="empty" style="padding:24px">Failed to load tree</div>`;
+  }
+}
 
-  const items = groups.map(g => {
-    const allEnabled = g.enabled === g.total && g.total > 0;
-    const someEnabled = g.enabled > 0;
-    return `<div class="group-item ${state.group === g.name ? 'active' : ''}" data-group="${esc(g.name)}">
-      <span class="group-name">${esc(g.name)}</span>
-      <div class="group-counts">
-        ${g.enabled > 0 ? `<span class="group-badge badge-enabled">${g.enabled}</span>` : ''}
-        <span class="group-badge badge-total">${g.total.toLocaleString()}</span>
-        <button class="group-toggle ${someEnabled ? 'group-toggle-on' : 'group-toggle-off'}"
-                data-group-toggle="${esc(g.name)}" data-enabled="${!allEnabled}"
-                title="${allEnabled ? 'Disable all' : 'Enable all'}">
+function renderBreadcrumb() {
+  const bc = $('#breadcrumb');
+  if (!state.prefix) {
+    bc.innerHTML = '<span class="breadcrumb-current">All Devices</span>';
+    return;
+  }
+  const parts = state.prefix.split('/');
+  let html = `<span class="breadcrumb-seg" data-nav="">All</span>`;
+  for (let i = 0; i < parts.length; i++) {
+    html += `<span class="breadcrumb-sep">&#9656;</span>`;
+    const partial = parts.slice(0, i + 1).join('/');
+    if (i === parts.length - 1) {
+      html += `<span class="breadcrumb-current">${esc(parts[i])}</span>`;
+    } else {
+      html += `<span class="breadcrumb-seg" data-nav="${esc(partial)}">${esc(parts[i])}</span>`;
+    }
+  }
+  bc.innerHTML = html;
+  bc.querySelectorAll('.breadcrumb-seg').forEach(el => {
+    el.addEventListener('click', () => navigateTo(el.dataset.nav));
+  });
+}
+
+function renderTree(children) {
+  const el = $('#tree-list');
+  $('#tree-count').textContent = children.length + ' items';
+
+  if (children.length === 0) {
+    el.innerHTML = `<div class="empty" style="padding:24px">No sub-items here</div>`;
+    return;
+  }
+
+  el.innerHTML = children.map(c => {
+    const allEnabled = c.enabled === c.total && c.total > 0;
+    const someEnabled = c.enabled > 0;
+    return `<div class="tree-item" data-path="${esc(c.path)}">
+      <span class="tree-item-name" title="${esc(c.name)}">${esc(c.name)}</span>
+      <div class="tree-item-right">
+        ${c.enabled > 0 ? `<span class="group-badge badge-enabled">${c.enabled}</span>` : ''}
+        <span class="group-badge badge-total">${c.total.toLocaleString()}</span>
+        <button class="tree-enable-btn ${someEnabled ? 'group-toggle-on' : 'group-toggle-off'}"
+                data-toggle-prefix="${esc(c.path)}" data-enable="${!allEnabled}"
+                title="${allEnabled ? 'Disable all in ' + c.name : 'Enable all in ' + c.name}">
           ${allEnabled ? '&#10003;' : '&#9711;'}
         </button>
+        ${c.has_children ? '<span class="tree-arrow">&#9656;</span>' : ''}
       </div>
     </div>`;
   }).join('');
 
-  $('#group-list').innerHTML = allItem + items;
-
-  $('#group-list').querySelectorAll('.group-item').forEach(el => {
-    el.addEventListener('click', e => {
-      if (e.target.closest('.group-toggle')) return;
-      state.group = el.dataset.group;
-      state.page = 1;
-      loadStats();
-      loadPoints();
+  el.querySelectorAll('.tree-item').forEach(item => {
+    item.addEventListener('click', e => {
+      if (e.target.closest('.tree-enable-btn')) return;
+      navigateTo(item.dataset.path);
     });
   });
 
-  $('#group-list').querySelectorAll('.group-toggle').forEach(btn => {
+  el.querySelectorAll('.tree-enable-btn').forEach(btn => {
     btn.addEventListener('click', async e => {
       e.stopPropagation();
-      const group = btn.dataset.groupToggle;
-      const enabled = btn.dataset.enabled === 'true';
-      const data = await api('/api/groups/toggle', {
+      const prefix = btn.dataset.togglePrefix;
+      const enabled = btn.dataset.enable === 'true';
+      const data = await api('/api/filtered/toggle', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({ group, enabled }),
+        body: JSON.stringify({ prefix, enabled }),
       });
-      toast(`${data.count} points ${enabled ? 'enabled' : 'disabled'} in ${group}`);
+      toast(`${data.count} points ${enabled ? 'enabled' : 'disabled'}`);
       loadStats();
+      loadTree();
       loadPoints();
     });
   });
 }
 
+function navigateTo(prefix) {
+  state.prefix = prefix || '';
+  state.page = 1;
+  loadTree();
+  loadPoints();
+}
+
 async function loadPoints() {
   const params = new URLSearchParams();
-  if (state.group) params.set('group', state.group);
+  if (state.prefix) params.set('prefix', state.prefix);
   if (state.search) params.set('search', state.search);
   if (state.status) params.set('status', state.status);
   params.set('page', state.page);
@@ -600,7 +697,7 @@ async function loadPoints() {
 
 function updateBulkBar(total) {
   const bar = $('#bulk-bar');
-  const hasFilter = state.search || state.group || state.status;
+  const hasFilter = state.search || state.prefix || state.status;
   if (hasFilter && total > 0) {
     bar.style.display = 'flex';
     $('#bulk-count').textContent = total.toLocaleString();
@@ -613,10 +710,11 @@ $('#bulk-enable').addEventListener('click', async () => {
   const data = await api('/api/filtered/toggle', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({ search: state.search, group: state.group, status: state.status, enabled: true }),
+    body: JSON.stringify({ search: state.search, prefix: state.prefix, status: state.status, enabled: true }),
   });
   toast(`${data.count} points enabled`);
   loadStats();
+  loadTree();
   loadPoints();
 });
 
@@ -624,10 +722,11 @@ $('#bulk-disable').addEventListener('click', async () => {
   const data = await api('/api/filtered/toggle', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({ search: state.search, group: state.group, status: state.status, enabled: false }),
+    body: JSON.stringify({ search: state.search, prefix: state.prefix, status: state.status, enabled: false }),
   });
   toast(`${data.count} points disabled`);
   loadStats();
+  loadTree();
   loadPoints();
 });
 
@@ -853,6 +952,7 @@ document.querySelectorAll('.filter-btns .btn').forEach(btn => {
 });
 
 loadStats();
+loadTree();
 loadPoints();
 </script>
 </body>

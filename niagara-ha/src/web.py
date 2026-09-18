@@ -11,9 +11,11 @@ from point_manager import (
     POINTS_DIR,
     POINTS_FILE,
     PROFILES,
+    get_tree_children,
     load_auto_enable_rules,
     load_point_selections,
     matches_auto_enable,
+    parse_path_segments,
     save_auto_enable_rules,
 )
 
@@ -68,6 +70,21 @@ def stats():
     })
 
 
+@app.route("/api/tree")
+def tree():
+    points = _load_points()
+    prefix = request.args.get("prefix", "")
+    children = get_tree_children(points, prefix)
+    return jsonify({"prefix": prefix, "children": children})
+
+
+def _points_match_prefix(path: str, prefix_parts: list[str]) -> bool:
+    segs = parse_path_segments(path)
+    if len(segs) < len(prefix_parts):
+        return False
+    return segs[:len(prefix_parts)] == prefix_parts
+
+
 def _load_values() -> dict[str, str]:
     try:
         mtime = VALUES_FILE.stat().st_mtime
@@ -97,12 +114,16 @@ def list_points():
     points = _load_points()
 
     group = request.args.get("group", "")
+    prefix = request.args.get("prefix", "")
     search = request.args.get("search", "").lower()
     status = request.args.get("status", "")
     page = int(request.args.get("page", "1"))
 
     if group:
         points = [p for p in points if p.get("group") == group]
+    if prefix:
+        prefix_parts = prefix.split("/")
+        points = [p for p in points if _points_match_prefix(p.get("path", ""), prefix_parts)]
     if search:
         points = [p for p in points if search in p.get("name", "").lower() or search in p.get("path", "").lower()]
     if status == "enabled":
@@ -193,13 +214,18 @@ def toggle_filtered():
     data = request.get_json()
     search = data.get("search", "").lower()
     group = data.get("group", "")
+    prefix = data.get("prefix", "")
     status_filter = data.get("status", "")
     enabled = data.get("enabled", False)
+
+    prefix_parts = prefix.split("/") if prefix else []
 
     selections = load_point_selections()
     count = 0
     for entry in selections.values():
         if group and entry.get("group") != group:
+            continue
+        if prefix_parts and not _points_match_prefix(entry.get("path", ""), prefix_parts):
             continue
         if search:
             if search not in entry.get("name", "").lower() and search not in entry.get("path", "").lower():
