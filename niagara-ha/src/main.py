@@ -18,6 +18,7 @@ from point_manager import (
     POINTS_DIR,
     POINTS_FILE,
     filter_enabled,
+    load_auto_enable_rules,
     load_point_selections,
     save_point_selections,
 )
@@ -110,11 +111,10 @@ def main() -> None:
 
     time.sleep(2)
 
-    discovered_points = []
-    active_points = []
-    entity_maps = {}
-    selections = {}
+    active_points: list = []
+    entity_maps: dict = {}
     points_mtime = 0.0
+    discovered_count = 0
     last_values: dict[str, str] = {}
     last_statuses: dict[str, str] = {}
 
@@ -125,18 +125,26 @@ def main() -> None:
                 reconnect_delay = RECONNECT_DELAY
                 logger.info("Discovering points (filter=%s)...", point_filter or "(none)")
                 discovered_points = obix.discover_points(point_filter)
-                logger.info("Found %d points", len(discovered_points))
+                discovered_count = len(discovered_points)
+                logger.info("Found %d points", discovered_count)
 
                 existing_selections = load_point_selections()
-                selections = save_point_selections(discovered_points, existing_selections)
+                config_patterns = opts.get("auto_enable_patterns", [])
+                file_patterns = load_auto_enable_rules()
+                auto_patterns = list(dict.fromkeys(config_patterns + file_patterns))
+                if auto_patterns:
+                    logger.info("Auto-enable rules: %d patterns active", len(auto_patterns))
+                selections = save_point_selections(discovered_points, existing_selections, auto_patterns)
                 points_mtime = _get_file_mtime(POINTS_FILE)
                 active_points = filter_enabled(discovered_points, selections)
                 logger.info(
                     "Active points: %d of %d (use the web UI or edit points.yaml)",
-                    len(active_points), len(discovered_points),
+                    len(active_points), discovered_count,
                 )
 
-                entity_maps = _publish_entities(active_points, discovered_points, selections, mqtt_pub, topic_prefix, device_name)
+                del discovered_points, existing_selections
+                entity_maps = _publish_entities(active_points, selections, mqtt_pub, topic_prefix, device_name)
+                del selections
                 last_values.clear()
                 last_statuses.clear()
             else:
@@ -152,8 +160,13 @@ def main() -> None:
             points_mtime = current_mtime
             logger.info("points.yaml changed — reloading selections")
             selections = load_point_selections()
-            active_points = filter_enabled(discovered_points, selections)
-            entity_maps = _publish_entities(active_points, discovered_points, selections, mqtt_pub, topic_prefix, device_name)
+            enabled_paths = {p for p, e in selections.items() if e.get("enabled", False)}
+            active_points = [pt for pt in active_points if pt.path in enabled_paths]
+            new_paths = enabled_paths - {pt.path for pt in active_points}
+            if new_paths:
+                logger.info("New enabled points detected (%d) — will pick up on next reconnect", len(new_paths))
+            entity_maps = _publish_entities(active_points, selections, mqtt_pub, topic_prefix, device_name)
+            del selections
             last_values.clear()
             last_statuses.clear()
             logger.info("Reloaded: %d active points", len(active_points))
@@ -203,7 +216,7 @@ def main() -> None:
 
 
 def _publish_entities(
-    active_points, all_points, selections, mqtt_pub, topic_prefix, device_name,
+    active_points, selections, mqtt_pub, topic_prefix, device_name,
 ) -> dict:
     entity_maps = {}
     for pt in active_points:
@@ -213,16 +226,8 @@ def _publish_entities(
             entity_maps[pt.path] = mapped
             mqtt_pub.publish_discovery(mapped)
 
-    disabled_topics = set()
-    for pt in all_points:
-        if pt.path not in entity_maps:
-            group = selections.get(pt.path, {}).get("group", "")
-            mapped = map_point(pt, topic_prefix, device_name, group)
-            if mapped:
-                disabled_topics.add(mapped["discovery_topic"])
-
     current_topics = {m["discovery_topic"] for m in entity_maps.values()}
-    mqtt_pub.remove_stale_discoveries(current_topics, disabled_topics)
+    mqtt_pub.remove_stale_discoveries(current_topics)
     mqtt_pub.publish_availability(True)
 
     initial_values = 0
@@ -233,8 +238,8 @@ def _publish_entities(
             initial_values += 1
 
     logger.info(
-        "Published %d entities to HA, cleared %d disabled (%d with initial values)",
-        len(entity_maps), len(disabled_topics), initial_values,
+        "Published %d entities to HA (%d with initial values)",
+        len(entity_maps), initial_values,
     )
     return entity_maps
 
