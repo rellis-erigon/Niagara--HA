@@ -23,17 +23,26 @@ def get_group(point: NiagaraPoint) -> str:
     return "Ungrouped"
 
 
+_last_good: dict[str, dict] = {}
+
+
 def load_point_selections() -> dict[str, dict]:
+    global _last_good
     if not POINTS_FILE.exists():
         return {}
     try:
         with open(POINTS_FILE) as f:
             data = yaml.safe_load(f)
         if not isinstance(data, dict) or "points" not in data:
-            return {}
-        return {p["path"]: p for p in data["points"] if "path" in p}
+            return _last_good
+        result = {p["path"]: p for p in data["points"] if "path" in p}
+        _last_good = result
+        return result
     except Exception as e:
         logger.warning("Failed to read %s: %s", POINTS_FILE, e)
+        if _last_good:
+            logger.info("Using last successfully loaded point selections (%d points)", len(_last_good))
+            return _last_good
         return {}
 
 
@@ -79,7 +88,7 @@ def save_point_selections(
     }
 
     with open(POINTS_FILE, "w") as f:
-        yaml.dump(output, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
+        yaml.safe_dump(output, f, default_flow_style=False, sort_keys=False, allow_unicode=True, width=10000)
 
     enabled = sum(1 for e in merged.values() if e.get("enabled", False))
     logger.info(

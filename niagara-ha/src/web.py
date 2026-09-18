@@ -204,7 +204,7 @@ def _write_selections(selections: dict[str, dict]) -> None:
     }
 
     with open(POINTS_FILE, "w") as f:
-        yaml.dump(output, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
+        yaml.safe_dump(output, f, default_flow_style=False, sort_keys=False, allow_unicode=True, width=10000)
     _cache["mtime"] = 0.0
 
 
