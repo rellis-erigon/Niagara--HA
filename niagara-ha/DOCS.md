@@ -25,7 +25,18 @@ oBIX requires HTTPS on the Niagara station.
 2. Click **New**
 3. Set **Type to Add** = `Obix Network`
 
-**Step 3 — Add HTTPBasicScheme Authentication**
+**Step 3 — Export Points to oBIX**
+
+Points must be explicitly exported before oBIX can see them.
+
+1. Navigate to the points you want to expose (e.g. under **Drivers → NiagaraNetwork → {device} → points**)
+2. Right-click on each point (or a folder of points) → **Actions → Export**
+3. Select **Obix Export** as the export type
+4. Repeat for all points/folders you want available in Home Assistant
+
+> **Tip:** You can export an entire folder to expose all points under it at once. Only exported points will be discoverable by this add-on.
+
+**Step 4 — Add HTTPBasicScheme Authentication**
 
 oBIX requires a non-default authentication scheme.
 
@@ -34,7 +45,7 @@ oBIX requires a non-default authentication scheme.
 3. Browse to **baja → AuthenticationSchemes → WebServicesSchemes → HTTPBasicScheme**
 4. **Add** it to the AuthenticationSchemes list
 
-**Step 4 — Create an oBIX User Account**
+**Step 5 — Create an oBIX User Account**
 
 1. Navigate to **Station → Services → UserService**
 2. **Duplicate** the Admin user
@@ -81,6 +92,7 @@ Use this username and password when configuring the add-on.
 ## Troubleshooting
 
 - **No entities appearing** — Check the add-on logs for connection errors. Verify the Niagara host is reachable from your HA instance and that oBIX is enabled.
+- **Missing points** — Points must be exported to oBIX in Niagara Workbench before they can be discovered. See Step 3 above. After exporting, restart the add-on to trigger a rescan.
 - **SSL errors** — Set `verify_ssl` to `false` if the Niagara station uses a self-signed certificate.
 - **Too many entities** — Use the `point_filter` option to limit discovery to a specific path in the Niagara tree.
 - **Stale values** — Decrease `poll_interval_seconds` for more frequent updates (minimum 5 seconds).
