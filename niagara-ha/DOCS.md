@@ -74,6 +74,7 @@ Use this username and password when configuring the add-on.
 | `verify_ssl` | `false` | Verify SSL cert (disable for self-signed) |
 | `poll_interval_seconds` | `30` | Polling interval in seconds |
 | `point_filter` | *(empty)* | Path prefix filter (e.g. `/config/AHU/`) |
+| `device_depth` | `0` | Folder depth for device grouping (0 = immediate parent, 4 = first 4 levels) |
 | `mqtt_topic_prefix` | `niagara` | MQTT topic prefix |
 | `log_level` | `info` | Logging level |
 

@@ -61,17 +61,19 @@ def _friendly_name(point: NiagaraPoint) -> str:
     return point.name
 
 
-def _get_group(point: NiagaraPoint) -> str:
+def _get_group(point: NiagaraPoint, device_depth: int = 0) -> str:
     skip = {"config", "Drivers", "NiagaraNetwork", "ObixNetwork", "points", "out", "exports", ""}
     parts = [p for p in point.path.strip("/").split("/") if p not in skip]
-    if len(parts) >= 2:
-        return "/".join(parts[:-1])
-    return "Ungrouped"
+    if len(parts) < 2:
+        return "Ungrouped"
+    if device_depth > 0:
+        return "/".join(parts[:device_depth])
+    return "/".join(parts[:-1])
 
 
 def map_point(
     point: NiagaraPoint, topic_prefix: str, device_name: str = "Niagara BMS",
-    group: str = "", custom_name: str = "",
+    group: str = "", custom_name: str = "", device_depth: int = 0,
 ) -> Optional[dict[str, Any]]:
     """Convert a NiagaraPoint into an MQTT discovery payload dict.
 
@@ -85,7 +87,7 @@ def map_point(
     state_topic = f"{base_topic}/state"
     availability_topic = f"{topic_prefix}/bridge/availability"
 
-    group_name = group or _get_group(point)
+    group_name = group or _get_group(point, device_depth)
     device_id = f"niagara_{_stable_id(topic_prefix + '/' + group_name)}"
     group_parts = group_name.split("/")
     short_group = " / ".join(group_parts[-3:]) if len(group_parts) > 3 else " / ".join(group_parts)

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.2
+
+- **Feature**: `device_depth` config option — controls how many folder levels define a device. Set to 4 to group `JACE/BMS/HVAC/Room333/Cooling/Temp` under device "Room333" instead of splitting subfolders into separate devices. Default 0 uses the immediate parent folder.
+
 ## 0.5.1
 
 - **Feature**: Last known point values persist across restarts — HA entities show cached values immediately on startup instead of "unavailable"

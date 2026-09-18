@@ -68,11 +68,13 @@ PROFILES = {
 }
 
 
-def get_group(point: NiagaraPoint) -> str:
+def get_group(point: NiagaraPoint, device_depth: int = 0) -> str:
     parts = [p for p in point.path.strip("/").split("/") if p not in SKIP_SEGMENTS]
-    if len(parts) >= 2:
-        return "/".join(parts[:-1])
-    return "Ungrouped"
+    if len(parts) < 2:
+        return "Ungrouped"
+    if device_depth > 0:
+        return "/".join(parts[:device_depth])
+    return "/".join(parts[:-1])
 
 
 def parse_path_segments(path: str) -> list[str]:
@@ -247,6 +249,7 @@ def save_point_selections(
     discovered: list[NiagaraPoint],
     existing: dict[str, dict],
     auto_enable_patterns: list[str] | None = None,
+    device_depth: int = 0,
 ) -> dict[str, dict]:
     POINTS_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -256,7 +259,7 @@ def save_point_selections(
     auto_enabled_count = 0
     merged: dict[str, dict] = {}
     for pt in discovered:
-        group = get_group(pt)
+        group = get_group(pt, device_depth)
         if pt.path in existing:
             entry = existing[pt.path].copy()
             entry["name"] = pt.name

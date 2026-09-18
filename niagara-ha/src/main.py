@@ -104,6 +104,7 @@ def main() -> None:
     topic_prefix = opts.get("mqtt_topic_prefix", "niagara")
     device_name = opts.get("device_name", "Niagara BMS")
     poll_workers = opts.get("poll_workers", 5)
+    device_depth = opts.get("device_depth", 0)
     reconnect_delay = RECONNECT_DELAY
 
     if not mqtt_pub.connect():
@@ -136,7 +137,7 @@ def main() -> None:
                 auto_patterns = list(dict.fromkeys(config_patterns + file_patterns))
                 if auto_patterns:
                     logger.info("Auto-enable rules: %d patterns active", len(auto_patterns))
-                selections = save_point_selections(discovered_points, existing_selections, auto_patterns)
+                selections = save_point_selections(discovered_points, existing_selections, auto_patterns, device_depth)
                 points_mtime = _get_file_mtime(POINTS_FILE)
                 active_points = filter_enabled(discovered_points, selections)
                 logger.info(
@@ -145,7 +146,7 @@ def main() -> None:
                 )
 
                 del discovered_points, existing_selections
-                entity_maps = _publish_entities(active_points, selections, mqtt_pub, topic_prefix, device_name, last_values)
+                entity_maps = _publish_entities(active_points, selections, mqtt_pub, topic_prefix, device_name, last_values, device_depth)
                 del selections
                 last_statuses.clear()
             else:
@@ -166,7 +167,7 @@ def main() -> None:
             new_paths = enabled_paths - {pt.path for pt in active_points}
             if new_paths:
                 logger.info("New enabled points detected (%d) — will pick up on next reconnect", len(new_paths))
-            entity_maps = _publish_entities(active_points, selections, mqtt_pub, topic_prefix, device_name, last_values)
+            entity_maps = _publish_entities(active_points, selections, mqtt_pub, topic_prefix, device_name, last_values, device_depth)
             del selections
             last_statuses.clear()
             logger.info("Reloaded: %d active points", len(active_points))
@@ -217,14 +218,14 @@ def main() -> None:
 
 def _publish_entities(
     active_points, selections, mqtt_pub, topic_prefix, device_name,
-    cached_values: dict[str, str] | None = None,
+    cached_values: dict[str, str] | None = None, device_depth: int = 0,
 ) -> dict:
     entity_maps = {}
     for pt in active_points:
         entry = selections.get(pt.path, {})
         group = entry.get("group", "")
         custom_name = entry.get("custom_name", "")
-        mapped = map_point(pt, topic_prefix, device_name, group, custom_name)
+        mapped = map_point(pt, topic_prefix, device_name, group, custom_name, device_depth)
         if mapped:
             entity_maps[pt.path] = mapped
             mqtt_pub.publish_discovery(mapped)
