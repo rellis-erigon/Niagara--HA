@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.4.0
+
+- **Feature**: Smart point import — bulk toggle, auto-enable rules (glob patterns), and 5 built-in profiles (HVAC, Energy, Alarms, Lighting, Zone Comfort)
+- **Feature**: Drillable tree navigation — browse points by Niagara device/system/area hierarchy with breadcrumb navigation
+- **Performance**: Fast YAML parser replaces yaml.safe_load — ~89% less memory (904 MB → 96 MB for 130K points)
+- **Performance**: Drop intermediate data structures after use to reduce sustained RAM
+- **Fix**: YAML parse errors in points.yaml causing toggle 404s (switched to yaml.safe_dump)
+- **Fix**: Filter out Niagara config properties (stationName, hostName, etc.) from point discovery
+
 ## 0.3.2
 
 - **Feature**: Live point values displayed in the web UI with auto-refresh every 10 seconds
