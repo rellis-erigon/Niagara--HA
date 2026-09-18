@@ -59,14 +59,14 @@ def _stable_id(path: str) -> str:
 
 def _friendly_name(point: NiagaraPoint) -> str:
     parts = point.path.strip("/").split("/")
-    relevant = [p for p in parts if p not in ("config", "Drivers", "points", "out")]
+    relevant = [p for p in parts if p not in ("config", "Drivers", "NiagaraNetwork", "ObixNetwork", "points", "out", "exports")]
     if not relevant:
         return point.name
     return " / ".join(relevant[-3:])
 
 
 def _get_group(point: NiagaraPoint) -> str:
-    skip = {"config", "Drivers", "points", "out", ""}
+    skip = {"config", "Drivers", "NiagaraNetwork", "ObixNetwork", "points", "out", "exports", ""}
     parts = [p for p in point.path.strip("/").split("/") if p not in skip]
     if len(parts) >= 2:
         return parts[0]

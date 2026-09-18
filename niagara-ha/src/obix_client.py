@@ -161,12 +161,12 @@ class ObixClient:
     ) -> Optional[NiagaraPoint]:
         if not name:
             return None
-        if name in SKIP_POINT_NAMES:
-            return None
 
         href = elem.get("href", "")
         full_path = self._resolve_href(parent_path, href) or f"{parent_path}{name}"
 
+        if "/exports/" not in full_path:
+            return None
 
         type_map = {
             "real": "numeric",

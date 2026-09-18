@@ -15,8 +15,8 @@ POINTS_DIR = Path("/config/niagara-ha")
 POINTS_FILE = POINTS_DIR / "points.yaml"
 RULES_FILE = POINTS_DIR / "auto_enable_rules.yaml"
 
-SKIP_SEGMENTS = {"config", "Drivers", "points", "out", ""}
-PATH_BOILERPLATE = {"config", "Drivers", "NiagaraNetwork", "points", "out", ""}
+SKIP_SEGMENTS = {"config", "Drivers", "points", "out", "exports", ""}
+PATH_BOILERPLATE = {"config", "Drivers", "NiagaraNetwork", "ObixNetwork", "points", "out", "exports", ""}
 
 PROFILES = {
     "hvac_monitoring": {

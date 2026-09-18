@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.2
+
+- **Improvement**: Only discover points under oBIX `/exports/` folder — hides all config/metadata noise
+- **Improvement**: Strip `ObixNetwork` and `exports` from display names and tree navigation for cleaner UI
+
 ## 0.4.1
 
 - **Fix**: Removed overly aggressive `/points/` path filter that was hiding legitimate BMS points
