@@ -71,7 +71,7 @@ PROFILES = {
 def get_group(point: NiagaraPoint) -> str:
     parts = [p for p in point.path.strip("/").split("/") if p not in SKIP_SEGMENTS]
     if len(parts) >= 2:
-        return parts[0]
+        return "/".join(parts[:-1])
     return "Ungrouped"
 
 

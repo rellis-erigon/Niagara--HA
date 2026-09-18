@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.0
+
+- **Feature**: Each Niagara folder becomes its own HA device — points in `HVAC/Room333/` create a "Niagara BMS — HVAC / Room333" device with just those points as entities
+- **Improvement**: Entity names now show just the point name (e.g. "SupplyTemp") since the device provides folder context
+
 ## 0.4.3
 
 - **Feature**: Rename points in the web UI — custom names are used as the entity name in MQTT/Home Assistant

@@ -58,18 +58,14 @@ def _stable_id(path: str) -> str:
 
 
 def _friendly_name(point: NiagaraPoint) -> str:
-    parts = point.path.strip("/").split("/")
-    relevant = [p for p in parts if p not in ("config", "Drivers", "NiagaraNetwork", "ObixNetwork", "points", "out", "exports")]
-    if not relevant:
-        return point.name
-    return " / ".join(relevant[-3:])
+    return point.name
 
 
 def _get_group(point: NiagaraPoint) -> str:
     skip = {"config", "Drivers", "NiagaraNetwork", "ObixNetwork", "points", "out", "exports", ""}
     parts = [p for p in point.path.strip("/").split("/") if p not in skip]
     if len(parts) >= 2:
-        return parts[0]
+        return "/".join(parts[:-1])
     return "Ungrouped"
 
 
@@ -91,7 +87,9 @@ def map_point(
 
     group_name = group or _get_group(point)
     device_id = f"niagara_{_stable_id(topic_prefix + '/' + group_name)}"
-    display_name = f"{device_name} — {group_name}"
+    group_parts = group_name.split("/")
+    short_group = " / ".join(group_parts[-3:]) if len(group_parts) > 3 else " / ".join(group_parts)
+    display_name = f"{device_name} — {short_group}"
 
     device_info = {
         "identifiers": [device_id],
