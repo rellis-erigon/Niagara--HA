@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.8
+
+- **Fix**: Removed `/exports/` path filter from point discovery — all oBIX points are now discovered regardless of path, with only the name-based skip list filtering out Niagara metadata
+
 ## 0.5.7
 
 - **Fix**: Restored `out`, `status`, and `in` point names that were incorrectly added to the skip list — these are how Niagara exposes actual BMS point values via oBIX

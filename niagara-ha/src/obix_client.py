@@ -169,7 +169,6 @@ class ObixClient:
 
     def _parse_point(
         self, elem: ET.Element, tag: str, parent_path: str, name: str,
-        filter_exports: bool = True,
     ) -> Optional[NiagaraPoint]:
         if not name:
             return None
@@ -181,9 +180,6 @@ class ObixClient:
 
         href = elem.get("href", "")
         full_path = self._resolve_href(parent_path, href) or f"{parent_path}{name}"
-
-        if filter_exports and "/exports/" not in full_path:
-            return None
 
         type_map = {
             "real": "numeric",
@@ -250,7 +246,7 @@ class ObixClient:
         name = root.get("name", path.rstrip("/").split("/")[-1])
 
         if tag in ("real", "bool", "int", "str", "enum", "abstime", "reltime"):
-            return self._parse_point(root, tag, "/".join(path.split("/")[:-1]) + "/", name, filter_exports=False)
+            return self._parse_point(root, tag, "/".join(path.split("/")[:-1]) + "/", name)
 
         out_elem = root.find(f".//{{{OBIX_NS}}}real[@name='out']")
         if out_elem is None:
@@ -264,7 +260,7 @@ class ObixClient:
 
         if out_elem is not None:
             out_tag = out_elem.tag.replace(f"{{{OBIX_NS}}}", "")
-            point = self._parse_point(out_elem, out_tag, path, name, filter_exports=False)
+            point = self._parse_point(out_elem, out_tag, path, name)
             if point:
                 point.path = path
             return point
