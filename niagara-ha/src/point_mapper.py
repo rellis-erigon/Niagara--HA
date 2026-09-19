@@ -28,6 +28,13 @@ UNIT_MAP = {
     "Hz": "Hz",
     "rpm": "rpm",
     "in. w.c.": "inH2O",
+    "MWh": "MWh",
+    "GJ": "GJ",
+    "MJ": "MJ",
+    "BTU": "BTU",
+    "therm": "therm",
+    "mbar": "mbar",
+    "bar": "bar",
 }
 
 DEVICE_CLASS_MAP = {
@@ -44,6 +51,11 @@ DEVICE_CLASS_MAP = {
     "psi": "pressure",
     "kPa": "pressure",
     "Pa": "pressure",
+    "mbar": "pressure",
+    "bar": "pressure",
+    "MWh": "energy",
+    "GJ": "energy",
+    "MJ": "energy",
 }
 
 NAME_DEVICE_CLASS_SENSOR = [
@@ -57,6 +69,13 @@ NAME_DEVICE_CLASS_SENSOR = [
     (re.compile(r"current|amp", re.I), "current", "A"),
     (re.compile(r"freq|hz$", re.I), "frequency", "Hz"),
 ]
+
+_TOTAL_INCREASING_RE = re.compile(
+    r"total|cumul|consump|daily.?energy|monthly|annual|lifetime|accum|meter.?read|import|export.?energy",
+    re.I,
+)
+
+ENERGY_UNITS = frozenset({"kWh", "Wh", "MWh", "GJ", "MJ", "BTU", "therm"})
 
 NAME_DEVICE_CLASS_BINARY = [
     (re.compile(r"alarm|fault|trip|alert|emergency|smoke|fire", re.I), "problem"),
@@ -79,6 +98,14 @@ NAME_ICON_MAP = [
     (re.compile(r"flow|cfm|gpm", re.I), "mdi:waves-arrow-right"),
     (re.compile(r"light|lux|luminaire", re.I), "mdi:lightbulb"),
 ]
+
+
+def _infer_state_class(device_class: str, name: str, unit: str | None) -> str:
+    if device_class == "energy" or (unit and unit in ENERGY_UNITS):
+        if _TOTAL_INCREASING_RE.search(name):
+            return "total_increasing"
+        return "total_increasing"
+    return "measurement"
 
 
 def _infer_device_class_sensor(name: str) -> tuple[str | None, str | None]:
@@ -242,13 +269,13 @@ def _map_sensor_numeric(
         device_class = DEVICE_CLASS_MAP.get(point.unit)
         if device_class:
             config["device_class"] = device_class
-            config["state_class"] = "measurement"
+            config["state_class"] = _infer_state_class(device_class, point.name, point.unit)
 
     if "device_class" not in config:
         inferred_dc, inferred_unit = _infer_device_class_sensor(point.name)
         if inferred_dc:
             config["device_class"] = inferred_dc
-            config["state_class"] = "measurement"
+            config["state_class"] = _infer_state_class(inferred_dc, point.name, inferred_unit)
             if inferred_unit and "unit_of_measurement" not in config:
                 config["unit_of_measurement"] = inferred_unit
 

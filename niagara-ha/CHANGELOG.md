@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.6
+
+- **Feature**: Energy dashboard support — energy sensors (kWh, Wh, MWh, GJ, MJ) now use `state_class: total_increasing` so they appear in HA's Energy dashboard
+- **Feature**: Additional unit mappings — MWh, GJ, MJ, BTU, therm, mbar, bar now recognized with correct device classes
+- **Improvement**: Smart state class inference — energy/consumption points get `total_increasing`, all other measurements get `measurement`
+
 ## 0.6.5
 
 - **Fix**: Discovery now skips Niagara internal folders (`proxyExt`, `status`, etc.) during tree traversal — no more ghost entities from internal point properties
