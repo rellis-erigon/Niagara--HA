@@ -376,6 +376,10 @@ class ObixClient:
             logger.debug("Skipping %s: %s", path, e)
             return
 
+        value_tags = ("real", "bool", "int", "str", "enum", "abstime", "reltime")
+        children_by_name: dict[str, tuple[ET.Element, str]] = {}
+        refs: list[tuple[str, str]] = []
+
         for child in root:
             tag = child.tag.replace(f"{{{OBIX_NS}}}", "")
             href = child.get("href", "")
@@ -384,11 +388,26 @@ class ObixClient:
             if tag in ("ref", "list"):
                 child_path = self._resolve_href(path, href)
                 if child_path:
-                    self._walk_tree(child_path, points, depth + 1, max_depth)
-            elif tag in ("real", "bool", "int", "str", "enum", "abstime", "reltime"):
+                    refs.append((child_path, name))
+            elif tag in value_tags:
+                children_by_name[name] = (child, tag)
+
+        if "out" in children_by_name:
+            out_elem, out_tag = children_by_name["out"]
+            parent_name = path.rstrip("/").split("/")[-1]
+            point = self._parse_point(out_elem, out_tag, path, parent_name)
+            if point:
+                point.path = path
+                point.name = parent_name
+                points.append(point)
+        else:
+            for name, (child, tag) in children_by_name.items():
                 point = self._parse_point(child, tag, path, name)
                 if point:
                     points.append(point)
+
+        for child_path, _ in refs:
+            self._walk_tree(child_path, points, depth + 1, max_depth)
 
     def _parse_point(
         self, elem: ET.Element, tag: str, parent_path: str, name: str,
