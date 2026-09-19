@@ -77,7 +77,7 @@ def main() -> None:
     opts = load_options()
     setup_logging(opts.get("log_level", "info"))
 
-    logger.info("Niagara BMS Bridge v0.6.6 starting")
+    logger.info("Niagara BMS Bridge v0.6.7 starting")
     logger.info("Target: %s:%d (HTTPS=%s)", opts["niagara_host"], opts["niagara_port"], opts["use_https"])
 
     if not opts.get("niagara_host"):
@@ -115,6 +115,7 @@ def main() -> None:
     time.sleep(2)
 
     active_points: list = []
+    all_points: dict = {}
     entity_maps: dict = {}
     points_mtime = 0.0
     folders_mtime = 0.0
@@ -145,6 +146,7 @@ def main() -> None:
                 selections = save_point_selections(discovered_points, existing_selections, auto_patterns, device_depth, device_folders)
                 points_mtime = _get_file_mtime(POINTS_FILE)
                 folders_mtime = _get_file_mtime(DEVICE_FOLDERS_FILE)
+                all_points = {pt.path: pt for pt in discovered_points}
                 active_points = filter_enabled(discovered_points, selections)
                 logger.info(
                     "Active points: %d of %d (use the web UI or edit points.yaml)",
@@ -187,10 +189,7 @@ def main() -> None:
             selections = load_point_selections()
             device_folders = load_device_folders()
             enabled_paths = {p for p, e in selections.items() if e.get("enabled", False)}
-            active_points = [pt for pt in active_points if pt.path in enabled_paths]
-            new_paths = enabled_paths - {pt.path for pt in active_points}
-            if new_paths:
-                logger.info("New enabled points detected (%d) — will pick up on next reconnect", len(new_paths))
+            active_points = [all_points[p] for p in enabled_paths if p in all_points]
             entity_maps = _publish_entities(active_points, selections, mqtt_pub, topic_prefix, device_name, last_values, device_depth, device_folders)
             del selections
             last_statuses.clear()

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.7
+
+- **Fix**: "Use as Device" and "Apply Changes" now take effect immediately — newly enabled points appear in Home Assistant within one poll cycle instead of requiring a reconnect/restart
+- **Fix**: Hot-reload builds active point list from all discovered points, not just previously active ones
+
 ## 0.6.6
 
 - **Feature**: Energy dashboard support — energy sensors (kWh, Wh, MWh, GJ, MJ) now use `state_class: total_increasing` so they appear in HA's Energy dashboard
