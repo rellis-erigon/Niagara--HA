@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.5
+
+- **Fix**: Discovery now skips Niagara internal folders (`proxyExt`, `status`, etc.) during tree traversal — no more ghost entities from internal point properties
+- **Fix**: Parent folder name checked against skip list when capturing `out` values — prevents `proxyExt/out` from becoming a visible entity
+- **Fix**: Priority array inputs (`in1`–`in16`) added to skip list
+
 ## 0.6.4
 
 - **Feature**: Automatic entity type detection — HA now picks the right card, icon, and device class for each point based on its name (temperature, humidity, fan, pump, valve, alarm, setpoint, etc.)

@@ -81,6 +81,9 @@ SKIP_POINT_NAMES = frozenset({
     "subscriptionStatus", "pointId",
     "fallbackValue", "statusText",
     "priorityArray", "inAlarm", "ackState",
+    # Priority array inputs
+    "in1", "in2", "in3", "in4", "in5", "in6", "in7", "in8",
+    "in9", "in10", "in11", "in12", "in13", "in14", "in15", "in16",
 })
 
 
@@ -426,18 +429,21 @@ class ObixClient:
         if "out" in children_by_name:
             out_elem, out_tag = children_by_name["out"]
             parent_name = path.rstrip("/").split("/")[-1]
-            point = self._parse_point(out_elem, out_tag, path, parent_name)
-            if point:
-                point.path = path
-                point.name = parent_name
-                points.append(point)
+            if parent_name not in SKIP_POINT_NAMES:
+                point = self._parse_point(out_elem, out_tag, path, parent_name)
+                if point:
+                    point.path = path
+                    point.name = parent_name
+                    points.append(point)
         else:
             for name, (child, tag) in children_by_name.items():
                 point = self._parse_point(child, tag, path, name)
                 if point:
                     points.append(point)
 
-        for child_path, _ in refs:
+        for child_path, ref_name in refs:
+            if ref_name in SKIP_POINT_NAMES:
+                continue
             self._walk_tree(child_path, points, depth + 1, max_depth)
 
     def _parse_point(
