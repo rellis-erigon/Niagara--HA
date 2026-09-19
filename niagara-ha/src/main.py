@@ -74,7 +74,7 @@ def main() -> None:
     opts = load_options()
     setup_logging(opts.get("log_level", "info"))
 
-    logger.info("Niagara BMS Bridge v0.3.4 starting")
+    logger.info("Niagara BMS Bridge v0.4.0 starting")
     logger.info("Target: %s:%d (HTTPS=%s)", opts["niagara_host"], opts["niagara_port"], opts["use_https"])
 
     if not opts.get("niagara_host"):
@@ -117,6 +117,7 @@ def main() -> None:
     points_mtime = 0.0
     last_values: dict[str, str] = {}
     last_statuses: dict[str, str] = {}
+    using_watch = False
 
     while not _shutdown:
         if not obix.connected:
@@ -139,6 +140,18 @@ def main() -> None:
                 entity_maps = _publish_entities(active_points, discovered_points, selections, mqtt_pub, topic_prefix, device_name)
                 last_values.clear()
                 last_statuses.clear()
+
+                using_watch = obix.setup_watch(active_points, poll_interval)
+                if using_watch:
+                    for pt in active_points:
+                        if pt.value is not None:
+                            last_values[pt.path] = str(pt.value)
+                            mapped = entity_maps.get(pt.path)
+                            if mapped:
+                                mqtt_pub.publish_state(mapped["state_topic"], str(pt.value))
+                    logger.info("Watch mode: initial values published for %d points", len(last_values))
+                else:
+                    logger.info("Legacy polling mode: %d workers", poll_workers)
             else:
                 logger.warning(
                     "Connection failed — retrying in %ds", reconnect_delay
@@ -156,6 +169,8 @@ def main() -> None:
             entity_maps = _publish_entities(active_points, discovered_points, selections, mqtt_pub, topic_prefix, device_name)
             last_values.clear()
             last_statuses.clear()
+            if using_watch:
+                using_watch = obix.setup_watch(active_points, poll_interval)
             logger.info("Reloaded: %d active points", len(active_points))
 
         updated = obix.poll_points(active_points, max_workers=poll_workers)

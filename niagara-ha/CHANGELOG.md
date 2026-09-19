@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.4.0
+
+- **Major**: oBIX Watch support — polls for changes with a single HTTP request per cycle instead of one GET per point (N+1 → 1)
+- **Feature**: Auto-detects Watch and Batch services from the oBIX lobby
+- **Feature**: Watch lifecycle management — auto lease renewal, re-creation on expiry, clean deletion on shutdown
+- **Feature**: Batch read support for bulk point value fetching
+- **Feature**: Automatic fallback to legacy polling when Watch service is unavailable
+- **Feature**: Dynamic Watch updates — points added/removed from Watch when selections change without full re-creation
+- **Performance**: Session cookie reuse across all oBIX requests (reduces auth overhead on Niagara 4.9+)
+- **Performance**: Watch.add batches points in groups of 500 to avoid oversized requests
+
 ## 0.3.4
 
 - **Fix**: YAML write now quotes strings containing special characters (colons, brackets, etc.) to prevent points.yaml corruption with 42K+ BMS points

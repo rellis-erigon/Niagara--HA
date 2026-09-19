@@ -2,13 +2,15 @@
 
 Connects over HTTP/HTTPS using Basic auth and reads/writes points
 via the oBIX REST interface (XML over HTTP).
+
+Supports oBIX Watches for efficient change-only polling (1 request per cycle
+instead of N individual GETs) and Batch reads for bulk operations.
 """
 
 import logging
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from typing import Optional
-from urllib.parse import quote
 
 import requests
 import urllib3
@@ -18,6 +20,9 @@ logger = logging.getLogger(__name__)
 
 OBIX_NS = "http://obix.org/ns/schema/1.0"
 NS = {"o": OBIX_NS}
+
+WATCH_POINTS_PER_BATCH = 500
+WATCH_LEASE_MULTIPLIER = 3
 
 
 @dataclass
@@ -57,6 +62,10 @@ class ObixClient:
             urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
         self._session.headers.update({"Accept": "text/xml", "Content-Type": "text/xml"})
         self._connected = False
+        self._watch_uri: Optional[str] = None
+        self._watch_points: set[str] = set()
+        self._has_watch_service = False
+        self._has_batch_service = False
 
     @property
     def connected(self) -> bool:
@@ -71,11 +80,31 @@ class ObixClient:
                 raise ObixError(root.get("display", "Unknown oBIX error"))
             self._connected = True
             logger.info("Connected to Niagara at %s", self._base_url)
+            self._detect_services()
             return True
         except requests.RequestException as e:
             self._connected = False
             logger.error("Connection failed: %s", e)
             return False
+
+    def _detect_services(self) -> None:
+        try:
+            root = self._get("/")
+            for child in root:
+                tag = child.tag.replace(f"{{{OBIX_NS}}}", "")
+                name = child.get("name", "")
+                if name == "watchService" or "WatchService" in child.get("is", ""):
+                    self._has_watch_service = True
+                if name == "batch":
+                    self._has_batch_service = True
+            logger.info(
+                "oBIX services: Watch=%s, Batch=%s",
+                self._has_watch_service, self._has_batch_service,
+            )
+        except (ObixError, requests.RequestException) as e:
+            logger.debug("Could not detect services from lobby: %s", e)
+
+    # -- Low-level HTTP ------------------------------------------------
 
     def _get(self, path: str) -> ET.Element:
         url = f"{self._base_url}{path}"
@@ -95,8 +124,203 @@ class ObixClient:
             raise ObixError(root.get("display", "Unknown oBIX error"))
         return root
 
+    def _post_url(self, url: str, body: str) -> ET.Element:
+        resp = self._session.post(url, data=body, timeout=30)
+        resp.raise_for_status()
+        root = ET.fromstring(resp.text)
+        if root.tag == f"{{{OBIX_NS}}}err":
+            raise ObixError(root.get("display", "Unknown oBIX error"))
+        return root
+
+    # -- Watch Service -------------------------------------------------
+
+    def _create_watch(self, poll_interval: int = 30) -> bool:
+        try:
+            root = self._post("/watchService/make/", '<obj/>')
+            watch_href = root.get("href")
+            if not watch_href:
+                logger.warning("Watch created but no href returned")
+                return False
+
+            if watch_href.startswith("http"):
+                self._watch_uri = watch_href
+            elif watch_href.startswith("/obix"):
+                self._watch_uri = f"{self._base_url.rsplit('/obix', 1)[0]}{watch_href}"
+            else:
+                self._watch_uri = f"{self._base_url}{watch_href}"
+
+            self._watch_uri = self._watch_uri.rstrip("/") + "/"
+
+            lease_seconds = poll_interval * WATCH_LEASE_MULTIPLIER
+            lease_val = f"PT{lease_seconds}S"
+            try:
+                self._session.put(
+                    f"{self._watch_uri}lease/",
+                    data=f'<reltime val="{lease_val}"/>',
+                    timeout=10,
+                )
+            except requests.RequestException:
+                pass
+
+            self._watch_points.clear()
+            logger.info("Created oBIX Watch at %s (lease=%s)", watch_href, lease_val)
+            return True
+        except (ObixError, requests.RequestException) as e:
+            logger.warning("Failed to create Watch: %s", e)
+            return False
+
+    def _watch_add(self, paths: list[str]) -> dict[str, dict]:
+        if not self._watch_uri:
+            return {}
+
+        results = {}
+        for i in range(0, len(paths), WATCH_POINTS_PER_BATCH):
+            batch = paths[i:i + WATCH_POINTS_PER_BATCH]
+            uri_elements = "".join(f'<uri val="{p}"/>' for p in batch)
+            body = f'<obj is="obix:WatchIn"><list name="hrefs">{uri_elements}</list></obj>'
+
+            try:
+                root = self._post_url(f"{self._watch_uri}add/", body)
+                values_list = root.find(f".//{{{OBIX_NS}}}list[@name='values']")
+                if values_list is None:
+                    values_list = root.find(f".//{{{OBIX_NS}}}list")
+                if values_list is not None:
+                    for child in values_list:
+                        parsed = self._parse_watch_element(child)
+                        if parsed:
+                            results[parsed["path"]] = parsed
+                self._watch_points.update(batch)
+                logger.debug("Watch.add: added %d points (batch %d)", len(batch), i // WATCH_POINTS_PER_BATCH + 1)
+            except (ObixError, requests.RequestException) as e:
+                logger.warning("Watch.add failed for batch %d: %s", i // WATCH_POINTS_PER_BATCH + 1, e)
+
+        return results
+
+    def _watch_poll_changes(self) -> dict[str, dict]:
+        if not self._watch_uri:
+            return {}
+
+        try:
+            root = self._post_url(f"{self._watch_uri}pollChanges/", '<obj/>')
+            results = {}
+            values_list = root.find(f".//{{{OBIX_NS}}}list[@name='values']")
+            if values_list is None:
+                values_list = root.find(f".//{{{OBIX_NS}}}list")
+            if values_list is not None:
+                for child in values_list:
+                    parsed = self._parse_watch_element(child)
+                    if parsed:
+                        results[parsed["path"]] = parsed
+            return results
+        except (ObixError, requests.RequestException) as e:
+            logger.warning("Watch.pollChanges failed: %s", e)
+            if "not found" in str(e).lower() or "expired" in str(e).lower():
+                logger.info("Watch appears expired — will recreate")
+                self._watch_uri = None
+                self._watch_points.clear()
+            return {}
+
+    def _watch_poll_refresh(self) -> dict[str, dict]:
+        if not self._watch_uri:
+            return {}
+
+        try:
+            root = self._post_url(f"{self._watch_uri}pollRefresh/", '<obj/>')
+            results = {}
+            values_list = root.find(f".//{{{OBIX_NS}}}list[@name='values']")
+            if values_list is None:
+                values_list = root.find(f".//{{{OBIX_NS}}}list")
+            if values_list is not None:
+                for child in values_list:
+                    parsed = self._parse_watch_element(child)
+                    if parsed:
+                        results[parsed["path"]] = parsed
+            return results
+        except (ObixError, requests.RequestException) as e:
+            logger.warning("Watch.pollRefresh failed: %s", e)
+            return {}
+
+    def _watch_delete(self) -> None:
+        if not self._watch_uri:
+            return
+        try:
+            self._post_url(f"{self._watch_uri}delete/", '<obj/>')
+            logger.debug("Watch deleted")
+        except (ObixError, requests.RequestException):
+            pass
+        self._watch_uri = None
+        self._watch_points.clear()
+
+    def _parse_watch_element(self, elem: ET.Element) -> Optional[dict]:
+        tag = elem.tag.replace(f"{{{OBIX_NS}}}", "")
+        href = elem.get("href", "")
+        if not href:
+            return None
+
+        if href.startswith("/obix"):
+            path = href
+        elif href.startswith("/"):
+            path = href
+        else:
+            path = href
+
+        val = elem.get("val")
+        status = elem.get("status", "ok")
+
+        return {"path": path, "value": val, "status": status}
+
+    # -- Batch reads ---------------------------------------------------
+
+    def batch_read(self, paths: list[str]) -> dict[str, dict]:
+        if not paths:
+            return {}
+
+        results = {}
+        for i in range(0, len(paths), WATCH_POINTS_PER_BATCH):
+            batch = paths[i:i + WATCH_POINTS_PER_BATCH]
+            uri_elements = "".join(
+                f'<uri is="obix:Read" val="{p}"/>' for p in batch
+            )
+            body = f'<obj is="obix:BatchIn"><list>{uri_elements}</list></obj>'
+
+            try:
+                root = self._post("/batch/", body)
+                batch_list = root.find(f".//{{{OBIX_NS}}}list")
+                if batch_list is None:
+                    for idx, child in enumerate(root):
+                        if idx < len(batch):
+                            parsed = self._parse_watch_element(child)
+                            if parsed:
+                                results[parsed["path"]] = parsed
+                            else:
+                                child_tag = child.tag.replace(f"{{{OBIX_NS}}}", "")
+                                if child_tag in ("real", "bool", "int", "str", "enum"):
+                                    results[batch[idx]] = {
+                                        "path": batch[idx],
+                                        "value": child.get("val"),
+                                        "status": child.get("status", "ok"),
+                                    }
+                else:
+                    for idx, child in enumerate(batch_list):
+                        parsed = self._parse_watch_element(child)
+                        if parsed:
+                            results[parsed["path"]] = parsed
+                        elif idx < len(batch):
+                            child_tag = child.tag.replace(f"{{{OBIX_NS}}}", "")
+                            if child_tag in ("real", "bool", "int", "str", "enum"):
+                                results[batch[idx]] = {
+                                    "path": batch[idx],
+                                    "value": child.get("val"),
+                                    "status": child.get("status", "ok"),
+                                }
+            except (ObixError, requests.RequestException) as e:
+                logger.warning("Batch read failed for chunk %d: %s", i // WATCH_POINTS_PER_BATCH + 1, e)
+
+        return results
+
+    # -- Discovery -----------------------------------------------------
+
     def discover_points(self, path_filter: str = "") -> list[NiagaraPoint]:
-        """Walk the oBIX point tree and return all discoverable points."""
         points = []
         start_path = "/config/"
         if path_filter:
@@ -127,7 +351,6 @@ class ObixClient:
             tag = child.tag.replace(f"{{{OBIX_NS}}}", "")
             href = child.get("href", "")
             name = child.get("name", "")
-            display = child.get("display", "")
 
             if tag in ("ref", "list"):
                 child_path = self._resolve_href(path, href)
@@ -201,6 +424,8 @@ class ObixClient:
             return None
         return base.rstrip("/") + "/" + href.lstrip("./")
 
+    # -- Point reading (single) ----------------------------------------
+
     def read_point(self, path: str) -> Optional[NiagaraPoint]:
         try:
             root = self._get(path)
@@ -237,14 +462,89 @@ class ObixClient:
         point = self.read_point(path)
         return point.value if point else None
 
+    # -- Polling (Watch-based or legacy) -------------------------------
+
+    def setup_watch(self, points: list[NiagaraPoint], poll_interval: int = 30) -> bool:
+        if not self._has_watch_service:
+            logger.info("Watch service not available — using legacy polling")
+            return False
+
+        self._watch_delete()
+
+        if not self._create_watch(poll_interval):
+            return False
+
+        paths = [pt.path for pt in points]
+        initial = self._watch_add(paths)
+
+        if not initial and paths:
+            logger.warning("Watch.add returned no initial values — Watch may not be working")
+            self._watch_delete()
+            return False
+
+        for pt in points:
+            data = initial.get(pt.path)
+            if data:
+                pt.value = data["value"]
+                pt.status = data.get("status", "ok")
+
+        logger.info(
+            "Watch active: %d points subscribed, %d initial values",
+            len(self._watch_points), len(initial),
+        )
+        return True
+
     def poll_points(
         self, points: list[NiagaraPoint], max_workers: int = 5,
     ) -> list[NiagaraPoint]:
-        """Re-read the current value of each point using concurrent requests."""
-        from concurrent.futures import ThreadPoolExecutor, as_completed
-
         if not points:
             return []
+
+        if self._watch_uri:
+            return self._poll_via_watch(points)
+
+        return self._poll_via_legacy(points, max_workers)
+
+    def _poll_via_watch(self, points: list[NiagaraPoint]) -> list[NiagaraPoint]:
+        current_paths = {pt.path for pt in points}
+        new_paths = current_paths - self._watch_points
+        removed_paths = self._watch_points - current_paths
+
+        if new_paths:
+            self._watch_add(list(new_paths))
+        if removed_paths:
+            self._watch_remove(list(removed_paths))
+
+        changes = self._watch_poll_changes()
+
+        if changes is None:
+            logger.error("Watch poll returned None — marking connection lost")
+            self._connected = False
+            return points
+
+        for pt in points:
+            data = changes.get(pt.path)
+            if data:
+                pt.value = data["value"]
+                pt.status = data.get("status", "ok")
+
+        return points
+
+    def _watch_remove(self, paths: list[str]) -> None:
+        if not self._watch_uri or not paths:
+            return
+        uri_elements = "".join(f'<uri val="{p}"/>' for p in paths)
+        body = f'<obj is="obix:WatchIn"><list name="hrefs">{uri_elements}</list></obj>'
+        try:
+            self._post_url(f"{self._watch_uri}remove/", body)
+            self._watch_points -= set(paths)
+        except (ObixError, requests.RequestException) as e:
+            logger.debug("Watch.remove failed: %s", e)
+
+    def _poll_via_legacy(
+        self, points: list[NiagaraPoint], max_workers: int,
+    ) -> list[NiagaraPoint]:
+        from concurrent.futures import ThreadPoolExecutor, as_completed
 
         results: dict[str, NiagaraPoint] = {}
         fail_count = 0
@@ -281,6 +581,9 @@ class ObixClient:
 
         return [results[pt.path] for pt in points if pt.path in results]
 
+    # -- Lifecycle -----------------------------------------------------
+
     def close(self) -> None:
+        self._watch_delete()
         self._session.close()
         self._connected = False
