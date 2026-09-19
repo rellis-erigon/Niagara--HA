@@ -261,7 +261,30 @@ def toggle_device_folder():
         folders.append(folder)
         action = "added"
     save_device_folders(folders)
-    return jsonify({"ok": True, "folder": folder, "action": action, "folders": folders})
+
+    selections = load_point_selections()
+    enabled_count = 0
+    regrouped = 0
+    for entry in selections.values():
+        path = entry.get("path", "")
+        segs = parse_path_segments(path)
+        point_path = "/".join(segs[:-1]) if len(segs) >= 2 else ""
+        under_folder = point_path == folder or point_path.startswith(folder + "/")
+        if under_folder:
+            if action == "added" and not entry.get("enabled", False):
+                entry["enabled"] = True
+                enabled_count += 1
+            new_group = get_group_from_path(path, device_folders=folders)
+            if entry.get("group") != new_group:
+                entry["group"] = new_group
+                regrouped += 1
+    if enabled_count > 0 or regrouped > 0:
+        _write_selections(selections)
+
+    return jsonify({
+        "ok": True, "folder": folder, "action": action,
+        "folders": folders, "enabled": enabled_count, "regrouped": regrouped,
+    })
 
 
 @app.route("/api/device-folders/apply", methods=["POST"])

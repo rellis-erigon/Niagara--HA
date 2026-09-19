@@ -733,10 +733,16 @@ function renderTree(children) {
         body: JSON.stringify({ folder }),
       });
       deviceFolders = data.folders;
-      deviceFoldersChanged = true;
-      $('#btn-apply-devices').style.display = '';
-      toast(data.action === 'added' ? `"${folder}" set as HA device` : `"${folder}" removed as device`);
+      if (data.action === 'added') {
+        let msg = `"${folder}" set as HA device`;
+        if (data.enabled > 0) msg += ` — ${data.enabled} points enabled`;
+        toast(msg);
+      } else {
+        toast(`"${folder}" removed as device`);
+      }
+      loadStats();
       loadTree();
+      loadPoints();
     });
   });
 }
