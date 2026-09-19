@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.3
+
+- **Fix**: oBIX unit URIs (`obix:units/celsius`) now converted to proper HA units (`°C`) — no more "0.0 obixunits/celsius" display in entities
+
 ## 0.6.2
 
 - **Fix**: Restore "Apply Changes" button — always visible in Browse sidebar for manual re-apply of device groupings

@@ -24,6 +24,37 @@ NS = {"o": OBIX_NS}
 WATCH_POINTS_PER_BATCH = 500
 WATCH_LEASE_MULTIPLIER = 3
 
+OBIX_UNIT_MAP = {
+    "celsius": "°C",
+    "fahrenheit": "°F",
+    "percent": "%",
+    "kilowatt": "kW",
+    "watt": "W",
+    "kilowatt_hour": "kWh",
+    "watt_hour": "Wh",
+    "volt": "V",
+    "ampere": "A",
+    "hertz": "Hz",
+    "pascal": "Pa",
+    "kilopascal": "kPa",
+    "pounds_per_square_inch": "psi",
+    "cubic_feet_per_minute": "cfm",
+    "liters_per_second": "l/s",
+    "gallons_per_minute": "gpm",
+    "revolutions_per_minute": "rpm",
+    "inches_of_water": "in. w.c.",
+    "millibar": "mbar",
+    "bar": "bar",
+    "degree": "°",
+}
+
+
+def _normalize_unit(raw: str) -> str:
+    unit_name = raw.rsplit("/", 1)[-1] if "/" in raw else raw
+    unit_name = unit_name.replace("obix:", "")
+    return OBIX_UNIT_MAP.get(unit_name, unit_name)
+
+
 SKIP_POINT_NAMES = frozenset({
     # Station metadata
     "stationName", "hostName", "hostId",
@@ -436,7 +467,8 @@ class ObixClient:
         val = elem.get("val")
         status = elem.get("status", "ok")
         display = elem.get("display", "")
-        unit = elem.get("unit")
+        raw_unit = elem.get("unit")
+        unit = _normalize_unit(raw_unit) if raw_unit else None
         writable = elem.get("writable", "false") == "true"
 
         enum_range = []
