@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.1
+
+- **Fix**: Discovery now captures only the output value per point — no longer creates separate entities for internal Niagara properties (in1-in16, fallbackValue, etc.)
+- **Improvement**: "Use as Device" now auto-enables all points under the folder and applies grouping in one click — no separate "Apply Changes" step needed
+
 ## 0.6.0
 
 - **Major**: oBIX Watch support — polls for changes with a single HTTP request per cycle instead of one GET per point (N+1 → 1)
