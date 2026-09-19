@@ -40,14 +40,11 @@ SKIP_POINT_NAMES = frozenset({
     "enabled", "overridden", "actions",
     "watchCount", "lease",
     "type", "is", "display", "displayName",
-    # Point sub-properties (not real BMS values)
-    "readValue", "writeValue", "status",
+    # Point sub-properties (metadata, not real BMS values)
+    "readValue", "writeValue",
     "subscriptionStatus", "pointId",
     "fallbackValue", "statusText",
     "priorityArray", "inAlarm", "ackState",
-    "out", "in", "in1", "in2", "in3", "in4",
-    "in5", "in6", "in7", "in8", "in9", "in10",
-    "in11", "in12", "in13", "in14", "in15", "in16",
 })
 
 
@@ -177,7 +174,9 @@ class ObixClient:
         if not name:
             return None
 
-        if name in SKIP_POINT_NAMES or ":" in name:
+        if name in SKIP_POINT_NAMES:
+            return None
+        if name.startswith(("pslot:", "slot:", "n:")):
             return None
 
         href = elem.get("href", "")
