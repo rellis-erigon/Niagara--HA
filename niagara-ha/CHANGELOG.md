@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.5
+
+- **Fix**: Point values now retained in MQTT — HA keeps last known value across brief disconnects instead of showing "unknown"
+- **Fix**: Connection-lost detection requires 3 consecutive full-failure polls before triggering reconnect (was 1), preventing unnecessary "unknown" state flapping
+- **Fix**: `/exports/` path filter no longer applied during point polling — only during discovery. Prevents valid point reads from being silently discarded
+
 ## 0.5.4
 
 - **Improvement**: Browse sidebar auto-fits to folder names and buttons instead of truncating

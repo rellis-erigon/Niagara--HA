@@ -75,6 +75,7 @@ class ObixClient:
             urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
         self._session.headers.update({"Accept": "text/xml", "Content-Type": "text/xml"})
         self._connected = False
+        self._consecutive_full_failures = 0
 
     @property
     def connected(self) -> bool:
@@ -157,7 +158,8 @@ class ObixClient:
                     points.append(point)
 
     def _parse_point(
-        self, elem: ET.Element, tag: str, parent_path: str, name: str
+        self, elem: ET.Element, tag: str, parent_path: str, name: str,
+        filter_exports: bool = True,
     ) -> Optional[NiagaraPoint]:
         if not name:
             return None
@@ -165,7 +167,7 @@ class ObixClient:
         href = elem.get("href", "")
         full_path = self._resolve_href(parent_path, href) or f"{parent_path}{name}"
 
-        if "/exports/" not in full_path:
+        if filter_exports and "/exports/" not in full_path:
             return None
 
         type_map = {
@@ -233,7 +235,7 @@ class ObixClient:
         name = root.get("name", path.rstrip("/").split("/")[-1])
 
         if tag in ("real", "bool", "int", "str", "enum", "abstime", "reltime"):
-            return self._parse_point(root, tag, "/".join(path.split("/")[:-1]) + "/", name)
+            return self._parse_point(root, tag, "/".join(path.split("/")[:-1]) + "/", name, filter_exports=False)
 
         out_elem = root.find(f".//{{{OBIX_NS}}}real[@name='out']")
         if out_elem is None:
@@ -247,7 +249,7 @@ class ObixClient:
 
         if out_elem is not None:
             out_tag = out_elem.tag.replace(f"{{{OBIX_NS}}}", "")
-            point = self._parse_point(out_elem, out_tag, path, name)
+            point = self._parse_point(out_elem, out_tag, path, name, filter_exports=False)
             if point:
                 point.path = path
             return point
@@ -295,10 +297,17 @@ class ObixClient:
                     fail_count += 1
 
         if fail_count == len(points):
-            logger.error("All %d point reads failed — marking connection lost", len(points))
-            self._connected = False
-        elif fail_count > 0:
-            logger.warning("Poll: %d of %d reads failed", fail_count, len(points))
+            self._consecutive_full_failures += 1
+            if self._consecutive_full_failures >= 3:
+                logger.error("All %d point reads failed %d times in a row — marking connection lost", len(points), self._consecutive_full_failures)
+                self._connected = False
+                self._consecutive_full_failures = 0
+            else:
+                logger.warning("All %d point reads failed (attempt %d/3 before reconnect)", len(points), self._consecutive_full_failures)
+        else:
+            self._consecutive_full_failures = 0
+            if fail_count > 0:
+                logger.warning("Poll: %d of %d reads failed", fail_count, len(points))
 
         return [results[pt.path] for pt in points if pt.path in results]
 
