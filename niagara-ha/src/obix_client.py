@@ -20,21 +20,34 @@ OBIX_NS = "http://obix.org/ns/schema/1.0"
 NS = {"o": OBIX_NS}
 
 SKIP_POINT_NAMES = frozenset({
+    # Station metadata
     "stationName", "hostName", "hostId",
     "platformVersion", "niagaraVersion", "softwareVersion",
     "osName", "osVersion", "osArch",
     "vmName", "vmVersion", "vmVendor",
     "timeZoneId", "stationStartTime",
+    # Device/driver metadata
     "vendorName", "modelName", "serialNumber",
     "firmwareVersion", "hardwareVersion",
     "healthStatus", "health", "faultCause",
     "deviceName", "driverName",
-    "pollFrequency", "pollEnabled",
-    "tuningPolicyRef", "proxyExt",
+    # Polling/tuning config
+    "pollFrequency", "pollEnabled", "pollRate",
+    "tuningPolicyRef", "tuningPolicyName", "tuningPolicy",
+    # Point internal properties
+    "proxyExt", "conversion", "deviceFacets",
     "facets", "icon", "href",
     "enabled", "overridden", "actions",
-    "watchCount", "lease", "pollRate",
+    "watchCount", "lease",
     "type", "is", "display", "displayName",
+    # Point sub-properties (not real BMS values)
+    "readValue", "writeValue", "status",
+    "subscriptionStatus", "pointId",
+    "fallbackValue", "statusText",
+    "priorityArray", "inAlarm", "ackState",
+    "out", "in", "in1", "in2", "in3", "in4",
+    "in5", "in6", "in7", "in8", "in9", "in10",
+    "in11", "in12", "in13", "in14", "in15", "in16",
 })
 
 
@@ -162,6 +175,9 @@ class ObixClient:
         filter_exports: bool = True,
     ) -> Optional[NiagaraPoint]:
         if not name:
+            return None
+
+        if name in SKIP_POINT_NAMES or ":" in name:
             return None
 
         href = elem.get("href", "")

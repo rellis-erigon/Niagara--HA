@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.6
+
+- **Fix**: Filter out Niagara internal point properties (`conversion`, `deviceFacets`, `readValue`, `status`, `subscriptionStatus`, `tuningPolicyName`, `proxyExt`, `pointId`, `priorityArray`, etc.) that were appearing as separate HA entities
+- **Fix**: Skip names containing `:` (Niagara slot references like `pslot:Drivers/...`) from discovery
+- **Fix**: `SKIP_POINT_NAMES` check was missing from `_parse_point` — now applied during both discovery and polling
+
 ## 0.5.5
 
 - **Fix**: Point values now retained in MQTT — HA keeps last known value across brief disconnects instead of showing "unknown"
