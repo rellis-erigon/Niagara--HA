@@ -46,6 +46,61 @@ DEVICE_CLASS_MAP = {
     "Pa": "pressure",
 }
 
+NAME_DEVICE_CLASS_SENSOR = [
+    (re.compile(r"temp|room.?t|zone.?t|supply.?air|return.?air|discharge|duct.?t|oat|sat|rat|dat|chwt|hwt", re.I), "temperature", "°C"),
+    (re.compile(r"humid|rh$|rel.?hum", re.I), "humidity", "%"),
+    (re.compile(r"co2|carbon.?di", re.I), "carbon_dioxide", "ppm"),
+    (re.compile(r"press|psi|static.?p", re.I), "pressure", None),
+    (re.compile(r"power|kw$|demand", re.I), "power", "kW"),
+    (re.compile(r"energy|kwh|consumption", re.I), "energy", "kWh"),
+    (re.compile(r"volt", re.I), "voltage", "V"),
+    (re.compile(r"current|amp", re.I), "current", "A"),
+    (re.compile(r"freq|hz$", re.I), "frequency", "Hz"),
+]
+
+NAME_DEVICE_CLASS_BINARY = [
+    (re.compile(r"alarm|fault|trip|alert|emergency|smoke|fire", re.I), "problem"),
+    (re.compile(r"fan|motor|pump|compressor|run", re.I), "running"),
+    (re.compile(r"door|window|damper|valve", re.I), "opening"),
+    (re.compile(r"occup", re.I), "occupancy"),
+    (re.compile(r"motion|pir", re.I), "motion"),
+]
+
+NAME_ICON_MAP = [
+    (re.compile(r"fan|vfd", re.I), "mdi:fan"),
+    (re.compile(r"pump", re.I), "mdi:pump"),
+    (re.compile(r"valve|vlv", re.I), "mdi:pipe-valve"),
+    (re.compile(r"damper|dpr|dmpr", re.I), "mdi:valve"),
+    (re.compile(r"alarm|fault", re.I), "mdi:alarm-light"),
+    (re.compile(r"setpoint|set.?pt|stpt", re.I), "mdi:thermostat"),
+    (re.compile(r"mode|command|cmd", re.I), "mdi:cog"),
+    (re.compile(r"status|state", re.I), "mdi:information-outline"),
+    (re.compile(r"speed|vfd|freq", re.I), "mdi:speedometer"),
+    (re.compile(r"flow|cfm|gpm", re.I), "mdi:waves-arrow-right"),
+    (re.compile(r"light|lux|luminaire", re.I), "mdi:lightbulb"),
+]
+
+
+def _infer_device_class_sensor(name: str) -> tuple[str | None, str | None]:
+    for pattern, dc, unit in NAME_DEVICE_CLASS_SENSOR:
+        if pattern.search(name):
+            return dc, unit
+    return None, None
+
+
+def _infer_device_class_binary(name: str) -> str | None:
+    for pattern, dc in NAME_DEVICE_CLASS_BINARY:
+        if pattern.search(name):
+            return dc
+    return None
+
+
+def _infer_icon(name: str) -> str | None:
+    for pattern, icon in NAME_ICON_MAP:
+        if pattern.search(name):
+            return icon
+    return None
+
 
 def _slugify(text: str) -> str:
     text = text.lower().strip()
@@ -132,25 +187,35 @@ def _map_binary_sensor(
     availability_topic: str,
     device_info: dict,
 ) -> dict:
-    payload: dict[str, Any] = {
+    config: dict[str, Any] = {
+        "name": friendly,
+        "unique_id": f"niagara_{object_id}",
+        "state_topic": state_topic,
+        "payload_on": "true",
+        "payload_off": "false",
+        "availability_topic": availability_topic,
+        "payload_available": "online",
+        "payload_not_available": "offline",
+        "device": device_info,
+    }
+
+    dc = _infer_device_class_binary(point.name)
+    if dc:
+        config["device_class"] = dc
+
+    icon = _infer_icon(point.name)
+    if icon and not dc:
+        config["icon"] = icon
+
+    if point.status and point.status != "ok":
+        config["json_attributes_topic"] = f"{state_topic}/attributes"
+
+    return {
         "component": "binary_sensor",
         "discovery_topic": f"homeassistant/binary_sensor/{object_id}/config",
-        "config_payload": {
-            "name": friendly,
-            "unique_id": f"niagara_{object_id}",
-            "state_topic": state_topic,
-            "payload_on": "true",
-            "payload_off": "false",
-            "availability_topic": availability_topic,
-            "payload_available": "online",
-            "payload_not_available": "offline",
-            "device": device_info,
-        },
+        "config_payload": config,
         "state_topic": state_topic,
     }
-    if point.status and point.status != "ok":
-        payload["config_payload"]["json_attributes_topic"] = f"{state_topic}/attributes"
-    return payload
 
 
 def _map_sensor_numeric(
@@ -178,6 +243,18 @@ def _map_sensor_numeric(
         if device_class:
             config["device_class"] = device_class
             config["state_class"] = "measurement"
+
+    if "device_class" not in config:
+        inferred_dc, inferred_unit = _infer_device_class_sensor(point.name)
+        if inferred_dc:
+            config["device_class"] = inferred_dc
+            config["state_class"] = "measurement"
+            if inferred_unit and "unit_of_measurement" not in config:
+                config["unit_of_measurement"] = inferred_unit
+
+    icon = _infer_icon(point.name)
+    if icon and "device_class" not in config:
+        config["icon"] = icon
 
     return {
         "component": "sensor",
@@ -207,6 +284,10 @@ def _map_sensor_enum(
     if point.enum_range:
         config["options"] = point.enum_range
 
+    icon = _infer_icon(point.name)
+    if icon:
+        config["icon"] = icon
+
     return {
         "component": "sensor",
         "discovery_topic": f"homeassistant/sensor/{object_id}/config",
@@ -223,17 +304,23 @@ def _map_sensor_string(
     availability_topic: str,
     device_info: dict,
 ) -> dict:
+    config: dict[str, Any] = {
+        "name": friendly,
+        "unique_id": f"niagara_{object_id}",
+        "state_topic": state_topic,
+        "availability_topic": availability_topic,
+        "payload_available": "online",
+        "payload_not_available": "offline",
+        "device": device_info,
+    }
+
+    icon = _infer_icon(point.name)
+    if icon:
+        config["icon"] = icon
+
     return {
         "component": "sensor",
         "discovery_topic": f"homeassistant/sensor/{object_id}/config",
-        "config_payload": {
-            "name": friendly,
-            "unique_id": f"niagara_{object_id}",
-            "state_topic": state_topic,
-            "availability_topic": availability_topic,
-            "payload_available": "online",
-            "payload_not_available": "offline",
-            "device": device_info,
-        },
+        "config_payload": config,
         "state_topic": state_topic,
     }

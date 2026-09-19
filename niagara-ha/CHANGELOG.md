@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.4
+
+- **Feature**: Automatic entity type detection — HA now picks the right card, icon, and device class for each point based on its name (temperature, humidity, fan, pump, valve, alarm, setpoint, etc.)
+- **Feature**: Name-based icon inference for enum and string sensors (mode, status, command points get appropriate icons)
+
 ## 0.6.3
 
 - **Fix**: oBIX unit URIs (`obix:units/celsius`) now converted to proper HA units (`°C`) — no more "0.0 obixunits/celsius" display in entities
