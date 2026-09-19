@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.4.0
+## 0.6.0
 
 - **Major**: oBIX Watch support — polls for changes with a single HTTP request per cycle instead of one GET per point (N+1 → 1)
 - **Feature**: Auto-detects Watch and Batch services from the oBIX lobby
@@ -8,20 +8,83 @@
 - **Feature**: Batch read support for bulk point value fetching
 - **Feature**: Automatic fallback to legacy polling when Watch service is unavailable
 - **Feature**: Dynamic Watch updates — points added/removed from Watch when selections change without full re-creation
-- **Performance**: Session cookie reuse across all oBIX requests (reduces auth overhead on Niagara 4.9+)
-- **Performance**: Watch.add batches points in groups of 500 to avoid oversized requests
-
-## 0.3.4
-
-- **Fix**: YAML write now quotes strings containing special characters (colons, brackets, etc.) to prevent points.yaml corruption with 42K+ BMS points
-- **Fix**: Toggle endpoints no longer return 404 when points.yaml was unreadable due to unquoted colons in Niagara point names
-
-## 0.3.3
-
 - **Feature**: Category-based filtering — points auto-classified as Temperature, Fan, Pump, Valve, Pressure, Power, Humidity, Flow, Setpoint, Status, CO2, or Other
 - **Feature**: Category dropdown filter in toolbar to quickly find specific point types
 - **Feature**: Color-coded category badges on each point row
-- **Feature**: Category counts shown in stats API
+- **Performance**: Session cookie reuse across all oBIX requests (reduces auth overhead on Niagara 4.9+)
+- **Performance**: Watch.add batches points in groups of 500 to avoid oversized requests
+- **Fix**: YAML write now quotes strings containing special characters (colons, brackets, etc.) to prevent points.yaml corruption with 42K+ BMS points
+
+## 0.5.8
+
+- **Fix**: Removed `/exports/` path filter from point discovery — all oBIX points are now discovered regardless of path, with only the name-based skip list filtering out Niagara metadata
+
+## 0.5.7
+
+- **Fix**: Restored `out`, `status`, and `in` point names that were incorrectly added to the skip list — these are how Niagara exposes actual BMS point values via oBIX
+- **Fix**: Colon filter narrowed to only skip `pslot:`, `slot:`, `n:` prefixes (Niagara internal references), not all names containing `:`
+
+## 0.5.6
+
+- **Fix**: Filter out Niagara internal point properties (`conversion`, `deviceFacets`, `readValue`, `status`, `subscriptionStatus`, `tuningPolicyName`, `proxyExt`, `pointId`, `priorityArray`, etc.) that were appearing as separate HA entities
+- **Fix**: Skip names containing `:` (Niagara slot references like `pslot:Drivers/...`) from discovery
+- **Fix**: `SKIP_POINT_NAMES` check was missing from `_parse_point` — now applied during both discovery and polling
+
+## 0.5.5
+
+- **Fix**: Point values now retained in MQTT — HA keeps last known value across brief disconnects instead of showing "unknown"
+- **Fix**: Connection-lost detection requires 3 consecutive full-failure polls before triggering reconnect (was 1), preventing unnecessary "unknown" state flapping
+- **Fix**: `/exports/` path filter no longer applied during point polling — only during discovery. Prevents valid point reads from being silently discarded
+
+## 0.5.4
+
+- **Improvement**: Browse sidebar auto-fits to folder names and buttons instead of truncating
+- **Feature**: "Apply Changes" button appears after toggling device folders — recalculates groupings and updates HA entities immediately
+
+## 0.5.3
+
+- **Feature**: GUI-based device folder selection — click "Use as Device" on any folder in the tree to make all its sub-points (including subfolders) appear as one HA device
+- Device folders are saved in `device_folders.yaml` and hot-reloaded without restart
+- Replaces the need to set `device_depth` manually in config
+
+## 0.5.2
+
+- **Feature**: `device_depth` config option — controls how many folder levels define a device. Set to 4 to group `JACE/BMS/HVAC/Room333/Cooling/Temp` under device "Room333" instead of splitting subfolders into separate devices. Default 0 uses the immediate parent folder.
+
+## 0.5.1
+
+- **Feature**: Last known point values persist across restarts — HA entities show cached values immediately on startup instead of "unavailable"
+- Values are stored in `values.json` and restored on next launch
+
+## 0.5.0
+
+- **Feature**: Each Niagara folder becomes its own HA device — points in `HVAC/Room333/` create a "Niagara BMS — HVAC / Room333" device with just those points as entities
+- **Improvement**: Entity names now show just the point name (e.g. "SupplyTemp") since the device provides folder context
+
+## 0.4.3
+
+- **Feature**: Rename points in the web UI — custom names are used as the entity name in MQTT/Home Assistant
+- Click the pencil icon next to any point name to rename it
+- Custom names persist across restarts and show in the HA entity list
+- Reset button restores the original Niagara name
+
+## 0.4.2
+
+- **Improvement**: Only discover points under oBIX `/exports/` folder — hides all config/metadata noise
+- **Improvement**: Strip `ObixNetwork` and `exports` from display names and tree navigation for cleaner UI
+
+## 0.4.1
+
+- **Fix**: Removed overly aggressive `/points/` path filter that was hiding legitimate BMS points
+
+## 0.4.0
+
+- **Feature**: Smart point import — bulk toggle, auto-enable rules (glob patterns), and 5 built-in profiles (HVAC, Energy, Alarms, Lighting, Zone Comfort)
+- **Feature**: Drillable tree navigation — browse points by Niagara device/system/area hierarchy with breadcrumb navigation
+- **Performance**: Fast YAML parser replaces yaml.safe_load — ~89% less memory (904 MB → 96 MB for 130K points)
+- **Performance**: Drop intermediate data structures after use to reduce sustained RAM
+- **Fix**: YAML parse errors in points.yaml causing toggle 404s (switched to yaml.safe_dump)
+- **Fix**: Filter out Niagara config properties (stationName, hostName, etc.) from point discovery
 
 ## 0.3.2
 

@@ -15,9 +15,12 @@ from pathlib import Path
 from mqtt_publisher import MqttPublisher
 from obix_client import ObixClient, ObixError
 from point_manager import (
+    DEVICE_FOLDERS_FILE,
     POINTS_DIR,
     POINTS_FILE,
     filter_enabled,
+    load_auto_enable_rules,
+    load_device_folders,
     load_point_selections,
     save_point_selections,
 )
@@ -74,7 +77,7 @@ def main() -> None:
     opts = load_options()
     setup_logging(opts.get("log_level", "info"))
 
-    logger.info("Niagara BMS Bridge v0.4.0 starting")
+    logger.info("Niagara BMS Bridge v0.6.0 starting")
     logger.info("Target: %s:%d (HTTPS=%s)", opts["niagara_host"], opts["niagara_port"], opts["use_https"])
 
     if not opts.get("niagara_host"):
@@ -103,6 +106,7 @@ def main() -> None:
     topic_prefix = opts.get("mqtt_topic_prefix", "niagara")
     device_name = opts.get("device_name", "Niagara BMS")
     poll_workers = opts.get("poll_workers", 5)
+    device_depth = opts.get("device_depth", 0)
     reconnect_delay = RECONNECT_DELAY
 
     if not mqtt_pub.connect():
@@ -110,14 +114,16 @@ def main() -> None:
 
     time.sleep(2)
 
-    discovered_points = []
-    active_points = []
-    entity_maps = {}
-    selections = {}
+    active_points: list = []
+    entity_maps: dict = {}
     points_mtime = 0.0
-    last_values: dict[str, str] = {}
+    folders_mtime = 0.0
+    discovered_count = 0
+    last_values: dict[str, str] = _load_values_cache()
     last_statuses: dict[str, str] = {}
     using_watch = False
+    if last_values:
+        logger.info("Loaded %d cached point values from previous session", len(last_values))
 
     while not _shutdown:
         if not obix.connected:
@@ -126,19 +132,28 @@ def main() -> None:
                 reconnect_delay = RECONNECT_DELAY
                 logger.info("Discovering points (filter=%s)...", point_filter or "(none)")
                 discovered_points = obix.discover_points(point_filter)
-                logger.info("Found %d points", len(discovered_points))
+                discovered_count = len(discovered_points)
+                logger.info("Found %d points", discovered_count)
 
                 existing_selections = load_point_selections()
-                selections = save_point_selections(discovered_points, existing_selections)
+                config_patterns = opts.get("auto_enable_patterns", [])
+                file_patterns = load_auto_enable_rules()
+                auto_patterns = list(dict.fromkeys(config_patterns + file_patterns))
+                if auto_patterns:
+                    logger.info("Auto-enable rules: %d patterns active", len(auto_patterns))
+                device_folders = load_device_folders()
+                selections = save_point_selections(discovered_points, existing_selections, auto_patterns, device_depth, device_folders)
                 points_mtime = _get_file_mtime(POINTS_FILE)
+                folders_mtime = _get_file_mtime(DEVICE_FOLDERS_FILE)
                 active_points = filter_enabled(discovered_points, selections)
                 logger.info(
                     "Active points: %d of %d (use the web UI or edit points.yaml)",
-                    len(active_points), len(discovered_points),
+                    len(active_points), discovered_count,
                 )
 
-                entity_maps = _publish_entities(active_points, discovered_points, selections, mqtt_pub, topic_prefix, device_name)
-                last_values.clear()
+                del discovered_points, existing_selections
+                entity_maps = _publish_entities(active_points, selections, mqtt_pub, topic_prefix, device_name, last_values, device_depth, device_folders)
+                del selections
                 last_statuses.clear()
 
                 using_watch = obix.setup_watch(active_points, poll_interval)
@@ -161,13 +176,23 @@ def main() -> None:
                 continue
 
         current_mtime = _get_file_mtime(POINTS_FILE)
-        if current_mtime > points_mtime:
+        current_folders_mtime = _get_file_mtime(DEVICE_FOLDERS_FILE)
+        if current_mtime > points_mtime or current_folders_mtime > folders_mtime:
+            if current_mtime > points_mtime:
+                logger.info("points.yaml changed — reloading selections")
+            if current_folders_mtime > folders_mtime:
+                logger.info("device_folders.yaml changed — reloading device grouping")
             points_mtime = current_mtime
-            logger.info("points.yaml changed — reloading selections")
+            folders_mtime = current_folders_mtime
             selections = load_point_selections()
-            active_points = filter_enabled(discovered_points, selections)
-            entity_maps = _publish_entities(active_points, discovered_points, selections, mqtt_pub, topic_prefix, device_name)
-            last_values.clear()
+            device_folders = load_device_folders()
+            enabled_paths = {p for p, e in selections.items() if e.get("enabled", False)}
+            active_points = [pt for pt in active_points if pt.path in enabled_paths]
+            new_paths = enabled_paths - {pt.path for pt in active_points}
+            if new_paths:
+                logger.info("New enabled points detected (%d) — will pick up on next reconnect", len(new_paths))
+            entity_maps = _publish_entities(active_points, selections, mqtt_pub, topic_prefix, device_name, last_values, device_depth, device_folders)
+            del selections
             last_statuses.clear()
             if using_watch:
                 using_watch = obix.setup_watch(active_points, poll_interval)
@@ -218,40 +243,49 @@ def main() -> None:
 
 
 def _publish_entities(
-    active_points, all_points, selections, mqtt_pub, topic_prefix, device_name,
+    active_points, selections, mqtt_pub, topic_prefix, device_name,
+    cached_values: dict[str, str] | None = None, device_depth: int = 0,
+    device_folders: list[str] | None = None,
 ) -> dict:
     entity_maps = {}
     for pt in active_points:
-        group = selections.get(pt.path, {}).get("group", "")
-        mapped = map_point(pt, topic_prefix, device_name, group)
+        entry = selections.get(pt.path, {})
+        group = entry.get("group", "")
+        custom_name = entry.get("custom_name", "")
+        mapped = map_point(pt, topic_prefix, device_name, group, custom_name, device_depth, device_folders)
         if mapped:
             entity_maps[pt.path] = mapped
             mqtt_pub.publish_discovery(mapped)
 
-    disabled_topics = set()
-    for pt in all_points:
-        if pt.path not in entity_maps:
-            group = selections.get(pt.path, {}).get("group", "")
-            mapped = map_point(pt, topic_prefix, device_name, group)
-            if mapped:
-                disabled_topics.add(mapped["discovery_topic"])
-
     current_topics = {m["discovery_topic"] for m in entity_maps.values()}
-    mqtt_pub.remove_stale_discoveries(current_topics, disabled_topics)
+    mqtt_pub.remove_stale_discoveries(current_topics)
     mqtt_pub.publish_availability(True)
 
     initial_values = 0
     for pt in active_points:
         mapped = entity_maps.get(pt.path)
-        if mapped and pt.value is not None:
-            mqtt_pub.publish_state(mapped["state_topic"], str(pt.value))
+        if not mapped:
+            continue
+        val = str(pt.value) if pt.value is not None else (cached_values or {}).get(pt.path)
+        if val is not None:
+            mqtt_pub.publish_state(mapped["state_topic"], val)
             initial_values += 1
 
     logger.info(
-        "Published %d entities to HA, cleared %d disabled (%d with initial values)",
-        len(entity_maps), len(disabled_topics), initial_values,
+        "Published %d entities to HA (%d with initial values)",
+        len(entity_maps), initial_values,
     )
     return entity_maps
+
+
+def _load_values_cache() -> dict[str, str]:
+    try:
+        if VALUES_FILE.exists():
+            with open(VALUES_FILE) as f:
+                return json.load(f)
+    except (json.JSONDecodeError, OSError) as e:
+        logger.debug("Failed to read values cache: %s", e)
+    return {}
 
 
 def _write_values_cache(values: dict[str, str]) -> None:

@@ -24,6 +24,34 @@ NS = {"o": OBIX_NS}
 WATCH_POINTS_PER_BATCH = 500
 WATCH_LEASE_MULTIPLIER = 3
 
+SKIP_POINT_NAMES = frozenset({
+    # Station metadata
+    "stationName", "hostName", "hostId",
+    "platformVersion", "niagaraVersion", "softwareVersion",
+    "osName", "osVersion", "osArch",
+    "vmName", "vmVersion", "vmVendor",
+    "timeZoneId", "stationStartTime",
+    # Device/driver metadata
+    "vendorName", "modelName", "serialNumber",
+    "firmwareVersion", "hardwareVersion",
+    "healthStatus", "health", "faultCause",
+    "deviceName", "driverName",
+    # Polling/tuning config
+    "pollFrequency", "pollEnabled", "pollRate",
+    "tuningPolicyRef", "tuningPolicyName", "tuningPolicy",
+    # Point internal properties
+    "proxyExt", "conversion", "deviceFacets",
+    "facets", "icon", "href",
+    "enabled", "overridden", "actions",
+    "watchCount", "lease",
+    "type", "is", "display", "displayName",
+    # Point sub-properties (metadata, not real BMS values)
+    "readValue", "writeValue",
+    "subscriptionStatus", "pointId",
+    "fallbackValue", "statusText",
+    "priorityArray", "inAlarm", "ackState",
+})
+
 
 @dataclass
 class NiagaraPoint:
@@ -66,6 +94,7 @@ class ObixClient:
         self._watch_points: set[str] = set()
         self._has_watch_service = False
         self._has_batch_service = False
+        self._consecutive_full_failures = 0
 
     @property
     def connected(self) -> bool:
@@ -362,9 +391,14 @@ class ObixClient:
                     points.append(point)
 
     def _parse_point(
-        self, elem: ET.Element, tag: str, parent_path: str, name: str
+        self, elem: ET.Element, tag: str, parent_path: str, name: str,
     ) -> Optional[NiagaraPoint]:
         if not name:
+            return None
+
+        if name in SKIP_POINT_NAMES:
+            return None
+        if name.startswith(("pslot:", "slot:", "n:")):
             return None
 
         href = elem.get("href", "")
@@ -574,10 +608,17 @@ class ObixClient:
                     fail_count += 1
 
         if fail_count == len(points):
-            logger.error("All %d point reads failed — marking connection lost", len(points))
-            self._connected = False
-        elif fail_count > 0:
-            logger.warning("Poll: %d of %d reads failed", fail_count, len(points))
+            self._consecutive_full_failures += 1
+            if self._consecutive_full_failures >= 3:
+                logger.error("All %d point reads failed %d times in a row — marking connection lost", len(points), self._consecutive_full_failures)
+                self._connected = False
+                self._consecutive_full_failures = 0
+            else:
+                logger.warning("All %d point reads failed (attempt %d/3 before reconnect)", len(points), self._consecutive_full_failures)
+        else:
+            self._consecutive_full_failures = 0
+            if fail_count > 0:
+                logger.warning("Poll: %d of %d reads failed", fail_count, len(points))
 
         return [results[pt.path] for pt in points if pt.path in results]
 
