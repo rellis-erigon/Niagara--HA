@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.2
+
+- **Fix**: Restore "Apply Changes" button — always visible in Browse sidebar for manual re-apply of device groupings
+
 ## 0.6.1
 
 - **Fix**: Discovery now captures only the output value per point — no longer creates separate entities for internal Niagara properties (in1-in16, fallbackValue, etc.)
