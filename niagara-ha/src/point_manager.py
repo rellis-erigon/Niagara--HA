@@ -26,8 +26,8 @@ POINTS_FILE = POINTS_DIR / "points.yaml"
 RULES_FILE = POINTS_DIR / "auto_enable_rules.yaml"
 DEVICE_FOLDERS_FILE = POINTS_DIR / "device_folders.yaml"
 
-SKIP_SEGMENTS = {"config", "Drivers", "points", "out", "exports", ""}
-PATH_BOILERPLATE = {"config", "Drivers", "NiagaraNetwork", "ObixNetwork", "points", "out", "exports", ""}
+SKIP_SEGMENTS = {"config", "Drivers", "NiagaraNetwork", "ObixNetwork", "points", "out", "exports", "obix", ""}
+PATH_BOILERPLATE = SKIP_SEGMENTS
 
 PROFILES = {
     "hvac_monitoring": {
@@ -79,40 +79,48 @@ PROFILES = {
 }
 
 
+def _parent_path(path: str) -> str:
+    parts = parse_path_segments(path)
+    if len(parts) < 2:
+        return ""
+    return "/".join(parts[:-1])
+
+
+def _match_device_folder(point_parent: str, device_folders: list[str]) -> str:
+    best = ""
+    for folder in device_folders:
+        if point_parent == folder or point_parent.startswith(folder + "/"):
+            if len(folder) > len(best):
+                best = folder
+    return best
+
+
 def get_group(point: NiagaraPoint, device_depth: int = 0, device_folders: list[str] | None = None) -> str:
-    parts = [p for p in point.path.strip("/").split("/") if p not in SKIP_SEGMENTS]
+    parts = parse_path_segments(point.path)
     if len(parts) < 2:
         return "Ungrouped"
-    point_path = "/".join(parts[:-1])
+    point_parent = "/".join(parts[:-1])
     if device_folders:
-        best = ""
-        for folder in device_folders:
-            if point_path == folder or point_path.startswith(folder + "/"):
-                if len(folder) > len(best):
-                    best = folder
-        if best:
-            return best
+        matched = _match_device_folder(point_parent, device_folders)
+        if matched:
+            return matched
     if device_depth > 0:
         return "/".join(parts[:device_depth])
-    return point_path
+    return point_parent
 
 
 def get_group_from_path(path: str, device_depth: int = 0, device_folders: list[str] | None = None) -> str:
-    parts = [p for p in path.strip("/").split("/") if p not in SKIP_SEGMENTS]
+    parts = parse_path_segments(path)
     if len(parts) < 2:
         return "Ungrouped"
-    point_path = "/".join(parts[:-1])
+    point_parent = "/".join(parts[:-1])
     if device_folders:
-        best = ""
-        for folder in device_folders:
-            if point_path == folder or point_path.startswith(folder + "/"):
-                if len(folder) > len(best):
-                    best = folder
-        if best:
-            return best
+        matched = _match_device_folder(point_parent, device_folders)
+        if matched:
+            return matched
     if device_depth > 0:
         return "/".join(parts[:device_depth])
-    return point_path
+    return point_parent
 
 
 def load_device_folders() -> list[str]:

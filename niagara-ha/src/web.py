@@ -11,6 +11,7 @@ from point_manager import (
     POINTS_DIR,
     POINTS_FILE,
     PROFILES,
+    _parent_path,
     get_group_from_path,
     get_tree_children,
     load_auto_enable_rules,
@@ -267,9 +268,8 @@ def toggle_device_folder():
     regrouped = 0
     for entry in selections.values():
         path = entry.get("path", "")
-        segs = parse_path_segments(path)
-        point_path = "/".join(segs[:-1]) if len(segs) >= 2 else ""
-        under_folder = point_path == folder or point_path.startswith(folder + "/")
+        point_parent = _parent_path(path)
+        under_folder = point_parent == folder or point_parent.startswith(folder + "/")
         if under_folder:
             if action == "added" and not entry.get("enabled", False):
                 entry["enabled"] = True

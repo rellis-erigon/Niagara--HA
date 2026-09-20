@@ -44,6 +44,12 @@ SKIP_SEGMENTS = frozenset({
     "points", "out", "exports", "obix", "",
 })
 
+def _parent_path(path: str) -> str:
+    parts = [p for p in path.strip("/").split("/") if p not in SKIP_SEGMENTS]
+    if len(parts) < 2:
+        return ""
+    return "/".join(parts[:-1])
+
 
 @dataclass
 class NiagaraPoint:
