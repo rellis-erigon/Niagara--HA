@@ -271,6 +271,56 @@ class NiagaraProfilesView(HomeAssistantView):
         return self.json({"profiles": result})
 
 
+class NiagaraDeviceFoldersView(HomeAssistantView):
+    """Get and toggle device folder selections."""
+
+    url = "/api/niagara/device-folders"
+    name = "api:niagara:device-folders"
+    requires_auth = True
+
+    async def get(self, request: web.Request) -> web.Response:
+        hass = request.app["hass"]
+        coordinator = _get_coordinator(hass)
+        if not coordinator:
+            return self.json({"folders": []})
+        return self.json({"folders": coordinator.device_folders})
+
+    async def post(self, request: web.Request) -> web.Response:
+        hass = request.app["hass"]
+        coordinator = _get_coordinator(hass)
+        if not coordinator:
+            return self.json({"error": "not configured"}, status_code=404)
+
+        body = await request.json()
+        folder = body.get("folder", "")
+        if not folder:
+            return self.json({"error": "missing folder"}, status_code=400)
+
+        action = await coordinator.async_toggle_device_folder(folder)
+        return self.json({
+            "action": action,
+            "folder": folder,
+            "folders": coordinator.device_folders,
+        })
+
+
+class NiagaraDeviceFoldersApplyView(HomeAssistantView):
+    """Trigger entity reload after device folder changes."""
+
+    url = "/api/niagara/device-folders/apply"
+    name = "api:niagara:device-folders:apply"
+    requires_auth = True
+
+    async def post(self, request: web.Request) -> web.Response:
+        hass = request.app["hass"]
+        coordinator = _get_coordinator(hass)
+        if not coordinator:
+            return self.json({"error": "not configured"}, status_code=404)
+
+        await hass.config_entries.async_reload(coordinator.entry.entry_id)
+        return self.json({"status": "reloaded"})
+
+
 class NiagaraProfilePreviewView(HomeAssistantView):
     url = "/api/niagara/profiles/{profile_id}/preview"
     name = "api:niagara:profiles:preview"
@@ -309,6 +359,8 @@ async def async_setup_panel(hass: HomeAssistant) -> None:
     hass.http.register_view(NiagaraValuesView())
     hass.http.register_view(NiagaraProfilesView())
     hass.http.register_view(NiagaraProfilePreviewView())
+    hass.http.register_view(NiagaraDeviceFoldersView())
+    hass.http.register_view(NiagaraDeviceFoldersApplyView())
 
     hass.components.frontend.async_register_built_in_panel(
         component_name="iframe",
@@ -377,11 +429,21 @@ h1 { font-size: 1.4rem; font-weight: 600; }
 .breadcrumb-sep { color: var(--muted); font-size: 0.7rem; }
 .tree-item { display: flex; align-items: center; justify-content: space-between; padding: 8px 16px; cursor: pointer; border-bottom: 1px solid var(--border); transition: background 0.15s; gap: 8px; }
 .tree-item:hover { background: var(--row-hover); }
+.tree-item.is-device-folder { background: rgba(34,197,94,0.08); }
 .tree-item-name { font-size: 0.85rem; font-weight: 500; flex: 1; min-width: 0; white-space: nowrap; }
 .tree-item-right { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
 .tree-arrow { color: var(--muted); font-size: 0.7rem; flex-shrink: 0; }
 .group-badge { padding: 2px 8px; border-radius: 10px; font-weight: 500; font-size: 0.75rem; }
 .badge-total { background: var(--tag-bg); color: var(--muted); }
+.device-btn { padding: 3px 10px; border-radius: 4px; font-size: 0.72rem; font-weight: 600; cursor: pointer; border: 1px solid var(--border); background: var(--card); color: var(--muted); transition: all 0.15s; white-space: nowrap; }
+.device-btn:hover { border-color: var(--primary); color: var(--primary); }
+.device-btn.is-device { background: var(--success); color: white; border-color: var(--success); }
+.device-btn.is-device:hover { background: var(--danger); border-color: var(--danger); }
+.apply-bar { display: none; padding: 8px 16px; border-bottom: 1px solid var(--border); background: rgba(59,130,246,0.08); }
+.apply-bar.visible { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.apply-bar .apply-info { font-size: 0.8rem; color: var(--primary); font-weight: 500; }
+.btn-apply { padding: 6px 16px; border-radius: 6px; font-size: 0.82rem; font-weight: 600; cursor: pointer; border: none; background: var(--primary); color: white; transition: background 0.15s; }
+.btn-apply:hover { background: var(--primary-hover); }
 .main { flex: 1; min-width: 0; }
 .toolbar { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; align-items: center; }
 .search-box { flex: 1; min-width: 200px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--card); color: var(--text); font-size: 0.9rem; }
@@ -466,6 +528,10 @@ tr:hover td { background: var(--row-hover); }
       <span>Browse</span>
       <span style="font-size:0.75rem;color:var(--muted)" id="tree-count"></span>
     </div>
+    <div class="apply-bar" id="apply-bar">
+      <span class="apply-info" id="apply-info">0 device folders selected</span>
+      <button class="btn-apply" id="btn-apply">Apply Changes</button>
+    </div>
     <div class="breadcrumb" id="breadcrumb"></div>
     <div class="group-list" id="tree-list">
       <div class="loading">Loading...</div>
@@ -507,6 +573,8 @@ const $ = s => document.querySelector(s);
 const BASE = '/api/niagara';
 let state = { prefix: '', search: '', category: '', page: 1 };
 let debounceTimer;
+let deviceFolders = [];
+let pendingChanges = false;
 
 async function api(path) {
   const url = BASE + (path.startsWith('/') ? path : '/' + path);
@@ -572,15 +640,39 @@ function renderTree(children) {
   $('#tree-count').textContent = children.length + ' items';
   if (children.length === 0) { el.innerHTML = '<div class="empty" style="padding:24px">No sub-items here</div>'; return; }
   el.innerHTML = children.map(c => {
-    return '<div class="tree-item" data-path="' + esc(c.path) + '">' +
+    const isDevice = deviceFolders.includes(c.path);
+    return '<div class="tree-item' + (isDevice ? ' is-device-folder' : '') + '" data-path="' + esc(c.path) + '">' +
       '<span class="tree-item-name" title="' + esc(c.name) + '">' + esc(c.name) + '</span>' +
       '<div class="tree-item-right">' +
+        '<button class="device-btn' + (isDevice ? ' is-device' : '') + '" data-device-path="' + esc(c.path) + '" title="' + (isDevice ? 'Remove as HA device' : 'Use as HA device') + '">' + (isDevice ? '&#10003; Device' : 'Use as Device') + '</button>' +
         '<span class="group-badge badge-total">' + c.total.toLocaleString() + '</span>' +
         (c.has_children ? '<span class="tree-arrow">&#9656;</span>' : '') +
       '</div></div>';
   }).join('');
   el.querySelectorAll('.tree-item').forEach(item => {
-    item.addEventListener('click', () => navigateTo(item.dataset.path));
+    item.addEventListener('click', e => {
+      if (e.target.closest('.device-btn')) return;
+      navigateTo(item.dataset.path);
+    });
+  });
+  el.querySelectorAll('.device-btn').forEach(btn => {
+    btn.addEventListener('click', async e => {
+      e.stopPropagation();
+      const folder = btn.dataset.devicePath;
+      try {
+        const res = await fetch(BASE + '/device-folders', {
+          method: 'POST', credentials: 'same-origin',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ folder })
+        });
+        const data = await res.json();
+        deviceFolders = data.folders;
+        pendingChanges = true;
+        updateApplyBar();
+        toast(data.action === 'added' ? '"' + folder.split('/').pop() + '" set as device' : '"' + folder.split('/').pop() + '" removed as device');
+        renderTree(children);
+      } catch (err) { toast('Error: ' + err.message); }
+    });
   });
 }
 
@@ -697,6 +789,40 @@ async function showProfilePreview(profileId) {
   $('#modal-root').innerHTML = html;
 }
 
+function updateApplyBar() {
+  const bar = $('#apply-bar');
+  const info = $('#apply-info');
+  if (deviceFolders.length > 0 || pendingChanges) {
+    bar.classList.add('visible');
+    info.textContent = deviceFolders.length + ' device folder' + (deviceFolders.length !== 1 ? 's' : '') + ' selected';
+  } else {
+    bar.classList.remove('visible');
+  }
+}
+
+$('#btn-apply').addEventListener('click', async () => {
+  const btn = $('#btn-apply');
+  btn.textContent = 'Applying...';
+  btn.disabled = true;
+  try {
+    await fetch(BASE + '/device-folders/apply', { method: 'POST', credentials: 'same-origin' });
+    toast('Device grouping applied — integration reloading');
+    pendingChanges = false;
+    updateApplyBar();
+  } catch (err) { toast('Error: ' + err.message); }
+  btn.textContent = 'Apply Changes';
+  btn.disabled = false;
+});
+
+async function loadDeviceFolders() {
+  try {
+    const data = await api('/device-folders');
+    deviceFolders = data.folders || [];
+    updateApplyBar();
+  } catch (e) {}
+}
+
+loadDeviceFolders();
 loadStats();
 loadTree();
 loadPoints();

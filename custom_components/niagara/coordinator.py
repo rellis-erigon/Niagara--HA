@@ -13,6 +13,7 @@ import urllib3
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_PORT, CONF_USERNAME
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from requests.auth import HTTPBasicAuth
 
@@ -508,15 +509,21 @@ class NiagaraCoordinator(DataUpdateCoordinator[dict[str, NiagaraPoint]]):
             CONF_AREA_DEPTH, entry.data.get(CONF_AREA_DEPTH, DEFAULT_AREA_DEPTH)
         )
         self.host: str = entry.data[CONF_HOST]
+        self.device_folders: list[str] = []
+        self._store = Store(hass, 1, f"{DOMAIN}.{entry.entry_id}.device_folders")
 
     async def async_setup(self) -> None:
+        stored = await self._store.async_load()
+        if stored and isinstance(stored, dict):
+            self.device_folders = stored.get("folders", [])
+
         path_filter = self.entry.data.get(CONF_POINT_FILTER, "")
         discovered = await self.hass.async_add_executor_job(
             self.client.discover_points, path_filter
         )
         self.points = {pt.path: pt for pt in discovered}
 
-        if self.device_depth == 0:
+        if not self.device_folders and self.device_depth == 0:
             self.device_depth = self._auto_device_depth()
             _LOGGER.info("Auto-detected device_depth=%d", self.device_depth)
 
@@ -528,11 +535,25 @@ class NiagaraCoordinator(DataUpdateCoordinator[dict[str, NiagaraPoint]]):
             self.client.setup_watch, point_list, scan_interval
         )
         _LOGGER.info(
-            "Niagara setup: %d points, %d devices, watch=%s",
+            "Niagara setup: %d points, %d devices, %d device folders, watch=%s",
             len(self.points),
             len({self.get_group(pt) for pt in self.points.values()}),
+            len(self.device_folders),
             self._watch_active,
         )
+
+    async def async_save_device_folders(self) -> None:
+        await self._store.async_save({"folders": self.device_folders})
+
+    async def async_toggle_device_folder(self, folder: str) -> str:
+        if folder in self.device_folders:
+            self.device_folders.remove(folder)
+            action = "removed"
+        else:
+            self.device_folders.append(folder)
+            action = "added"
+        await self.async_save_device_folders()
+        return action
 
     async def _async_update_data(self) -> dict[str, NiagaraPoint]:
         try:
@@ -600,6 +621,15 @@ class NiagaraCoordinator(DataUpdateCoordinator[dict[str, NiagaraPoint]]):
         parts = self._clean_path_parts(point.path)
         if len(parts) < 2:
             return "Ungrouped"
+        point_path = "/".join(parts[:-1])
+        if self.device_folders:
+            best = ""
+            for folder in self.device_folders:
+                if point_path == folder or point_path.startswith(folder + "/"):
+                    if len(folder) > len(best):
+                        best = folder
+            if best:
+                return best
         return "/".join(parts[: self.device_depth])
 
     def get_area(self, point: NiagaraPoint) -> str | None:
