@@ -101,6 +101,27 @@ def _infer_state_class(
     return SensorStateClass.MEASUREMENT
 
 
+VALID_UNITS_FOR_CLASS: dict[SensorDeviceClass, set[str]] = {
+    SensorDeviceClass.TEMPERATURE: {"°C", "°F", "K"},
+    SensorDeviceClass.POWER: {"kW", "W", "MW", "BTU/h"},
+    SensorDeviceClass.ENERGY: {"kWh", "Wh", "MWh", "GJ", "MJ", "BTU", "therm"},
+    SensorDeviceClass.VOLTAGE: {"V", "mV", "kV"},
+    SensorDeviceClass.CURRENT: {"A", "mA", "μA"},
+    SensorDeviceClass.FREQUENCY: {"Hz", "kHz", "MHz", "GHz"},
+    SensorDeviceClass.PRESSURE: {"Pa", "kPa", "psi", "mbar", "bar", "hPa", "inHg", "mmHg", "inH2O"},
+    SensorDeviceClass.HUMIDITY: {"%"},
+    SensorDeviceClass.CO2: {"ppm"},
+    SensorDeviceClass.BATTERY: {"%"},
+}
+
+
+def _unit_valid_for_class(unit: str, device_class: SensorDeviceClass) -> bool:
+    valid = VALID_UNITS_FOR_CLASS.get(device_class)
+    if valid is None:
+        return True
+    return unit in valid
+
+
 def _infer_icon(name: str) -> str | None:
     for pattern, icon in ICON_PATTERNS:
         if pattern.search(name):
@@ -140,10 +161,16 @@ class NiagaraNumericSensor(NiagaraEntity, SensorEntity):
         if device_class is None:
             for pattern, dc, fallback_unit in NAME_PATTERNS_SENSOR:
                 if pattern.search(point.name):
-                    device_class = dc
-                    if fallback_unit and unit is None:
+                    if unit is None and fallback_unit:
+                        device_class = dc
                         unit = fallback_unit
+                    elif unit is not None and _unit_valid_for_class(unit, dc):
+                        device_class = dc
                     break
+
+        if device_class is not None and unit is not None:
+            if not _unit_valid_for_class(unit, device_class):
+                device_class = None
 
         if device_class is not None:
             self._attr_device_class = device_class

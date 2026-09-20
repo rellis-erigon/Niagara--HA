@@ -6,6 +6,7 @@ import re
 from typing import Any
 
 from aiohttp import web
+from homeassistant.components.frontend import async_register_built_in_panel
 from homeassistant.components.http import HomeAssistantView
 from homeassistant.core import HomeAssistant
 
@@ -362,7 +363,8 @@ async def async_setup_panel(hass: HomeAssistant) -> None:
     hass.http.register_view(NiagaraDeviceFoldersView())
     hass.http.register_view(NiagaraDeviceFoldersApplyView())
 
-    hass.components.frontend.async_register_built_in_panel(
+    async_register_built_in_panel(
+        hass,
         component_name="iframe",
         sidebar_title="Niagara BMS",
         sidebar_icon="mdi:office-building",
