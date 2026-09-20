@@ -139,8 +139,15 @@ def _stable_id(path: str) -> str:
     return hashlib.md5(path.encode()).hexdigest()[:12]
 
 
+_NIAGARA_ESCAPE_RE = re.compile(r"\$([0-9a-fA-F]{2})")
+
+
+def _decode_niagara_name(name: str) -> str:
+    return _NIAGARA_ESCAPE_RE.sub(lambda m: chr(int(m.group(1), 16)), name)
+
+
 def _friendly_name(point: NiagaraPoint) -> str:
-    return point.name
+    return _decode_niagara_name(point.name)
 
 
 def _get_group(point: NiagaraPoint, device_depth: int = 0, device_folders: list[str] | None = None) -> str:
@@ -181,7 +188,7 @@ def map_point(
 
     group_name = group or _get_group(point, device_depth, device_folders)
     device_id = f"niagara_{_stable_id(topic_prefix + '/' + group_name)}"
-    group_parts = group_name.split("/")
+    group_parts = [_decode_niagara_name(p) for p in group_name.split("/")]
     short_group = " / ".join(group_parts[-3:]) if len(group_parts) > 3 else " / ".join(group_parts)
     display_name = f"{device_name} — {short_group}"
 

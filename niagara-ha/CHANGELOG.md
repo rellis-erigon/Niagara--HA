@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.8
+
+- **Fix**: Decode Niagara URL-encoded names — `DB$2dL4$2e2$2dPower` now displays as `DB-L4.2-Power` in entity names and device names
+- Handles all `$XX` hex escapes (`$2d` = `-`, `$2e` = `.`, `$24` = `$`, etc.)
+
 ## 0.6.7
 
 - **Fix**: "Use as Device" and "Apply Changes" now take effect immediately — newly enabled points appear in Home Assistant within one poll cycle instead of requiring a reconnect/restart
