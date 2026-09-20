@@ -1,0 +1,12 @@
+{
+  "domain": "niagara",
+  "name": "Niagara BMS",
+  "version": "2.0.0",
+  "config_flow": true,
+  "iot_class": "local_polling",
+  "requirements": ["requests>=2.28.0"],
+  "codeowners": ["@rellis-erigon"],
+  "documentation": "https://github.com/rellis-erigon/Niagara--HA",
+  "issue_tracker": "https://github.com/rellis-erigon/Niagara--HA/issues",
+  "integration_type": "hub"
+}
