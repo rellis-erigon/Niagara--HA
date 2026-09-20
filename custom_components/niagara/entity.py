@@ -16,6 +16,7 @@ class NiagaraEntity(CoordinatorEntity[NiagaraCoordinator]):
     """Base class for a Niagara BMS entity."""
 
     _attr_has_entity_name = True
+    _attr_entity_registry_enabled_default = False
 
     def __init__(self, coordinator: NiagaraCoordinator, point: NiagaraPoint) -> None:
         super().__init__(coordinator)
