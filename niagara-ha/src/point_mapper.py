@@ -35,6 +35,14 @@ UNIT_MAP = {
     "therm": "therm",
     "mbar": "mbar",
     "bar": "bar",
+    "m³": "m³",
+    "ft³": "ft³",
+    "L": "L",
+    "gal": "gal",
+    "CCF": "CCF",
+    "m³/h": "m³/h",
+    "ft³/h": "ft³/h",
+    "L/h": "L/h",
 }
 
 DEVICE_CLASS_MAP = {
@@ -56,6 +64,11 @@ DEVICE_CLASS_MAP = {
     "MWh": "energy",
     "GJ": "energy",
     "MJ": "energy",
+    "m³": "volume",
+    "ft³": "volume",
+    "L": "volume",
+    "gal": "volume",
+    "CCF": "volume",
 }
 
 NAME_DEVICE_CLASS_SENSOR = [
@@ -68,14 +81,19 @@ NAME_DEVICE_CLASS_SENSOR = [
     (re.compile(r"volt", re.I), "voltage", "V"),
     (re.compile(r"current|amp", re.I), "current", "A"),
     (re.compile(r"freq|hz$", re.I), "frequency", "Hz"),
+    (re.compile(r"water.?meter|water.?consump|water.?total|water.?usage|dcw|dhw|chw.?flow|hydraulic", re.I), "water", "L"),
+    (re.compile(r"gas.?meter|gas.?consump|gas.?total|gas.?usage|natural.?gas", re.I), "gas", "m³"),
+    (re.compile(r"batter|soc$|state.?of.?charge", re.I), "battery", "%"),
 ]
 
 _TOTAL_INCREASING_RE = re.compile(
-    r"total|cumul|consump|daily.?energy|monthly|annual|lifetime|accum|meter.?read|import|export.?energy",
+    r"total|cumul|consump|daily|monthly|annual|lifetime|accum|meter|import|export|usage|reading",
     re.I,
 )
 
 ENERGY_UNITS = frozenset({"kWh", "Wh", "MWh", "GJ", "MJ", "BTU", "therm"})
+WATER_UNITS = frozenset({"m³", "ft³", "L", "gal", "CCF"})
+GAS_UNITS = frozenset({"m³", "ft³", "CCF"})
 
 NAME_DEVICE_CLASS_BINARY = [
     (re.compile(r"alarm|fault|trip|alert|emergency|smoke|fire", re.I), "problem"),
@@ -100,10 +118,25 @@ NAME_ICON_MAP = [
 ]
 
 
+_WATER_RE = re.compile(r"water|dcw|dhw|chw|hydraulic|irrigation|potable|sewage|drain|tank", re.I)
+_GAS_RE = re.compile(r"\bgas\b|natural.?gas|lng|lpg|propane|methane", re.I)
+
+
+def _refine_volume_class(name: str, path: str) -> str:
+    text = f"{name} {path}"
+    if _WATER_RE.search(text):
+        return "water"
+    if _GAS_RE.search(text):
+        return "gas"
+    return "water"
+
+
 def _infer_state_class(device_class: str, name: str, unit: str | None) -> str:
-    if device_class == "energy" or (unit and unit in ENERGY_UNITS):
-        if _TOTAL_INCREASING_RE.search(name):
-            return "total_increasing"
+    if device_class in ("energy", "gas", "water"):
+        return "total_increasing"
+    if device_class == "volume" and unit and unit in WATER_UNITS:
+        return "total_increasing"
+    if unit and unit in ENERGY_UNITS:
         return "total_increasing"
     return "measurement"
 
@@ -275,6 +308,8 @@ def _map_sensor_numeric(
         config["unit_of_measurement"] = ha_unit
         device_class = DEVICE_CLASS_MAP.get(point.unit)
         if device_class:
+            if device_class == "volume":
+                device_class = _refine_volume_class(point.name, point.path)
             config["device_class"] = device_class
             config["state_class"] = _infer_state_class(device_class, point.name, point.unit)
 

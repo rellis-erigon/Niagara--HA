@@ -46,6 +46,17 @@ OBIX_UNIT_MAP = {
     "millibar": "mbar",
     "bar": "bar",
     "degree": "°",
+    "cubic_meter": "m³",
+    "cubic_meters_per_hour": "m³/h",
+    "liter": "L",
+    "liters_per_hour": "L/h",
+    "gallon": "gal",
+    "cubic_foot": "ft³",
+    "megawatt_hour": "MWh",
+    "gigajoule": "GJ",
+    "megajoule": "MJ",
+    "british_thermal_unit": "BTU",
+    "cubic_feet_per_hour": "ft³/h",
 }
 
 

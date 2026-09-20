@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.6.9
+
+- **Feature**: HA Energy dashboard — water meters (`device_class: water`, `state_class: total_increasing`), gas meters (`device_class: gas`), and battery sensors (`device_class: battery`) now auto-detected from point names and paths
+- **Feature**: Volume unit support — m³, ft³, L, gal, CCF recognized with correct device classes
+- **Feature**: Smart volume classification — volume sensors under HYDRAULICS/water/DCW paths get `device_class: water`, gas paths get `device_class: gas`
+- **Feature**: oBIX unit mappings for cubic_meter, liter, gallon, cubic_foot, megawatt_hour, gigajoule, megajoule
+- **Improvement**: Broader `total_increasing` detection — water and gas meters automatically get the right state class for the Energy dashboard
+
 ## 0.6.8
 
 - **Fix**: Decode Niagara URL-encoded names — `DB$2dL4$2e2$2dPower` now displays as `DB-L4.2-Power` in entity names and device names
