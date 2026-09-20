@@ -20,7 +20,7 @@
           "device_name": "Device name prefix",
           "scan_interval": "Poll interval (seconds)",
           "point_filter": "Point path filter (optional)",
-          "device_depth": "Device grouping depth (0 = auto)",
+          "device_depth": "Device grouping depth (0 = auto, targets 20-200 devices)",
           "area_depth": "Area mapping depth (folder level for HA areas)"
         }
       }

@@ -515,6 +515,11 @@ class NiagaraCoordinator(DataUpdateCoordinator[dict[str, NiagaraPoint]]):
             self.client.discover_points, path_filter
         )
         self.points = {pt.path: pt for pt in discovered}
+
+        if self.device_depth == 0:
+            self.device_depth = self._auto_device_depth()
+            _LOGGER.info("Auto-detected device_depth=%d", self.device_depth)
+
         scan_interval = self.entry.options.get(
             "scan_interval", self.entry.data.get("scan_interval", DEFAULT_POLL_INTERVAL)
         )
@@ -523,7 +528,10 @@ class NiagaraCoordinator(DataUpdateCoordinator[dict[str, NiagaraPoint]]):
             self.client.setup_watch, point_list, scan_interval
         )
         _LOGGER.info(
-            "Niagara setup: %d points, watch=%s", len(self.points), self._watch_active
+            "Niagara setup: %d points, %d devices, watch=%s",
+            len(self.points),
+            len({self.get_group(pt) for pt in self.points.values()}),
+            self._watch_active,
         )
 
     async def _async_update_data(self) -> dict[str, NiagaraPoint]:
@@ -548,18 +556,54 @@ class NiagaraCoordinator(DataUpdateCoordinator[dict[str, NiagaraPoint]]):
     async def async_shutdown(self) -> None:
         await self.hass.async_add_executor_job(self.client.close)
 
+    _SKIP_SEGMENTS = frozenset({
+        "config", "Drivers", "NiagaraNetwork", "ObixNetwork",
+        "points", "out", "exports", "obix", "",
+    })
+
+    def _clean_path_parts(self, path: str) -> list[str]:
+        return [p for p in path.strip("/").split("/") if p not in self._SKIP_SEGMENTS]
+
+    def _auto_device_depth(self) -> int:
+        """Find the shallowest depth that produces a reasonable number of devices.
+
+        Targets between 20-200 unique groups. Walks depths 1..6 and picks
+        the first that lands in range, or the one closest to 100.
+        """
+        if not self.points:
+            return 3
+
+        all_parts = [self._clean_path_parts(pt.path) for pt in self.points.values()]
+        best_depth = 3
+        best_distance = float("inf")
+
+        for depth in range(1, 7):
+            groups: set[str] = set()
+            for parts in all_parts:
+                if len(parts) < 2:
+                    groups.add("Ungrouped")
+                else:
+                    groups.add("/".join(parts[:depth]))
+            count = len(groups)
+            if 20 <= count <= 200:
+                _LOGGER.debug("device_depth=%d gives %d devices (in range)", depth, count)
+                return depth
+            dist = abs(count - 100)
+            if dist < best_distance:
+                best_distance = dist
+                best_depth = depth
+            _LOGGER.debug("device_depth=%d gives %d devices", depth, count)
+
+        return best_depth
+
     def get_group(self, point: NiagaraPoint) -> str:
-        skip = {"config", "Drivers", "NiagaraNetwork", "ObixNetwork", "points", "out", "exports", ""}
-        parts = [p for p in point.path.strip("/").split("/") if p not in skip]
+        parts = self._clean_path_parts(point.path)
         if len(parts) < 2:
             return "Ungrouped"
-        if self.device_depth > 0:
-            return "/".join(parts[: self.device_depth])
-        return "/".join(parts[:-1])
+        return "/".join(parts[: self.device_depth])
 
     def get_area(self, point: NiagaraPoint) -> str | None:
-        skip = {"config", "Drivers", "NiagaraNetwork", "ObixNetwork", "points", "out", "exports", "obix", ""}
-        parts = [p for p in point.path.strip("/").split("/") if p not in skip]
+        parts = self._clean_path_parts(point.path)
         if self.area_depth > 0 and len(parts) >= self.area_depth:
             return decode_niagara_name(parts[self.area_depth - 1])
         return None
