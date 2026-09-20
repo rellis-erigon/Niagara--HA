@@ -57,13 +57,26 @@ OBIX_UNIT_MAP = {
     "megajoule": "MJ",
     "british_thermal_unit": "BTU",
     "cubic_feet_per_hour": "ft³/h",
+    "kilowatt_hours": "kWh",
+    "megawatt_hours": "MWh",
+    "watt_hours": "Wh",
+    "kilowatts": "kW",
+    "watts": "W",
+    "volts": "V",
+    "amperes": "A",
+    "amps": "A",
+    "degrees_celsius": "°C",
+    "degrees_fahrenheit": "°F",
 }
 
 
-def _normalize_unit(raw: str) -> str:
+def _normalize_unit(raw: str) -> str | None:
     unit_name = raw.rsplit("/", 1)[-1] if "/" in raw else raw
-    unit_name = unit_name.replace("obix:", "")
-    return OBIX_UNIT_MAP.get(unit_name, unit_name)
+    unit_name = unit_name.replace("obix:", "").strip()
+    if not unit_name or unit_name.lower() == "null":
+        return None
+    key = unit_name.lower().replace(" ", "_")
+    return OBIX_UNIT_MAP.get(unit_name, OBIX_UNIT_MAP.get(key, unit_name))
 
 
 SKIP_POINT_NAMES = frozenset({

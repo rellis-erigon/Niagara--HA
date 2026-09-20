@@ -329,6 +329,10 @@ def save_point_selections(
             entry["name"] = pt.name
             entry["group"] = group
             entry["type"] = pt.point_type
+            entry["unit"] = pt.unit or ""
+            entry["writable"] = pt.writable
+            if pt.enum_range:
+                entry["enum_range"] = pt.enum_range
         else:
             should_enable = bool(auto_enable_patterns) and matches_auto_enable(pt.name, pt.path, auto_enable_patterns)
             entry = {
@@ -336,8 +340,12 @@ def save_point_selections(
                 "name": pt.name,
                 "group": group,
                 "type": pt.point_type,
+                "unit": pt.unit or "",
+                "writable": pt.writable,
                 "enabled": should_enable,
             }
+            if pt.enum_range:
+                entry["enum_range"] = pt.enum_range
             if should_enable:
                 auto_enabled_count += 1
         merged[pt.path] = entry

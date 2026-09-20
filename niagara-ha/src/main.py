@@ -1,7 +1,8 @@
 """Niagara BMS Bridge — main entry point.
 
 Reads add-on options, connects to Niagara via oBIX, discovers points,
-and publishes them to Home Assistant via MQTT Discovery on a polling loop.
+and polls values on a loop. Values are served to the HA integration
+via the web API. MQTT publishing is optional (legacy support).
 """
 
 import json
@@ -12,7 +13,6 @@ import sys
 import time
 from pathlib import Path
 
-from mqtt_publisher import MqttPublisher
 from obix_client import ObixClient, ObixError
 from point_manager import (
     DEVICE_FOLDERS_FILE,
@@ -24,7 +24,6 @@ from point_manager import (
     load_point_selections,
     save_point_selections,
 )
-from point_mapper import map_point
 
 OPTIONS_PATH = Path("/data/options.json")
 VALUES_FILE = POINTS_DIR / "values.json"
@@ -68,6 +67,30 @@ def _get_file_mtime(path: Path) -> float:
         return 0.0
 
 
+def _try_load_mqtt(opts: dict):
+    """Load MQTT publisher if configured (legacy/optional)."""
+    mqtt_host = opts.get("mqtt_host", "")
+    if not mqtt_host:
+        return None
+    try:
+        from mqtt_publisher import MqttPublisher
+        pub = MqttPublisher(
+            host=mqtt_host,
+            port=opts.get("mqtt_port") or int(os.environ.get("MQTT_PORT", "1883")),
+            username=opts.get("mqtt_user") or os.environ.get("MQTT_USER", ""),
+            password=opts.get("mqtt_password") or os.environ.get("MQTT_PASSWORD", ""),
+            topic_prefix=opts.get("mqtt_topic_prefix", "niagara"),
+        )
+        if pub.connect():
+            logger.info("MQTT publisher connected (legacy mode)")
+            return pub
+        else:
+            logger.warning("MQTT configured but connection failed — running without MQTT")
+    except ImportError:
+        logger.info("MQTT publisher not available — running in native mode")
+    return None
+
+
 def main() -> None:
     global _shutdown
 
@@ -77,7 +100,7 @@ def main() -> None:
     opts = load_options()
     setup_logging(opts.get("log_level", "info"))
 
-    logger.info("Niagara BMS Bridge v0.6.9 starting")
+    logger.info("Niagara BMS Bridge v1.0.0 starting")
     logger.info("Target: %s:%d (HTTPS=%s)", opts["niagara_host"], opts["niagara_port"], opts["use_https"])
 
     if not opts.get("niagara_host"):
@@ -93,30 +116,17 @@ def main() -> None:
         verify_ssl=opts.get("verify_ssl", False),
     )
 
-    mqtt_pub = MqttPublisher(
-        host=opts.get("mqtt_host") or os.environ.get("MQTT_HOST", "core-mosquitto"),
-        port=opts.get("mqtt_port") or int(os.environ.get("MQTT_PORT", "1883")),
-        username=opts.get("mqtt_user") or os.environ.get("MQTT_USER", ""),
-        password=opts.get("mqtt_password") or os.environ.get("MQTT_PASSWORD", ""),
-        topic_prefix=opts.get("mqtt_topic_prefix", "niagara"),
-    )
+    mqtt_pub = _try_load_mqtt(opts)
 
     poll_interval = opts.get("poll_interval_seconds", 30)
     point_filter = opts.get("point_filter", "")
-    topic_prefix = opts.get("mqtt_topic_prefix", "niagara")
     device_name = opts.get("device_name", "Niagara BMS")
     poll_workers = opts.get("poll_workers", 5)
     device_depth = opts.get("device_depth", 0)
     reconnect_delay = RECONNECT_DELAY
 
-    if not mqtt_pub.connect():
-        logger.error("Cannot connect to MQTT broker — retrying in background")
-
-    time.sleep(2)
-
     active_points: list = []
     all_points: dict = {}
-    entity_maps: dict = {}
     points_mtime = 0.0
     folders_mtime = 0.0
     discovered_count = 0
@@ -149,24 +159,28 @@ def main() -> None:
                 all_points = {pt.path: pt for pt in discovered_points}
                 active_points = filter_enabled(discovered_points, selections)
                 logger.info(
-                    "Active points: %d of %d (use the web UI or edit points.yaml)",
+                    "Active points: %d of %d (use the web UI to enable/disable)",
                     len(active_points), discovered_count,
                 )
 
                 del discovered_points, existing_selections
-                entity_maps = _publish_entities(active_points, selections, mqtt_pub, topic_prefix, device_name, last_values, device_depth, device_folders)
+
+                if mqtt_pub:
+                    from point_mapper import map_point
+                    topic_prefix = opts.get("mqtt_topic_prefix", "niagara")
+                    for pt in active_points:
+                        mapped = map_point(pt, topic_prefix, device_name, selections.get(pt.path, {}).get("group", ""), "", device_depth, device_folders)
+                        if mapped:
+                            mqtt_pub.publish_discovery(mapped)
+
                 del selections
-                last_statuses.clear()
 
                 using_watch = obix.setup_watch(active_points, poll_interval)
                 if using_watch:
                     for pt in active_points:
                         if pt.value is not None:
                             last_values[pt.path] = str(pt.value)
-                            mapped = entity_maps.get(pt.path)
-                            if mapped:
-                                mqtt_pub.publish_state(mapped["state_topic"], str(pt.value))
-                    logger.info("Watch mode: initial values published for %d points", len(last_values))
+                    logger.info("Watch mode: initial values captured for %d points", len(last_values))
                 else:
                     logger.info("Legacy polling mode: %d workers", poll_workers)
             else:
@@ -190,7 +204,6 @@ def main() -> None:
             device_folders = load_device_folders()
             enabled_paths = {p for p, e in selections.items() if e.get("enabled", False)}
             active_points = [all_points[p] for p in enabled_paths if p in all_points]
-            entity_maps = _publish_entities(active_points, selections, mqtt_pub, topic_prefix, device_name, last_values, device_depth, device_folders)
             del selections
             last_statuses.clear()
             if using_watch:
@@ -201,80 +214,31 @@ def main() -> None:
         active_points = updated
 
         changed = 0
-        unchanged = 0
-        faulted = 0
         for pt in updated:
-            mapped = entity_maps.get(pt.path)
-            if not mapped:
-                continue
             if pt.value is not None:
                 val_str = str(pt.value)
                 if last_values.get(pt.path) != val_str:
-                    mqtt_pub.publish_state(mapped["state_topic"], val_str)
                     last_values[pt.path] = val_str
                     changed += 1
-                else:
-                    unchanged += 1
-            else:
-                faulted += 1
 
-            if pt.status and pt.status != "ok":
-                if last_statuses.get(pt.path) != pt.status:
-                    mqtt_pub.publish_attributes(
-                        mapped["state_topic"],
-                        {"niagara_status": pt.status, "niagara_path": pt.path},
-                    )
-                    last_statuses[pt.path] = pt.status
-
-        logger.debug("Poll: %d changed, %d unchanged, %d faulted", changed, unchanged, faulted)
-
+        logger.debug("Poll: %d changed, %d total", changed, len(updated))
         _write_values_cache(last_values)
 
+        if mqtt_pub:
+            if not obix.connected:
+                mqtt_pub.publish_availability(False)
+            else:
+                mqtt_pub.publish_availability(True)
+
         if not obix.connected:
-            mqtt_pub.publish_availability(False)
             continue
 
         _sleep_interruptible(poll_interval)
 
     logger.info("Shutting down...")
-    mqtt_pub.disconnect()
+    if mqtt_pub:
+        mqtt_pub.disconnect()
     obix.close()
-
-
-def _publish_entities(
-    active_points, selections, mqtt_pub, topic_prefix, device_name,
-    cached_values: dict[str, str] | None = None, device_depth: int = 0,
-    device_folders: list[str] | None = None,
-) -> dict:
-    entity_maps = {}
-    for pt in active_points:
-        entry = selections.get(pt.path, {})
-        group = entry.get("group", "")
-        custom_name = entry.get("custom_name", "")
-        mapped = map_point(pt, topic_prefix, device_name, group, custom_name, device_depth, device_folders)
-        if mapped:
-            entity_maps[pt.path] = mapped
-            mqtt_pub.publish_discovery(mapped)
-
-    current_topics = {m["discovery_topic"] for m in entity_maps.values()}
-    mqtt_pub.remove_stale_discoveries(current_topics)
-    mqtt_pub.publish_availability(True)
-
-    initial_values = 0
-    for pt in active_points:
-        mapped = entity_maps.get(pt.path)
-        if not mapped:
-            continue
-        val = str(pt.value) if pt.value is not None else (cached_values or {}).get(pt.path)
-        if val is not None:
-            mqtt_pub.publish_state(mapped["state_topic"], val)
-            initial_values += 1
-
-    logger.info(
-        "Published %d entities to HA (%d with initial values)",
-        len(entity_maps), initial_values,
-    )
-    return entity_maps
 
 
 def _load_values_cache() -> dict[str, str]:

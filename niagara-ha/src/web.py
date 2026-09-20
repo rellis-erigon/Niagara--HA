@@ -486,6 +486,61 @@ def apply_profile(profile_id):
     return jsonify({"ok": True, "count": count, "profile": profile["name"], "rules_saved": save_rules})
 
 
+@app.route("/api/integration/points")
+def integration_points():
+    """Return enabled points with current values for the HA integration.
+
+    The HACS integration polls this endpoint to create native HA entities.
+    Returns only enabled points with their type, unit, group, and live value.
+    """
+    selections = _load_selections()
+    values = _load_values()
+    device_folders = load_device_folders()
+
+    points = []
+    for entry in selections.values():
+        if not entry.get("enabled", False):
+            continue
+        path = entry.get("path", "")
+        points.append({
+            "path": path,
+            "name": entry.get("name", ""),
+            "type": entry.get("type", "unknown"),
+            "unit": entry.get("unit", ""),
+            "group": entry.get("group", "Ungrouped"),
+            "value": values.get(path),
+            "writable": entry.get("writable", False),
+            "enum_range": entry.get("enum_range", []),
+        })
+
+    return jsonify({
+        "points": points,
+        "device_folders": device_folders,
+        "total": len(selections),
+        "enabled": len(points),
+    })
+
+
+@app.route("/api/integration/values")
+def integration_values():
+    """Return current values for all enabled points.
+
+    Lightweight endpoint for polling — just path:value pairs.
+    """
+    selections = _load_selections()
+    values = _load_values()
+
+    result = {}
+    for entry in selections.values():
+        if entry.get("enabled", False):
+            path = entry.get("path", "")
+            val = values.get(path)
+            if val is not None:
+                result[path] = val
+
+    return jsonify(result)
+
+
 def _write_selections(selections: dict[str, dict]) -> None:
     import yaml
     from point_manager import _SafeDumper

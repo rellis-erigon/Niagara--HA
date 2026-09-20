@@ -2,36 +2,22 @@
   "config": {
     "step": {
       "user": {
-        "title": "Niagara BMS Connection",
-        "description": "Enter the connection details for your Niagara 4 station.",
+        "title": "Niagara BMS Add-on Connection",
+        "description": "Enter the URL of the Niagara BMS add-on. Install the add-on first, then configure it with your Niagara station details.",
         "data": {
-          "host": "Host",
-          "port": "Port",
-          "username": "Username",
-          "password": "Password",
-          "use_https": "Use HTTPS",
-          "verify_ssl": "Verify SSL certificate"
-        }
-      },
-      "discovery": {
-        "title": "Points Discovered",
-        "description": "Found {point_count} points on {host}. Configure how they appear in Home Assistant.",
-        "data": {
+          "addon_url": "Add-on URL",
           "device_name": "Device name prefix",
           "scan_interval": "Poll interval (seconds)",
-          "point_filter": "Point path filter (optional)",
-          "device_depth": "Device grouping depth (0 = auto, targets 20-200 devices)",
           "area_depth": "Area mapping depth (folder level for HA areas)"
         }
       }
     },
     "error": {
-      "cannot_connect": "Failed to connect to Niagara station",
-      "invalid_auth": "Invalid username or password",
+      "cannot_connect": "Failed to connect to Niagara BMS add-on. Check the URL and ensure the add-on is running.",
       "unknown": "Unexpected error"
     },
     "abort": {
-      "already_configured": "This Niagara station is already configured"
+      "already_configured": "This Niagara BMS add-on is already configured"
     }
   },
   "options": {
@@ -41,7 +27,6 @@
         "data": {
           "scan_interval": "Poll interval (seconds)",
           "device_name": "Device name prefix",
-          "device_depth": "Device grouping depth",
           "area_depth": "Area mapping depth"
         }
       }

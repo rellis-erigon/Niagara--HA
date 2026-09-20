@@ -1,4 +1,9 @@
-"""Niagara BMS integration for Home Assistant."""
+"""Niagara BMS integration for Home Assistant.
+
+Connects to the Niagara BMS add-on's REST API and creates native HA entities
+from the enabled points. The add-on handles the oBIX connection, point
+discovery, and management sidebar.
+"""
 
 import logging
 
@@ -8,7 +13,6 @@ from homeassistant.core import HomeAssistant
 
 from .const import DOMAIN
 from .coordinator import NiagaraCoordinator
-from .panel import async_setup_panel
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -23,7 +27,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
-    await async_setup_panel(hass)
 
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))
     return True
