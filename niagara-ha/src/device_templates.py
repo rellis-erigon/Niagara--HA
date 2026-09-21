@@ -83,6 +83,9 @@ class Template:
     # "SOLAR" is a strong hint no amount of point-name matching gives, since
     # a solar meter's points look like any other meter's.
     device_match: list[str] = field(default_factory=list)
+    # Built-ins ship in the image and are read-only; a user template with the
+    # same id shadows one, which is how you customise without forking.
+    builtin: bool = False
 
     @classmethod
     def from_dict(cls, data: dict) -> "Template":
@@ -107,11 +110,14 @@ class Template:
             "name": self.name,
             "description": self.description,
             "icon": self.icon,
+            "builtin": self.builtin,
+            "device_match": self.device_match,
             "slots": [
                 {
                     "key": s.key, "name": s.name, "required": s.required,
                     "device_class": s.device_class, "state_class": s.state_class,
-                    "units": s.units, "match": s.match,
+                    "units": s.units, "point_types": s.point_types,
+                    "match": s.match, "validation": s.validation,
                 }
                 for s in self.slots
             ],
@@ -122,7 +128,7 @@ class Template:
         return [s for s in self.slots if s.required]
 
 
-def _load_dir(path: Path) -> dict[str, Template]:
+def _load_dir(path: Path, builtin: bool = False) -> dict[str, Template]:
     templates: dict[str, Template] = {}
     if not path.is_dir():
         return templates
@@ -141,13 +147,14 @@ def _load_dir(path: Path) -> dict[str, Template]:
         except (KeyError, TypeError) as err:
             logger.warning("Skipping template %s: %s", file.name, err)
             continue
+        template.builtin = builtin
         templates[template.id] = template
     return templates
 
 
 def load_templates() -> dict[str, Template]:
     """Built-in templates, with any user templates merged over the top."""
-    templates = _load_dir(BUILTIN_TEMPLATE_DIR)
+    templates = _load_dir(BUILTIN_TEMPLATE_DIR, builtin=True)
     user = _load_dir(USER_TEMPLATE_DIR)
     if user:
         logger.info("Loaded %d user templates from %s", len(user), USER_TEMPLATE_DIR)
@@ -322,3 +329,126 @@ def save_device_types(devices: dict[str, dict]) -> None:
         yaml.safe_dump(payload, handle, default_flow_style=False, sort_keys=False,
                        allow_unicode=True, width=10000)
     tmp.replace(DEVICE_TYPES_FILE)
+
+
+# -- User template editing -----------------------------------------------
+
+_ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
+
+
+class TemplateError(ValueError):
+    """A template payload that cannot be stored as written."""
+
+
+def validate_template_payload(data: Any) -> dict:
+    """Check a template submitted from the editor before writing it to disk.
+
+    A malformed template would be skipped silently at load time, leaving the
+    user staring at a template that saved but never appears.
+    """
+    if not isinstance(data, dict):
+        raise TemplateError("Template must be an object")
+
+    template_id = str(data.get("id", "")).strip().lower()
+    if not _ID_RE.match(template_id):
+        raise TemplateError(
+            "Id must be lowercase letters, digits, dash or underscore",
+        )
+
+    name = str(data.get("name", "")).strip() or template_id
+    slots_in = data.get("slots")
+    if not isinstance(slots_in, list):
+        raise TemplateError("Template must have a list of slots")
+
+    seen: set[str] = set()
+    slots = []
+    for raw in slots_in:
+        if not isinstance(raw, dict):
+            raise TemplateError("Each slot must be an object")
+        key = str(raw.get("key", "")).strip().lower()
+        if not _ID_RE.match(key):
+            raise TemplateError(f"Slot key {key!r} is not a valid identifier")
+        if key in seen:
+            raise TemplateError(f"Duplicate slot key {key!r}")
+        seen.add(key)
+
+        slot: dict[str, Any] = {
+            "key": key,
+            "name": str(raw.get("name", "")).strip() or key,
+            "required": bool(raw.get("required", False)),
+        }
+        for field_name in ("device_class", "state_class"):
+            value = raw.get(field_name)
+            if value:
+                slot[field_name] = str(value).strip()
+        for field_name in ("units", "point_types", "match"):
+            values = raw.get(field_name) or []
+            if not isinstance(values, list):
+                raise TemplateError(f"{field_name} must be a list")
+            cleaned = [str(v).strip() for v in values if str(v).strip()]
+            if cleaned:
+                slot[field_name] = cleaned
+
+        rules = raw.get("validation") or {}
+        if rules:
+            if not isinstance(rules, dict):
+                raise TemplateError("validation must be an object")
+            out: dict[str, Any] = {}
+            for bound in ("min", "max"):
+                if rules.get(bound) not in (None, ""):
+                    try:
+                        out[bound] = float(rules[bound])
+                    except (TypeError, ValueError):
+                        raise TemplateError(f"validation.{bound} must be a number")
+            if rules.get("monotonic"):
+                out["monotonic"] = True
+            if out:
+                slot["validation"] = out
+
+        slots.append(slot)
+
+    payload = {
+        "id": template_id,
+        "name": name,
+        "description": str(data.get("description", "")).strip(),
+        "slots": slots,
+    }
+    if data.get("icon"):
+        payload["icon"] = str(data["icon"]).strip()
+    device_match = data.get("device_match") or []
+    if isinstance(device_match, list):
+        cleaned = [str(v).strip() for v in device_match if str(v).strip()]
+        if cleaned:
+            payload["device_match"] = cleaned
+    return payload
+
+
+def save_user_template(data: Any) -> dict:
+    """Write a user template. A built-in id is shadowed, never overwritten."""
+    payload = validate_template_payload(data)
+    USER_TEMPLATE_DIR.mkdir(parents=True, exist_ok=True)
+    path = USER_TEMPLATE_DIR / f"{payload['id']}.yaml"
+    tmp = path.with_suffix(".tmp")
+    with open(tmp, "w") as handle:
+        yaml.safe_dump(payload, handle, default_flow_style=False,
+                       sort_keys=False, allow_unicode=True, width=10000)
+    tmp.replace(path)
+    logger.info("Saved user template %s", payload["id"])
+    return payload
+
+
+def delete_user_template(template_id: str) -> bool:
+    """Remove a user template. Built-ins are untouched, so a shadowed id
+    reverts to the shipped version rather than disappearing."""
+    if not _ID_RE.match(str(template_id or "")):
+        return False
+    path = USER_TEMPLATE_DIR / f"{template_id}.yaml"
+    try:
+        path.unlink()
+    except FileNotFoundError:
+        return False
+    except OSError as err:
+        logger.warning("Could not delete template %s: %s", template_id, err)
+        return False
+    logger.info("Deleted user template %s", template_id)
+    return True

@@ -10,11 +10,14 @@ from flask import Flask, jsonify, request, send_from_directory
 
 from device_templates import (
     STATE_DRAFT,
+    TemplateError,
     bind_template,
     decode_niagara_name,
+    delete_user_template,
     load_device_types,
     load_templates,
     save_device_types,
+    save_user_template,
     score_candidate,
     suggest_template,
 )
@@ -718,10 +721,15 @@ def device_detail():
             "bound_name": decode_niagara_name(point.get("name", "")) if point else None,
             "bound_unit": point.get("unit") if point else None,
             "from_user": bool(stored.get(slot.key)),
-            "candidates": [
+            "bound_enabled": bool(point.get("enabled")) if point else False,
+            # Every point in the device is offered. Pattern matching decides
+            # what is suggested, never what is permitted — a slot may only be
+            # fillable by a point nobody would name predictably, such as the
+            # "UI 4" on an under-bench fridge.
+            "suggested": [
                 _point_summary(p) for p in points
                 if score_candidate(slot, p) is not None
-            ][:25],
+            ],
         })
 
     return jsonify({
@@ -740,6 +748,7 @@ def _point_summary(point: dict) -> dict:
         "name": decode_niagara_name(point.get("name", "")),
         "unit": point.get("unit") or "",
         "type": point.get("type", "unknown"),
+        "enabled": bool(point.get("enabled")),
     }
 
 
@@ -927,6 +936,67 @@ def _enable_paths(wanted: set[str], group: str | None = None):
     if group:
         payload["group"] = group
     return jsonify(payload)
+
+
+@app.route("/api/devices/set-points", methods=["POST"])
+def set_device_points_enabled():
+    """Enable or disable points of one device, from the device view.
+
+    With no paths given this applies to every point in the device, which is
+    how a device is switched on or off wholesale.
+    """
+    data = request.get_json() or {}
+    group = (data.get("group") or "").strip()
+    if not group:
+        return jsonify({"error": "group required"}), 400
+    enabled = bool(data.get("enabled", True))
+
+    points = _points_by_group().get(group, [])
+    if not points:
+        return jsonify({"error": "no points in this group"}), 404
+
+    in_device = {p.get("path") for p in points}
+    requested = data.get("paths")
+    if requested is None:
+        targets = in_device
+    else:
+        targets = {p for p in requested if p in in_device}
+        if not targets:
+            return jsonify({"error": "no matching points in this device"}), 400
+
+    selections = load_point_selections()
+    changed = 0
+    for path in targets:
+        entry = selections.get(path)
+        if entry is not None and bool(entry.get("enabled", False)) != enabled:
+            entry["enabled"] = enabled
+            changed += 1
+
+    if changed:
+        _write_selections(selections)
+
+    return jsonify({
+        "ok": True, "group": group, "enabled": enabled,
+        "changed": changed, "targets": len(targets),
+    })
+
+
+@app.route("/api/templates", methods=["POST"])
+def save_template():
+    try:
+        payload = save_user_template(request.get_json() or {})
+    except TemplateError as err:
+        return jsonify({"error": str(err)}), 400
+    except OSError as err:
+        return jsonify({"error": f"Could not write template: {err}"}), 500
+    return jsonify({"ok": True, "template": payload})
+
+
+@app.route("/api/templates/<template_id>", methods=["DELETE"])
+def remove_template(template_id):
+    if delete_user_template(template_id):
+        return jsonify({"ok": True, "deleted": template_id})
+    return jsonify({"error": "no user template with that id"}), 404
 
 
 @app.route("/api/devices/unassign", methods=["POST"])

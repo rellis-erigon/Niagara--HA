@@ -227,3 +227,93 @@ def test_sts_pattern_does_not_capture_status_points(templates):
     """"sts" must not match "Status"; the FCU relies on that distinction."""
     bindings = dt.bind_template(templates["fcu"], FCU)
     assert bindings["fan_status"].endswith("/IndoorFanStatus/")
+
+
+# -- User templates ------------------------------------------------------
+
+@pytest.fixture
+def user_dir(tmp_path, monkeypatch):
+    path = tmp_path / "templates"
+    monkeypatch.setattr(dt, "USER_TEMPLATE_DIR", path)
+    return path
+
+
+MINIMAL = {
+    "id": "fridge_custom",
+    "name": "Custom Fridge",
+    "slots": [{"key": "temperature", "name": "Temperature", "required": True,
+               "units": ["°C"], "match": ["*temp*"],
+               "validation": {"min": -40, "max": 30}}],
+}
+
+
+def test_save_and_load_user_template(user_dir):
+    dt.save_user_template(MINIMAL)
+    loaded = dt.load_templates()
+    assert "fridge_custom" in loaded
+    template = loaded["fridge_custom"]
+    assert template.builtin is False
+    assert template.required_slots[0].validation == {"min": -40.0, "max": 30.0}
+
+
+def test_user_template_shadows_a_builtin(user_dir):
+    """Customizing a built-in must not need the built-in deleted."""
+    custom = dict(MINIMAL, id="pump", name="Our Pumps")
+    dt.save_user_template(custom)
+    loaded = dt.load_templates()
+    assert loaded["pump"].name == "Our Pumps"
+    assert loaded["pump"].builtin is False
+
+
+def test_deleting_a_shadow_restores_the_builtin(user_dir):
+    dt.save_user_template(dict(MINIMAL, id="pump", name="Our Pumps"))
+    assert dt.delete_user_template("pump") is True
+    restored = dt.load_templates()["pump"]
+    assert restored.builtin is True
+    assert restored.name != "Our Pumps"
+
+
+def test_deleting_a_builtin_is_refused(user_dir):
+    """There is no user file to remove, so nothing happens."""
+    assert dt.delete_user_template("electricity_meter") is False
+    assert dt.load_templates()["electricity_meter"].builtin is True
+
+
+@pytest.mark.parametrize("payload,reason", [
+    ({"id": "Bad Id", "slots": []}, "uppercase and spaces"),
+    ({"id": "", "slots": []}, "empty id"),
+    ({"id": "ok", "slots": "nope"}, "slots not a list"),
+    ({"id": "ok", "slots": [{"key": ""}]}, "empty slot key"),
+    ({"id": "ok", "slots": [{"key": "a"}, {"key": "a"}]}, "duplicate slot key"),
+    ({"id": "ok", "slots": [{"key": "a", "validation": {"min": "cold"}}]}, "min not a number"),
+    ({"id": "ok", "slots": [{"key": "a", "units": "°C"}]}, "units not a list"),
+])
+def test_invalid_templates_are_refused(payload, reason):
+    with pytest.raises(dt.TemplateError):
+        dt.validate_template_payload(payload)
+
+
+def test_slot_name_defaults_to_its_key():
+    payload = dt.validate_template_payload({"id": "ok", "slots": [{"key": "door"}]})
+    assert payload["slots"][0]["name"] == "door"
+
+
+def test_empty_lists_are_not_written():
+    payload = dt.validate_template_payload(
+        {"id": "ok", "slots": [{"key": "a", "units": [], "match": ["  "]}]})
+    assert "units" not in payload["slots"][0]
+    assert "match" not in payload["slots"][0]
+
+
+def test_fridge_template_binds_a_walk_in():
+    templates = dt.load_templates()
+    walkin = [
+        point("L3-Walkin-Fridge-Door", point_type="boolean"),
+        point("L3-Walkin-Fridge-Temp", "°C"),
+        point("L3-Walking-Fridge-Comp", point_type="boolean"),
+    ]
+    assert dt.suggest_template(templates, walkin, "Kitchens/Main/Fridge-1")[0] == "fridge"
+    bindings = dt.bind_template(templates["fridge"], walkin)
+    assert bindings["temperature"].endswith("-Temp/")
+    assert bindings["door"].endswith("-Door/")
+    assert bindings["compressor"].endswith("-Comp/")

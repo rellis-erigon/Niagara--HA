@@ -637,6 +637,7 @@ tr:hover td { background: var(--row-hover); }
             title="Mark every folder under a branch as its own device">Add Devices</button>
     <button class="btn btn-sm btn-primary" id="btn-autotype"
             title="Assign the suggested type to every device that has none">Auto-type All</button>
+    <button class="btn btn-sm" id="btn-templates" title="Create and customize device templates">Templates</button>
     <button class="btn btn-sm" id="btn-enable-all"
             title="Enable the bound points of every typed device">Enable All Slots</button>
   </div>
@@ -1274,16 +1275,18 @@ document.querySelectorAll('.viewnav .btn').forEach(btn => {
 
 async function loadTemplates() {
   if (templates.length) return templates;
+  const filter = $('#device-type-filter');
+  filter.querySelectorAll('option[data-tpl]').forEach(o => o.remove());
   try {
     templates = (await api('/api/templates')).templates || [];
   } catch (e) {
     templates = [];
   }
-  const filter = $('#device-type-filter');
   templates.forEach(t => {
     const opt = document.createElement('option');
     opt.value = t.id;
     opt.textContent = t.name;
+    opt.dataset.tpl = '1';
     filter.appendChild(opt);
   });
   return templates;
@@ -1361,7 +1364,12 @@ function renderDevices() {
         <button class="btn btn-sm" data-config="${esc(d.group)}">Configure</button>
         ${d.bound_disabled ? `<button class="btn btn-sm btn-primary" data-enable="${esc(d.group)}"
            title="Enable the ${d.bound_disabled} bound point(s) not yet enabled">Enable ${d.bound_disabled}</button>` : ''}
-      ` : ''}</td>
+      ` : ''}
+      <button class="btn btn-sm" data-points="${esc(d.group)}"
+        data-on="${d.enabled_count < d.point_count ? '1' : '0'}"
+        title="${d.enabled_count < d.point_count
+          ? 'Enable every point in this device' : 'Disable every point in this device'}"
+        >${d.enabled_count < d.point_count ? 'Enable all' : 'Disable all'}</button></td>
     </tr>`;
   }).join('');
 
@@ -1373,6 +1381,10 @@ function renderDevices() {
   });
   document.querySelectorAll('[data-enable]').forEach(btn => {
     btn.addEventListener('click', () => enableSlotPoints(btn.dataset.enable));
+  });
+  document.querySelectorAll('[data-points]').forEach(btn => {
+    btn.addEventListener('click', () =>
+      setDevicePoints(btn.dataset.points, btn.dataset.on === '1'));
   });
 }
 
@@ -1515,6 +1527,201 @@ $('#btn-add-devices').addEventListener('click', async () => {
   });
 });
 
+
+async function setDevicePoints(group, enabled) {
+  try {
+    const res = await api('/api/devices/set-points', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ group, enabled }),
+    });
+    toast(`${enabled ? 'Enabled' : 'Disabled'} ${res.changed} point(s)`);
+    await loadDevices();
+    loadStats();
+  } catch (e) {
+    toast('Could not change points');
+  }
+}
+
+/* -- Template editor -------------------------------------------------- */
+
+function blankSlot() {
+  return { key: '', name: '', required: false, device_class: '', units: [],
+           point_types: [], match: [], validation: {} };
+}
+
+async function openTemplateList() {
+  templates = [];
+  await loadTemplates();
+  const rows = templates.map(t => `
+    <tr>
+      <td>
+        <div class="slot-key">${esc(t.name)}</div>
+        <div class="slot-meta">${esc(t.id)} · ${t.slots.length} slots${t.builtin ? ' · built-in' : ''}</div>
+      </td>
+      <td style="text-align:right;white-space:nowrap">
+        <button class="btn btn-sm" data-edit-tpl="${esc(t.id)}">${t.builtin ? 'Customize' : 'Edit'}</button>
+        ${t.builtin ? '' : `<button class="btn btn-sm" data-del-tpl="${esc(t.id)}">Delete</button>`}
+      </td>
+    </tr>`).join('');
+
+  $('#modal-root').innerHTML = `
+    <div class="modal-backdrop" onclick="if(event.target===this)closeModal()">
+      <div class="modal modal-wide">
+        <h2>Device Templates</h2>
+        <p style="font-size:0.85rem;color:var(--muted);margin-bottom:12px">
+          Customizing a built-in saves your own copy that shadows it — delete
+          yours to go back to the shipped one. Templates live in
+          <code>/config/niagara-ha/templates/</code>.
+        </p>
+        <div style="max-height:46vh;overflow:auto">
+          <table class="slot-table">${rows}</table>
+        </div>
+        <div style="display:flex;gap:8px;justify-content:space-between;margin-top:18px">
+          <button class="btn btn-primary" id="tpl-new">New Template</button>
+          <button class="btn" onclick="closeModal()">Close</button>
+        </div>
+      </div>
+    </div>`;
+
+  $('#tpl-new').addEventListener('click', () => openTemplateEditor(null));
+  document.querySelectorAll('[data-edit-tpl]').forEach(b =>
+    b.addEventListener('click', () => openTemplateEditor(b.dataset.editTpl)));
+  document.querySelectorAll('[data-del-tpl]').forEach(b =>
+    b.addEventListener('click', async () => {
+      if (!confirm(`Delete template "${b.dataset.delTpl}"?`)) return;
+      try {
+        await api('/api/templates/' + encodeURIComponent(b.dataset.delTpl), { method: 'DELETE' });
+        toast('Template deleted');
+        templates = [];
+        await loadTemplates();
+        openTemplateList();
+      } catch (e) { toast('Could not delete template'); }
+    }));
+}
+
+let editorSlots = [];
+
+function renderEditorSlots() {
+  $('#tpl-slots').innerHTML = editorSlots.map((sl, i) => `
+    <tr>
+      <td>
+        <input class="slot-select" data-f="name" data-i="${i}" value="${esc(sl.name)}" placeholder="Slot name">
+        <input class="slot-select" data-f="key" data-i="${i}" value="${esc(sl.key)}"
+               placeholder="key" style="margin-top:4px">
+      </td>
+      <td>
+        <input class="slot-select" data-f="match" data-i="${i}"
+               value="${esc((sl.match || []).join(', '))}" placeholder="*temp*, *-temp">
+        <div style="display:flex;gap:4px;margin-top:4px">
+          <input class="slot-select" data-f="units" data-i="${i}"
+                 value="${esc((sl.units || []).join(', '))}" placeholder="°C, °F">
+          <input class="slot-select" data-f="device_class" data-i="${i}"
+                 value="${esc(sl.device_class || '')}" placeholder="temperature">
+        </div>
+        <div style="display:flex;gap:4px;margin-top:4px;align-items:center">
+          <input class="slot-select" data-f="point_types" data-i="${i}"
+                 value="${esc((sl.point_types || []).join(', '))}" placeholder="numeric, boolean">
+          <input class="slot-select" data-f="min" data-i="${i}"
+                 value="${sl.validation && sl.validation.min != null ? sl.validation.min : ''}" placeholder="min">
+          <input class="slot-select" data-f="max" data-i="${i}"
+                 value="${sl.validation && sl.validation.max != null ? sl.validation.max : ''}" placeholder="max">
+        </div>
+      </td>
+      <td style="white-space:nowrap;text-align:right">
+        <label class="slot-meta"><input type="checkbox" data-f="required" data-i="${i}"
+          ${sl.required ? 'checked' : ''}> req</label>
+        <button class="btn btn-sm" data-rm="${i}">×</button>
+      </td>
+    </tr>`).join('');
+
+  $('#tpl-slots').querySelectorAll('[data-f]').forEach(el => {
+    el.addEventListener('change', () => {
+      const sl = editorSlots[+el.dataset.i], f = el.dataset.f;
+      if (f === 'required') sl.required = el.checked;
+      else if (f === 'min' || f === 'max') {
+        sl.validation = sl.validation || {};
+        if (el.value.trim() === '') delete sl.validation[f];
+        else sl.validation[f] = parseFloat(el.value);
+      } else if (['match', 'units', 'point_types'].includes(f)) {
+        sl[f] = el.value.split(',').map(v => v.trim()).filter(Boolean);
+      } else sl[f] = el.value;
+    });
+  });
+  $('#tpl-slots').querySelectorAll('[data-rm]').forEach(b =>
+    b.addEventListener('click', () => {
+      editorSlots.splice(+b.dataset.rm, 1);
+      renderEditorSlots();
+    }));
+}
+
+function openTemplateEditor(id) {
+  const base = id ? templates.find(t => t.id === id) : null;
+  editorSlots = base ? JSON.parse(JSON.stringify(base.slots)) : [blankSlot()];
+
+  $('#modal-root').innerHTML = `
+    <div class="modal-backdrop" onclick="if(event.target===this)closeModal()">
+      <div class="modal modal-wide">
+        <h2>${base ? (base.builtin ? 'Customize' : 'Edit') + ' ' + esc(base.name) : 'New Template'}</h2>
+        <div style="display:flex;gap:8px;margin-bottom:10px">
+          <input class="slot-select" id="tpl-id" placeholder="id (lowercase)"
+                 value="${base ? esc(base.id) : ''}">
+          <input class="slot-select" id="tpl-name" placeholder="Display name"
+                 value="${base ? esc(base.name) : ''}">
+        </div>
+        <input class="slot-select" id="tpl-desc" placeholder="Description"
+               value="${base ? esc(base.description || '') : ''}">
+        <input class="slot-select" id="tpl-devmatch" style="margin-top:8px"
+               placeholder="Folder name hints, e.g. *fridge*, *freezer*"
+               value="${base ? esc((base.device_match || []).join(', ')) : ''}">
+        <h3 style="margin-top:14px">Slots</h3>
+        <p class="slot-meta" style="margin-bottom:6px">
+          Name and key, then the name patterns that match a point, its accepted
+          units, device class, point types and plausible range.
+        </p>
+        <div style="max-height:40vh;overflow:auto">
+          <table class="slot-table"><tbody id="tpl-slots"></tbody></table>
+        </div>
+        <button class="btn btn-sm" id="tpl-add-slot" style="margin-top:8px">Add slot</button>
+        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:18px">
+          <button class="btn" onclick="closeModal()">Cancel</button>
+          <button class="btn btn-primary" id="tpl-save">Save Template</button>
+        </div>
+      </div>
+    </div>`;
+
+  renderEditorSlots();
+  $('#tpl-add-slot').addEventListener('click', () => {
+    editorSlots.push(blankSlot());
+    renderEditorSlots();
+  });
+
+  $('#tpl-save').addEventListener('click', async () => {
+    const payload = {
+      id: $('#tpl-id').value.trim().toLowerCase(),
+      name: $('#tpl-name').value.trim(),
+      description: $('#tpl-desc').value.trim(),
+      device_match: $('#tpl-devmatch').value.split(',').map(v => v.trim()).filter(Boolean),
+      slots: editorSlots,
+    };
+    try {
+      const res = await fetch(BASE + '/api/templates', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const body = await res.json();
+      if (!res.ok) { toast(body.error || 'Template rejected'); return; }
+      closeModal();
+      toast('Template saved');
+      templates = [];
+      await loadDevices();
+    } catch (e) {
+      toast('Could not save template');
+    }
+  });
+}
+
 async function openDeviceConfig(group) {
   let detail;
   try {
@@ -1524,25 +1731,44 @@ async function openDeviceConfig(group) {
     return;
   }
 
+  const allPoints = detail.points || [];
+  const optionFor = (p, selected) =>
+    `<option value="${esc(p.path)}"${p.path === selected ? ' selected' : ''}>`
+    + `${esc(p.name)}${p.unit ? ' [' + esc(p.unit) + ']' : ''}`
+    + `${p.enabled ? '' : ' (disabled)'}</option>`;
+
   const slotRows = detail.slots.map(s => {
-    const opts = ['<option value="">— unbound —</option>'].concat(
-      s.candidates.map(c =>
-        `<option value="${esc(c.path)}"${c.path === s.bound_path ? ' selected' : ''}>`
-        + `${esc(c.name)}${c.unit ? ' [' + esc(c.unit) + ']' : ''}</option>`)
-    );
-    // A bound point that matched no pattern still has to appear, or opening
-    // the dialog would silently drop a manual override.
-    if (s.bound_path && !s.candidates.some(c => c.path === s.bound_path)) {
-      opts.splice(1, 0,
-        `<option value="${esc(s.bound_path)}" selected>${esc(s.bound_name)} (manual)</option>`);
+    const suggested = s.suggested || [];
+    const suggestedPaths = new Set(suggested.map(c => c.path));
+    const rest = allPoints.filter(p => !suggestedPaths.has(p.path));
+
+    let opts = '<option value="">— unbound —</option>';
+    if (suggested.length) {
+      opts += `<optgroup label="Suggested">`
+            + suggested.map(p => optionFor(p, s.bound_path)).join('') + '</optgroup>';
     }
+    if (rest.length) {
+      opts += `<optgroup label="All other points in this device">`
+            + rest.map(p => optionFor(p, s.bound_path)).join('') + '</optgroup>';
+    }
+
     const meta = [s.device_class, (s.units || []).join(' / ')].filter(Boolean).join(' · ');
+    const toggle = s.bound_path
+      ? `<label class="slot-meta" style="display:flex;align-items:center;gap:5px;margin-top:4px">
+           <input type="checkbox" data-enable-point="${esc(s.bound_path)}"
+                  ${s.bound_enabled ? 'checked' : ''}> enabled
+         </label>`
+      : '';
+
     return `<tr>
-      <td style="width:40%">
+      <td style="width:38%">
         <div class="slot-key">${esc(s.name)}${s.required ? '<span class="slot-req">*</span>' : ''}</div>
         <div class="slot-meta">${esc(meta)}</div>
       </td>
-      <td><select class="slot-select" data-slot="${esc(s.key)}">${opts.join('')}</select></td>
+      <td>
+        <select class="slot-select" data-slot="${esc(s.key)}">${opts}</select>
+        ${toggle}
+      </td>
     </tr>`;
   }).join('');
 
@@ -1567,12 +1793,24 @@ async function openDeviceConfig(group) {
     document.querySelectorAll('.slot-select').forEach(sel => {
       bindings[sel.dataset.slot] = sel.value || null;
     });
+    const enablePaths = [], disablePaths = [];
+    document.querySelectorAll('[data-enable-point]').forEach(cb => {
+      (cb.checked ? enablePaths : disablePaths).push(cb.dataset.enablePoint);
+    });
     try {
       const res = await api('/api/devices/assign', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ group, template: detail.template, bindings }),
       });
+      for (const [paths, enabled] of [[enablePaths, true], [disablePaths, false]]) {
+        if (!paths.length) continue;
+        await api('/api/devices/set-points', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ group, paths, enabled }),
+        });
+      }
       closeModal();
       toast(res.missing_required && res.missing_required.length
         ? `Saved — ${res.missing_required.length} required slot(s) still unbound`
@@ -1583,6 +1821,8 @@ async function openDeviceConfig(group) {
     }
   });
 }
+
+$('#btn-templates').addEventListener('click', openTemplateList);
 
 $('#device-search').addEventListener('input', e => {
   deviceFilter.search = e.target.value;

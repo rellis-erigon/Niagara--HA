@@ -1,0 +1,48 @@
+id: fridge
+name: Fridge / Freezer / Cool Room
+description: Refrigeration unit with temperature, door and compressor status
+icon: mdi:fridge
+
+device_match: ["*fridge*", "*freezer*", "*coolroom*", "*cool*room*", "*chiller*room*", "*keg*", "*cellar*"]
+
+slots:
+  - key: temperature
+    name: Temperature
+    required: true
+    device_class: temperature
+    state_class: measurement
+    units: ["°C", "°F"]
+    point_types: [numeric, integer]
+    match: ["*fridge*temp*", "*freezer*temp*", "*-temp", "*_temp", "*temp*"]
+    validation:
+      min: -40
+      max: 30
+
+  - key: door
+    name: Door
+    device_class: door
+    point_types: [boolean]
+    match: ["*door*", "*dr*open*"]
+
+  - key: compressor
+    name: Compressor
+    device_class: running
+    point_types: [boolean]
+    match: ["*comp*", "*compressor*"]
+
+  - key: alarm
+    name: Alarm
+    device_class: problem
+    point_types: [boolean]
+    match: ["*alarm*", "*fault*", "*high*temp*"]
+
+  - key: setpoint
+    name: Setpoint
+    device_class: temperature
+    state_class: measurement
+    units: ["°C", "°F"]
+    point_types: [numeric, integer]
+    match: ["*setpoint*", "*stpt*", "*sp"]
+    validation:
+      min: -40
+      max: 30
