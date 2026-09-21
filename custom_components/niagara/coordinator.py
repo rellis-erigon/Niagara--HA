@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from datetime import timedelta
 from typing import Any
 
+import aiohttp
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
@@ -29,6 +30,8 @@ from .const import (
 _LOGGER = logging.getLogger(__name__)
 
 _NIAGARA_ESCAPE_RE = re.compile(r"\$([0-9a-fA-F]{2})")
+
+POINT_REFRESH_INTERVAL = 10
 
 
 def decode_niagara_name(name: str) -> str:
@@ -83,6 +86,8 @@ class NiagaraCoordinator(DataUpdateCoordinator[dict[str, NiagaraPoint]]):
 
         self.points: dict[str, NiagaraPoint] = {}
         self.device_folders: list[str] = []
+        self._session: aiohttp.ClientSession | None = None
+        self._poll_count = 0
 
         super().__init__(
             hass,
@@ -94,6 +99,13 @@ class NiagaraCoordinator(DataUpdateCoordinator[dict[str, NiagaraPoint]]):
     @property
     def host(self) -> str:
         return self.addon_url
+
+    def _get_session(self) -> aiohttp.ClientSession:
+        if self._session is None or self._session.closed:
+            self._session = aiohttp.ClientSession(
+                timeout=aiohttp.ClientTimeout(total=30),
+            )
+        return self._session
 
     async def async_setup(self) -> None:
         """Initial point discovery from the add-on."""
@@ -113,26 +125,34 @@ class NiagaraCoordinator(DataUpdateCoordinator[dict[str, NiagaraPoint]]):
 
     async def _async_update_data(self) -> dict[str, NiagaraPoint]:
         """Poll the add-on for current values."""
+        self._poll_count += 1
         try:
+            if self._poll_count % POINT_REFRESH_INTERVAL == 0:
+                data = await self._fetch_points()
+                new_points = data["points"]
+                for path, pt in new_points.items():
+                    if path in self.points and self.points[path].value is not None:
+                        pt.value = self.points[path].value
+                self.points = new_points
+                self.device_folders = data["device_folders"]
+
             values = await self._fetch_values()
             for path, val in values.items():
                 if path in self.points:
-                    self.points[path].value = val
+                    self.points[path].value = str(val) if val is not None else None
             return self.points
         except Exception as err:
             raise UpdateFailed(f"Error polling add-on: {err}") from err
 
     async def _fetch_points(self) -> dict[str, Any]:
         """Fetch full point list from the add-on."""
-        import aiohttp
-
         url = f"{self.addon_url}/api/integration/points"
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url, timeout=aiohttp.ClientTimeout(total=30)) as resp:
-                    resp.raise_for_status()
-                    data = await resp.json()
-        except Exception as err:
+            session = self._get_session()
+            async with session.get(url) as resp:
+                resp.raise_for_status()
+                data = await resp.json()
+        except aiohttp.ClientError as err:
             raise UpdateFailed(f"Cannot reach add-on at {url}: {err}") from err
 
         points: dict[str, NiagaraPoint] = {}
@@ -141,10 +161,11 @@ class NiagaraCoordinator(DataUpdateCoordinator[dict[str, NiagaraPoint]]):
             unit = p.get("unit", "") or None
             if unit and unit.lower() == "null":
                 unit = None
+            raw_value = p.get("value")
             points[path] = NiagaraPoint(
                 path=path,
                 name=p.get("name", path.rstrip("/").split("/")[-1]),
-                value=p.get("value"),
+                value=str(raw_value) if raw_value is not None else None,
                 point_type=p.get("type", "unknown"),
                 unit=unit,
                 writable=p.get("writable", False),
@@ -158,17 +179,15 @@ class NiagaraCoordinator(DataUpdateCoordinator[dict[str, NiagaraPoint]]):
             "total": data.get("total", 0),
         }
 
-    async def _fetch_values(self) -> dict[str, str]:
+    async def _fetch_values(self) -> dict[str, Any]:
         """Fetch current values from the add-on (lightweight poll)."""
-        import aiohttp
-
         url = f"{self.addon_url}/api/integration/values"
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url, timeout=aiohttp.ClientTimeout(total=15)) as resp:
-                    resp.raise_for_status()
-                    return await resp.json()
-        except Exception as err:
+            session = self._get_session()
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=15)) as resp:
+                resp.raise_for_status()
+                return await resp.json()
+        except aiohttp.ClientError as err:
             raise UpdateFailed(f"Cannot reach add-on at {url}: {err}") from err
 
     def _clean_path_parts(self, path: str) -> list[str]:
@@ -187,4 +206,5 @@ class NiagaraCoordinator(DataUpdateCoordinator[dict[str, NiagaraPoint]]):
 
     async def async_shutdown(self) -> None:
         """Clean up on unload."""
-        pass
+        if self._session and not self._session.closed:
+            await self._session.close()

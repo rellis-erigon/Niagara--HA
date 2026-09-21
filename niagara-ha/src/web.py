@@ -526,6 +526,8 @@ def integration_values():
     """Return current values for all enabled points.
 
     Lightweight endpoint for polling — just path:value pairs.
+    Returns null for points that haven't been polled yet so the
+    integration knows they exist.
     """
     selections = _load_selections()
     values = _load_values()
@@ -534,9 +536,7 @@ def integration_values():
     for entry in selections.values():
         if entry.get("enabled", False):
             path = entry.get("path", "")
-            val = values.get(path)
-            if val is not None:
-                result[path] = val
+            result[path] = values.get(path)
 
     return jsonify(result)
 

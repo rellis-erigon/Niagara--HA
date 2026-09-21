@@ -45,8 +45,12 @@ class NiagaraEntity(CoordinatorEntity[NiagaraCoordinator]):
     def available(self) -> bool:
         if not self.coordinator.last_update_success:
             return False
-        point = self.coordinator.data.get(self._point.path) if self.coordinator.data else None
-        if point and point.status and point.status not in ("ok", ""):
+        if not self.coordinator.data:
+            return False
+        point = self.coordinator.data.get(self._point.path)
+        if point is None:
+            return False
+        if point.status and point.status not in ("ok", ""):
             return point.status != "fault"
         return True
 
