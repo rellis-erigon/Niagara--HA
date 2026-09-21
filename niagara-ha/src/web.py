@@ -44,6 +44,7 @@ from point_manager import (
     parse_path_segments,
     save_auto_enable_rules,
     save_device_folders,
+    write_point_selections,
 )
 
 VALUES_FILE = POINTS_DIR / "values.json"
@@ -1345,31 +1346,8 @@ def health():
 
 
 def _write_selections(selections: dict[str, dict]) -> None:
-    import yaml
-    from point_manager import _SafeDumper
-
-    POINTS_DIR.mkdir(parents=True, exist_ok=True)
-
-    groups: dict[str, list[dict]] = {}
-    for entry in selections.values():
-        g = entry.get("group", "Ungrouped")
-        groups.setdefault(g, []).append(entry)
-
-    ordered = []
-    for g in sorted(groups):
-        ordered.extend(sorted(groups[g], key=lambda e: e["name"]))
-
-    output = {
-        "_comment": (
-            "Edit this file to enable/disable points. "
-            "Set enabled: true to include a point in Home Assistant. "
-            "New points discovered on restart are disabled by default."
-        ),
-        "points": ordered,
-    }
-
-    with open(POINTS_FILE, "w") as f:
-        yaml.dump(output, f, Dumper=_SafeDumper, default_flow_style=False, sort_keys=False, allow_unicode=True, width=10000)
+    """Persist point selections, then invalidate the read cache."""
+    write_point_selections(selections)
     _sel_cache["mtime"] = 0.0
 
 

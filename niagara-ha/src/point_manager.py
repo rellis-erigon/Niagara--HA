@@ -263,6 +263,77 @@ def _parse_kv(text: str, target: dict) -> None:
         target[key] = val
 
 
+def _yaml_scalar(value) -> str:
+    """Quote a value only when the fast reader would misread it bare."""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)):
+        return str(value)
+    text = "" if value is None else str(value)
+    if text == "" or text[0] in "'\"@`&*!|>%#-?{[" or text.strip() != text:
+        return "'" + text.replace("'", "''") + "'"
+    if ": " in text or text.endswith(":") or " #" in text:
+        return "'" + text.replace("'", "''") + "'"
+    return text
+
+
+_ENTRY_KEY_ORDER = (
+    "path", "name", "custom_name", "group", "type", "unit",
+    "precision", "enabled", "writable",
+)
+
+
+def fast_dump_points(entries: list[dict]) -> str:
+    """Serialise points.yaml by hand.
+
+    yaml.dump on 20,000 entries takes seconds, and this file is rewritten on
+    every enable/disable — which made toggling a device feel broken. The
+    format is ours and the reader is _fast_load_points_yaml, so building the
+    text directly is both safe and roughly two orders of magnitude faster.
+    """
+    out = [
+        "_comment: Edit this file to enable/disable points. "
+        "Set enabled: true to include a point in Home Assistant. "
+        "New points discovered on restart are disabled by default.\n",
+        "points:\n",
+    ]
+    append = out.append
+    for entry in entries:
+        first = True
+        for key in _ENTRY_KEY_ORDER:
+            if key not in entry:
+                continue
+            prefix = "- " if first else "  "
+            append(f"{prefix}{key}: {_yaml_scalar(entry[key])}\n")
+            first = False
+        for key, value in entry.items():
+            if key in _ENTRY_KEY_ORDER or key == "enum_range":
+                continue
+            prefix = "- " if first else "  "
+            append(f"{prefix}{key}: {_yaml_scalar(value)}\n")
+            first = False
+    return "".join(out)
+
+
+def write_point_selections(selections: dict[str, dict]) -> None:
+    """Write points.yaml atomically, grouped and sorted as before."""
+    groups: dict[str, list[dict]] = {}
+    for entry in selections.values():
+        groups.setdefault(entry.get("group", "Ungrouped"), []).append(entry)
+
+    ordered: list[dict] = []
+    for group in sorted(groups):
+        ordered.extend(sorted(groups[group], key=lambda e: e.get("name", "")))
+
+    POINTS_DIR.mkdir(parents=True, exist_ok=True)
+    tmp = POINTS_FILE.with_suffix(".tmp")
+    with open(tmp, "w") as handle:
+        handle.write(fast_dump_points(ordered))
+    # Rename is atomic, so a crash mid-write cannot truncate a 5 MB file of
+    # the user's point selections.
+    tmp.replace(POINTS_FILE)
+
+
 def load_point_selections() -> dict[str, dict]:
     global _last_good
     if not POINTS_FILE.exists():
@@ -382,8 +453,11 @@ def save_point_selections(
         "points": ordered,
     }
 
-    with open(POINTS_FILE, "w") as f:
-        yaml.dump(output, f, Dumper=_SafeDumper, default_flow_style=False, sort_keys=False, allow_unicode=True, width=10000)
+    POINTS_DIR.mkdir(parents=True, exist_ok=True)
+    tmp = POINTS_FILE.with_suffix(".tmp")
+    with open(tmp, "w") as f:
+        f.write(fast_dump_points(ordered))
+    tmp.replace(POINTS_FILE)
 
     enabled = sum(1 for e in merged.values() if e.get("enabled", False))
     logger.info(

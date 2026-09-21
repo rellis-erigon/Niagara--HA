@@ -680,6 +680,11 @@ tr:hover td { background: var(--row-hover); }
 
 <script>
 const $ = s => document.querySelector(s);
+
+// Niagara encodes punctuation in names as $XX hex escapes, so a distribution
+// board reads "DB$2dL5$2e1$2dPower" raw. Decode wherever a name is shown.
+const decodeNiagara = s => String(s == null ? '' : s)
+  .replace(/\$([0-9a-fA-F]{2})/g, (_, h) => String.fromCharCode(parseInt(h, 16)));
 const BASE = window.location.pathname.replace(/\/+$/, '');
 let state = { prefix: '', search: '', status: '', category: '', page: 1 };
 let deviceFolders = [];
@@ -752,9 +757,9 @@ function renderBreadcrumb() {
     html += `<span class="breadcrumb-sep">&#9656;</span>`;
     const partial = parts.slice(0, i + 1).join('/');
     if (i === parts.length - 1) {
-      html += `<span class="breadcrumb-current">${esc(parts[i])}</span>`;
+      html += `<span class="breadcrumb-current">${esc(decodeNiagara(parts[i]))}</span>`;
     } else {
-      html += `<span class="breadcrumb-seg" data-nav="${esc(partial)}">${esc(parts[i])}</span>`;
+      html += `<span class="breadcrumb-seg" data-nav="${esc(partial)}">${esc(decodeNiagara(parts[i]))}</span>`;
     }
   }
   bc.innerHTML = html;
@@ -777,7 +782,7 @@ function renderTree(children) {
     const someEnabled = c.enabled > 0;
     const isDevice = deviceFolders.includes(c.path);
     return `<div class="tree-item" data-path="${esc(c.path)}">
-      <span class="tree-item-name" title="${esc(c.name)}">${esc(c.name)}</span>
+      <span class="tree-item-name" title="${esc(decodeNiagara(c.name))}">${esc(decodeNiagara(c.name))}</span>
       <div class="tree-item-right">
         <button class="device-btn ${isDevice ? 'is-device' : ''}"
                 data-device-path="${esc(c.path)}"
@@ -788,7 +793,7 @@ function renderTree(children) {
         <span class="group-badge badge-total">${c.total.toLocaleString()}</span>
         <button class="tree-enable-btn ${someEnabled ? 'group-toggle-on' : 'group-toggle-off'}"
                 data-toggle-prefix="${esc(c.path)}" data-enable="${!allEnabled}"
-                title="${allEnabled ? 'Disable all in ' + c.name : 'Enable all in ' + c.name}">
+                title="${allEnabled ? 'Disable all in ' + decodeNiagara(c.name) : 'Enable all in ' + decodeNiagara(c.name)}">
           ${allEnabled ? '&#10003;' : '&#9711;'}
         </button>
         ${c.has_children ? '<span class="tree-arrow">&#9656;</span>' : ''}
@@ -897,16 +902,16 @@ async function loadPoints() {
     </td>
     <td>
       <div class="point-name-row">
-        <span class="point-name-display">${hasCustom ? `<span class="point-custom-name">${esc(p.custom_name)}</span>` : esc(p.name)}</span>
-        <button class="rename-btn" data-rename-path="${esc(p.path)}" data-current-name="${esc(p.custom_name || '')}" data-original-name="${esc(p.name)}" title="Rename">&#9998;</button>
+        <span class="point-name-display">${hasCustom ? `<span class="point-custom-name">${esc(p.custom_name)}</span>` : esc(decodeNiagara(p.name))}</span>
+        <button class="rename-btn" data-rename-path="${esc(p.path)}" data-current-name="${esc(p.custom_name || '')}" data-original-name="${esc(decodeNiagara(p.name))}" title="Rename">&#9998;</button>
       </div>
-      ${hasCustom ? `<div class="point-original-name">${esc(p.name)}</div>` : ''}
+      ${hasCustom ? `<div class="point-original-name">${esc(decodeNiagara(p.name))}</div>` : ''}
       <div class="point-path">${esc(p.path)}</div>
     </td>
     <td><span class="point-value point-value-na" data-value-path="${esc(p.path)}">&mdash;</span></td>
     <td><span class="cat-badge cat-${p.category || 'Other'}">${esc(p.category || 'Other')}</span></td>
     <td><span class="point-type">${esc(p.type)}</span></td>
-    <td>${esc(p.group)}</td>
+    <td>${esc(decodeNiagara(p.group))}</td>
   </tr>`;
   }).join('');
 

@@ -108,3 +108,52 @@ def test_round_trip_through_disk(main_module, tmp_path):
     cache = {"/a/": {"value": "21.5", "status": "ok", "ts": 1750000000.0}}
     main_module._write_values_cache(cache)
     assert main_module._load_values_cache() == cache
+
+
+# -- Fast points.yaml writer ---------------------------------------------
+#
+# points.yaml is rewritten on every enable/disable. yaml.dump on 20,000
+# entries takes seconds, which made toggling a device feel broken.
+
+def test_fast_dump_round_trips(tmp_path, monkeypatch):
+    import point_manager as pm
+
+    entries = [
+        {"path": "/config/points/A/", "name": "A", "group": "Site/G1",
+         "type": "numeric", "unit": "°C", "enabled": True, "writable": False},
+        {"path": "/config/points/B/", "name": "B", "group": "Site/G1",
+         "type": "boolean", "unit": "", "enabled": False, "writable": True},
+    ]
+    path = tmp_path / "points.yaml"
+    path.write_text(pm.fast_dump_points(entries))
+
+    back = pm._fast_load_points_yaml(path)
+    assert set(back) == {e["path"] for e in entries}
+    assert back["/config/points/A/"]["enabled"] is True
+    assert back["/config/points/B/"]["enabled"] is False
+    assert back["/config/points/A/"]["unit"] == "°C"
+    assert back["/config/points/B/"]["unit"] == ""
+
+
+def test_awkward_values_survive(tmp_path):
+    import point_manager as pm
+
+    entries = [{"path": "/p/", "name": "Reading: live", "group": "G",
+                "type": "string", "unit": "", "enabled": False}]
+    path = tmp_path / "points.yaml"
+    path.write_text(pm.fast_dump_points(entries))
+    assert pm._fast_load_points_yaml(path)["/p/"]["name"] == "Reading: live"
+
+
+def test_write_is_atomic(tmp_path, monkeypatch):
+    """A crash mid-write must not truncate the user's selections."""
+    import point_manager as pm
+
+    monkeypatch.setattr(pm, "POINTS_DIR", tmp_path)
+    monkeypatch.setattr(pm, "POINTS_FILE", tmp_path / "points.yaml")
+    pm.write_point_selections({"/p/": {
+        "path": "/p/", "name": "A", "group": "G", "type": "numeric",
+        "unit": "", "enabled": True,
+    }})
+    assert (tmp_path / "points.yaml").exists()
+    assert not (tmp_path / "points.tmp").exists()

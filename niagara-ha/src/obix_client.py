@@ -536,10 +536,22 @@ class ObixClient:
                 children_by_name[name] = (child, tag)
 
         facets = ""
+        child_names = set()
         for child in root:
-            if child.get("name") == "facets":
+            name_attr = child.get("name") or ""
+            child_names.add(name_attr)
+            if name_attr == "facets":
                 facets = child.get("val", "") or ""
-                break
+
+        # Niagara hangs history extensions off a point as child folders
+        # (BooleanCov, NumericInterval and friends). Their contents are
+        # logging configuration — capacity, interval, fullPolicy, timeZone —
+        # not building values, and they outnumbered the real points on this
+        # station 6:1. A folder carrying historyConfig or historyName is one
+        # of those, whatever it is named.
+        if child_names & {"historyConfig", "historyName"}:
+            logger.debug("Skipping history extension at %s", path)
+            return
 
         if "out" in children_by_name:
             out_elem, out_tag = children_by_name["out"]
