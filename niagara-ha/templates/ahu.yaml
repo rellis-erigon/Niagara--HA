@@ -1,0 +1,44 @@
+id: ahu
+name: Air Handling Unit
+description: AHU with supply and return air temperatures, fan status and alarms
+icon: mdi:hvac
+
+device_match: ["ahu*", "*ahu*", "*air*handl*"]
+
+slots:
+  - key: supply_air_temp
+    name: Supply Air Temperature
+    required: true
+    device_class: temperature
+    state_class: measurement
+    units: ["°C", "°F"]
+    point_types: [numeric, integer]
+    match: ["*supply*air*temp*", "*sat*", "*discharge*temp*", "*supply*temp*"]
+    validation: {min: -20, max: 60}
+
+  - key: return_air_temp
+    name: Return Air Temperature
+    device_class: temperature
+    state_class: measurement
+    units: ["°C", "°F"]
+    point_types: [numeric, integer]
+    match: ["*return*air*temp*", "*rat*", "*return*temp*"]
+    validation: {min: -20, max: 60}
+
+  - key: supply_fan_status
+    name: Supply Fan Status
+    device_class: running
+    point_types: [boolean]
+    match: ["*supply*fan*", "*sf*run*", "*fan*run*", "*fan*status*"]
+
+  - key: filter_alarm
+    name: Filter Alarm
+    device_class: problem
+    point_types: [boolean]
+    match: ["*filter*", "*dirty*"]
+
+  - key: alarm
+    name: Alarm
+    device_class: problem
+    point_types: [boolean]
+    match: ["*alarm*", "*fault*", "*trip*"]

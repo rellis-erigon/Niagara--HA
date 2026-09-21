@@ -1,0 +1,5 @@
+id: generic
+name: Generic Device
+description: No template — every enabled point is exposed as-is
+icon: mdi:devices
+slots: []

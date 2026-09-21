@@ -1,0 +1,36 @@
+id: pump
+name: Pump
+description: Pump with run status, fault and optional speed
+icon: mdi:pump
+
+device_match: ["*pump*"]
+
+slots:
+  - key: run_status
+    name: Run Status
+    required: true
+    device_class: running
+    point_types: [boolean]
+    match: ["*run*status*", "*run*", "*on*off*", "*enable*"]
+
+  - key: fault
+    name: Fault
+    device_class: problem
+    point_types: [boolean]
+    match: ["*fault*", "*alarm*", "*trip*", "*fail*"]
+
+  - key: speed
+    name: Speed
+    state_class: measurement
+    units: ["%", Hz]
+    point_types: [numeric, integer]
+    match: ["*speed*", "*inverter*output*", "*vfd*", "*freq*"]
+    validation: {min: 0, max: 100}
+
+  - key: pressure
+    name: Pressure
+    device_class: pressure
+    state_class: measurement
+    units: [kPa, Pa, psi, bar, mbar]
+    point_types: [numeric, integer]
+    match: ["*press*", "*psi*"]

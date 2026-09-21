@@ -1,0 +1,48 @@
+id: room_sensor
+name: Room / Zone Sensor
+description: Space conditions — temperature, humidity, CO2, occupancy
+icon: mdi:home-thermometer
+
+slots:
+  - key: temperature
+    name: Temperature
+    required: true
+    device_class: temperature
+    state_class: measurement
+    units: ["°C", "°F"]
+    point_types: [numeric, integer]
+    match: ["roomtemp", "*room*temp*", "*zone*temp*", "*space*temp*", "*temp*"]
+    validation: {min: -20, max: 60}
+
+  - key: setpoint
+    name: Setpoint
+    device_class: temperature
+    state_class: measurement
+    units: ["°C", "°F"]
+    point_types: [numeric, integer]
+    match: ["*setpoint*", "*stpt*", "*set*pt*", "*tempadjust*"]
+    validation: {min: 5, max: 40}
+
+  - key: humidity
+    name: Humidity
+    device_class: humidity
+    state_class: measurement
+    units: ["%"]
+    point_types: [numeric, integer]
+    match: ["*humid*", "*rh*"]
+    validation: {min: 0, max: 100}
+
+  - key: co2
+    name: CO2
+    device_class: carbon_dioxide
+    state_class: measurement
+    units: [ppm]
+    point_types: [numeric, integer]
+    match: ["*co2*", "*carbon*"]
+    validation: {min: 0, max: 5000}
+
+  - key: occupancy
+    name: Occupancy
+    device_class: occupancy
+    point_types: [boolean]
+    match: ["*occup*", "*presence*"]

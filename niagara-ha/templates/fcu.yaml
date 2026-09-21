@@ -1,0 +1,54 @@
+id: fcu
+name: Fan Coil / Split Unit
+description: Room air conditioning unit with mode, status and room temperature
+icon: mdi:air-conditioner
+
+device_match: ["fcu*", "*fridge*", "*freezer*", "*room*"]
+
+slots:
+  - key: room_temperature
+    name: Room Temperature
+    required: true
+    device_class: temperature
+    state_class: measurement
+    units: ["°C", "°F"]
+    point_types: [numeric, integer]
+    match: ["roomtemp", "*room*temp*", "*space*temp*", "*return*air*", "*temp*"]
+    validation: {min: -20, max: 60}
+
+  - key: run_status
+    name: Run Status
+    device_class: running
+    point_types: [boolean]
+    match: ["*startstopstatus*", "*run*status*", "*run*", "*on*off*"]
+
+  - key: command
+    name: Start/Stop Command
+    point_types: [boolean]
+    match: ["startstopcommand", "*command*", "*cmd*"]
+
+  - key: mode
+    name: Mode
+    point_types: [enum, string]
+    match: ["*airconmodestatus*", "*mode*status*", "*mode*"]
+
+  - key: setpoint
+    name: Setpoint
+    device_class: temperature
+    state_class: measurement
+    units: ["°C", "°F"]
+    point_types: [numeric, integer]
+    match: ["*tempadjust*", "*setpoint*", "*stpt*"]
+    validation: {min: 5, max: 40}
+
+  - key: fan_status
+    name: Fan Status
+    device_class: running
+    point_types: [boolean]
+    match: ["*indoorfanstatus*", "*fan*status*", "*fan*"]
+
+  - key: alarm
+    name: Alarm
+    device_class: problem
+    point_types: [boolean]
+    match: ["alarm", "*alarm*", "*fault*"]

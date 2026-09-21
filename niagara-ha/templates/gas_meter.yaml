@@ -1,0 +1,27 @@
+id: gas_meter
+name: Gas Meter
+description: Cumulative gas volume
+icon: mdi:fire
+
+device_match: ["*gas*"]
+
+slots:
+  - key: volume_total
+    name: Total Volume
+    required: true
+    device_class: gas
+    state_class: total_increasing
+    units: [m³, ft³, CCF]
+    point_types: [numeric, integer]
+    match: ["*gas*total*", "*gas*", "metertotal", "*total*", "*consumption*"]
+    validation:
+      min: 0
+      monotonic: true
+
+  - key: flow_rate
+    name: Flow Rate
+    state_class: measurement
+    units: [m³/h, ft³/h]
+    point_types: [numeric, integer]
+    match: ["*flow*", "*rate*"]
+    validation: {min: 0}

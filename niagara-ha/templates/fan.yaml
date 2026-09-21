@@ -1,0 +1,33 @@
+id: fan
+name: Fan / VFD
+description: Supply, return or exhaust fan with run status and fault
+icon: mdi:fan
+
+device_match: ["*fan*", "*exhaust*", "*vfd*"]
+
+slots:
+  - key: run_status
+    name: Run Status
+    required: true
+    device_class: running
+    point_types: [boolean]
+    match: ["*run*status*", "*run*", "*on*off*", "*enable*"]
+
+  - key: fault
+    name: Fault
+    device_class: problem
+    point_types: [boolean]
+    match: ["*fault*", "*alarm*", "*trip*", "*fail*"]
+
+  - key: speed
+    name: Speed
+    state_class: measurement
+    units: ["%", Hz, rpm]
+    point_types: [numeric, integer]
+    match: ["*speed*", "*vfd*", "*inverter*output*", "*freq*"]
+    validation: {min: 0}
+
+  - key: command
+    name: Start/Stop Command
+    point_types: [boolean]
+    match: ["*command*", "*cmd*", "*start*stop*"]

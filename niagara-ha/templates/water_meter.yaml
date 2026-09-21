@@ -1,0 +1,35 @@
+id: water_meter
+name: Water Meter
+description: Cumulative water volume, optionally with flow rate and tank level
+icon: mdi:water
+
+device_match: ["*hydraulic*", "*water*", "*dcw*", "*irrigation*"]
+
+slots:
+  - key: volume_total
+    name: Total Volume
+    required: true
+    device_class: water
+    state_class: total_increasing
+    units: [L, m³, gal, ft³, CCF]
+    point_types: [numeric, integer]
+    match: ["*cubicmetre*", "*water*total*", "*dcw*", "*_meter*", "*meter*", "*usage*", "*total*", "metertotal", "*consumption*", "*volume*"]
+    validation:
+      min: 0
+      monotonic: true
+
+  - key: flow_rate
+    name: Flow Rate
+    state_class: measurement
+    units: [L/s, gal/min, m³/h, L/h]
+    point_types: [numeric, integer]
+    match: ["*flow*", "*gpm*", "*lps*"]
+    validation: {min: 0}
+
+  - key: tank_level
+    name: Tank Level
+    state_class: measurement
+    units: ["%", m, mm]
+    point_types: [numeric, integer]
+    match: ["*tank*lvl*", "*tank*level*", "*level*", "*lvl*"]
+    validation: {min: 0, max: 100}

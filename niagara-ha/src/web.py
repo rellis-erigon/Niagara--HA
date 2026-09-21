@@ -8,6 +8,16 @@ from pathlib import Path
 
 from flask import Flask, jsonify, request, send_from_directory
 
+from device_templates import (
+    STATE_DRAFT,
+    bind_template,
+    decode_niagara_name,
+    load_device_types,
+    load_templates,
+    save_device_types,
+    score_candidate,
+    suggest_template,
+)
 from point_manager import (
     POINTS_DIR,
     POINTS_FILE,
@@ -571,6 +581,232 @@ def integration_values():
         }
 
     return jsonify(result)
+
+
+@app.route("/api/templates")
+def list_templates():
+    """The device types a folder can be assigned."""
+    templates = load_templates()
+    return jsonify({
+        "templates": [t.to_dict() for t in sorted(
+            templates.values(), key=lambda t: t.name,
+        )],
+    })
+
+
+def _points_by_group() -> dict[str, list[dict]]:
+    groups: dict[str, list[dict]] = {}
+    for entry in _load_selections().values():
+        if entry.get("enabled", False):
+            groups.setdefault(entry.get("group", "Ungrouped"), []).append(entry)
+    return groups
+
+
+@app.route("/api/devices")
+def list_devices():
+    """Every device folder, with its assigned type and how full it is."""
+    templates = load_templates()
+    assigned = load_device_types()
+    groups = _points_by_group()
+
+    devices = []
+    for group, points in sorted(groups.items()):
+        entry = assigned.get(group)
+        template = templates.get(entry["template"]) if entry else None
+        record = {
+            "group": group,
+            "name": decode_niagara_name(group.rstrip("/").split("/")[-1]),
+            "point_count": len(points),
+            "template": entry["template"] if entry else None,
+            "template_name": template.name if template else None,
+            "state": entry["state"] if entry else None,
+            "bound": 0,
+            "required_total": 0,
+            "required_bound": 0,
+        }
+        if template:
+            bindings = entry.get("bindings", {})
+            record["bound"] = sum(1 for v in bindings.values() if v)
+            required = template.required_slots
+            record["required_total"] = len(required)
+            record["required_bound"] = sum(
+                1 for s in required if bindings.get(s.key)
+            )
+        else:
+            suggested, _ = suggest_template(templates, points, group)
+            record["suggested"] = suggested
+            record["suggested_name"] = (
+                templates[suggested].name if suggested else None
+            )
+        devices.append(record)
+
+    return jsonify({"devices": devices, "total": len(devices)})
+
+
+@app.route("/api/devices/detail")
+def device_detail():
+    """Slot-by-slot view of one device: what is bound and what could be."""
+    group = request.args.get("group", "")
+    if not group:
+        return jsonify({"error": "group required"}), 400
+
+    templates = load_templates()
+    points = _points_by_group().get(group, [])
+    if not points:
+        return jsonify({"error": "no enabled points in this group"}), 404
+
+    assigned = load_device_types().get(group)
+    template_id = request.args.get("template") or (
+        assigned["template"] if assigned else None
+    )
+    if not template_id:
+        template_id, _ = suggest_template(templates, points, group)
+
+    template = templates.get(template_id) if template_id else None
+    if template is None:
+        return jsonify({
+            "group": group, "template": None, "slots": [],
+            "points": [_point_summary(p) for p in points],
+        })
+
+    # Stored bindings win; anything unset is proposed by auto-binding.
+    proposed = bind_template(template, points)
+    stored = assigned.get("bindings", {}) if assigned else {}
+    by_path = {p.get("path"): p for p in points}
+
+    slots = []
+    for slot in template.slots:
+        path = stored.get(slot.key) or proposed.get(slot.key)
+        point = by_path.get(path)
+        slots.append({
+            "key": slot.key,
+            "name": slot.name,
+            "required": slot.required,
+            "device_class": slot.device_class,
+            "state_class": slot.state_class,
+            "units": slot.units,
+            "bound_path": path,
+            "bound_name": decode_niagara_name(point.get("name", "")) if point else None,
+            "bound_unit": point.get("unit") if point else None,
+            "from_user": bool(stored.get(slot.key)),
+            "candidates": [
+                _point_summary(p) for p in points
+                if score_candidate(slot, p) is not None
+            ][:25],
+        })
+
+    return jsonify({
+        "group": group,
+        "template": template.id,
+        "template_name": template.name,
+        "state": assigned["state"] if assigned else None,
+        "slots": slots,
+        "points": [_point_summary(p) for p in points],
+    })
+
+
+def _point_summary(point: dict) -> dict:
+    return {
+        "path": point.get("path", ""),
+        "name": decode_niagara_name(point.get("name", "")),
+        "unit": point.get("unit") or "",
+        "type": point.get("type", "unknown"),
+    }
+
+
+@app.route("/api/devices/assign", methods=["POST"])
+def assign_device_type():
+    """Assign a template to a device, auto-binding any slot not given."""
+    data = request.get_json() or {}
+    group = (data.get("group") or "").strip()
+    template_id = (data.get("template") or "").strip()
+    if not group or not template_id:
+        return jsonify({"error": "group and template required"}), 400
+
+    templates = load_templates()
+    template = templates.get(template_id)
+    if template is None:
+        return jsonify({"error": f"unknown template {template_id}"}), 404
+
+    points = _points_by_group().get(group, [])
+    if not points:
+        return jsonify({"error": "no enabled points in this group"}), 404
+
+    bindings = dict(bind_template(template, points))
+    overrides = data.get("bindings") or {}
+    valid_paths = {p.get("path") for p in points}
+    slot_keys = {s.key for s in template.slots}
+    for key, path in overrides.items():
+        if key not in slot_keys:
+            return jsonify({"error": f"unknown slot {key}"}), 400
+        if path and path not in valid_paths:
+            return jsonify({"error": f"point not in this device: {path}"}), 400
+        bindings[key] = path or None
+
+    devices = load_device_types()
+    previous = devices.get(group, {})
+    devices[group] = {
+        "template": template_id,
+        "bindings": {k: v for k, v in bindings.items() if v},
+        "state": data.get("state") or previous.get("state") or STATE_DRAFT,
+    }
+    save_device_types(devices)
+
+    missing = [s.key for s in template.required_slots if not bindings.get(s.key)]
+    return jsonify({
+        "ok": True,
+        "group": group,
+        "template": template_id,
+        "bindings": devices[group]["bindings"],
+        "state": devices[group]["state"],
+        "missing_required": missing,
+    })
+
+
+@app.route("/api/devices/unassign", methods=["POST"])
+def unassign_device_type():
+    data = request.get_json() or {}
+    group = (data.get("group") or "").strip()
+    devices = load_device_types()
+    if group in devices:
+        del devices[group]
+        save_device_types(devices)
+        return jsonify({"ok": True, "group": group})
+    return jsonify({"error": "device has no type assigned"}), 404
+
+
+@app.route("/api/devices/autotype", methods=["POST"])
+def autotype_devices():
+    """Assign the suggested template to every device that has none.
+
+    Typing 42 devices by hand is a poor first run; this proposes a starting
+    point the user can correct per device.
+    """
+    templates = load_templates()
+    devices = load_device_types()
+    assigned = 0
+    skipped = []
+
+    for group, points in sorted(_points_by_group().items()):
+        if group in devices:
+            continue
+        template_id, _ = suggest_template(templates, points, group)
+        if not template_id:
+            skipped.append(group)
+            continue
+        devices[group] = {
+            "template": template_id,
+            "bindings": {
+                k: v for k, v in
+                bind_template(templates[template_id], points).items() if v
+            },
+            "state": STATE_DRAFT,
+        }
+        assigned += 1
+
+    if assigned:
+        save_device_types(devices)
+    return jsonify({"ok": True, "assigned": assigned, "skipped": len(skipped)})
 
 
 @app.route("/api/health")

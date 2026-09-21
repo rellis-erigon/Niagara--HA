@@ -1,0 +1,53 @@
+id: solar_inverter
+name: Solar Inverter
+description: PV inverter reporting generated energy and instantaneous output
+icon: mdi:solar-power
+
+device_match: ["*solar*", "*pv*", "*inverter*"]
+
+slots:
+  - key: energy_generated
+    name: Energy Generated
+    required: true
+    device_class: energy
+    state_class: total_increasing
+    units: [kWh, Wh, MWh]
+    point_types: [numeric, integer]
+    # Deliberately solar-specific. Generic "*total*"/"metertotal" patterns
+    # matched every switchboard meter on the station, because a kWh total
+    # passes the unit filter whatever equipment produced it.
+    match: ["*generat*", "*yield*", "*pv*total*", "*pv*energy*", "*solar*total*", "*solar*energy*", "*inverter*total*", "dailyenergy", "*daily*energy*"]
+    validation:
+      min: 0
+      monotonic: true
+
+  - key: power_output
+    name: Power Output
+    device_class: power
+    state_class: measurement
+    units: [kW, W]
+    point_types: [numeric, integer]
+    match: ["*ac*power*", "*output*power*", "*power*output*", "activepower", "*active_power*", "*power*"]
+    validation: {min: 0}
+
+  - key: dc_voltage
+    name: DC Voltage
+    device_class: voltage
+    state_class: measurement
+    units: [V]
+    point_types: [numeric, integer]
+    match: ["*dc*volt*", "*pv*volt*", "*string*volt*"]
+    validation: {min: 0}
+
+  - key: efficiency
+    name: Efficiency
+    state_class: measurement
+    units: ["%"]
+    point_types: [numeric, integer]
+    match: ["*efficiency*"]
+    validation: {min: 0, max: 100}
+
+  - key: fault
+    name: Fault
+    point_types: [boolean]
+    match: ["*fault*", "*alarm*", "*trip*"]

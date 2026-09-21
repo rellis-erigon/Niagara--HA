@@ -1,0 +1,99 @@
+id: electricity_meter
+name: Electricity Meter
+description: Single- or three-phase electrical meter with a cumulative total
+icon: mdi:flash
+
+slots:
+  - key: energy_total
+    name: Total Energy
+    required: true
+    device_class: energy
+    state_class: total_increasing
+    units: [kWh, Wh, MWh]
+    point_types: [numeric, integer]
+    match: ["metertotal", "totalactivepower", "*total*active*power*", "*energy*total*", "*total*energy*", "*kwh*", "*meter*total*"]
+    validation:
+      min: 0
+      monotonic: true
+
+  - key: power_active
+    name: Active Power
+    device_class: power
+    state_class: measurement
+    units: [kW, W]
+    point_types: [numeric, integer]
+    match: ["*3phase_active_power*", "*active_power*", "activepower", "power", "*demand*", "*power*"]
+
+  - key: power_factor
+    name: Power Factor
+    state_class: measurement
+    point_types: [numeric, integer]
+    match: ["*power_factor*", "*power*factor*", "*pf*"]
+    validation:
+      min: -1
+      max: 1
+
+  - key: frequency
+    name: Frequency
+    device_class: frequency
+    state_class: measurement
+    units: [Hz]
+    point_types: [numeric, integer]
+    match: ["frequency", "*freq*"]
+    validation:
+      min: 40
+      max: 70
+
+  - key: voltage_l1
+    name: Voltage L1
+    device_class: voltage
+    state_class: measurement
+    units: [V, kV]
+    point_types: [numeric, integer]
+    match: ["phase_1_v", "v1", "*phase*1*v", "*l1*volt*", "*voltage*1*"]
+    validation: {min: 0, max: 1000}
+
+  - key: voltage_l2
+    name: Voltage L2
+    device_class: voltage
+    state_class: measurement
+    units: [V, kV]
+    point_types: [numeric, integer]
+    match: ["phase_2_v", "v2", "*phase*2*v", "*l2*volt*", "*voltage*2*"]
+    validation: {min: 0, max: 1000}
+
+  - key: voltage_l3
+    name: Voltage L3
+    device_class: voltage
+    state_class: measurement
+    units: [V, kV]
+    point_types: [numeric, integer]
+    match: ["phase_3_v", "v3", "*phase*3*v", "*l3*volt*", "*voltage*3*"]
+    validation: {min: 0, max: 1000}
+
+  - key: current_l1
+    name: Current L1
+    device_class: current
+    state_class: measurement
+    units: [A, mA]
+    point_types: [numeric, integer]
+    match: ["phase_1_a", "a1", "a_a", "*phase*1*a", "*l1*current*", "*current*1*"]
+    validation: {min: 0}
+
+  - key: current_l2
+    name: Current L2
+    device_class: current
+    state_class: measurement
+    units: [A, mA]
+    point_types: [numeric, integer]
+    match: ["phase_2_a", "a2", "a_b", "*phase*2*a", "*l2*current*", "*current*2*"]
+    validation: {min: 0}
+
+  - key: current_l3
+    name: Current L3
+    device_class: current
+    state_class: measurement
+    units: [A, mA]
+    point_types: [numeric, integer]
+    match: ["phase_3_a", "a3", "a_c", "*phase*3*a", "*l3*current*", "*current*3*"]
+    validation: {min: 0}
