@@ -792,6 +792,79 @@ def assign_device_type():
     })
 
 
+def _folders_with_points() -> dict[str, int]:
+    """Every folder that directly contains points, with its point count."""
+    folders: dict[str, int] = {}
+    for entry in _load_selections().values():
+        parent = _parent_path(entry.get("path", ""))
+        if parent:
+            folders[parent] = folders.get(parent, 0) + 1
+    return folders
+
+
+@app.route("/api/device-folders/candidates")
+def device_folder_candidates():
+    """Branches whose children look like a set of identical devices.
+
+    A hotel's 192 guest rooms, or a carpark's exhaust fans, are all siblings
+    under one branch. Marking them one at a time is unreasonable, so this
+    finds branches worth adding wholesale.
+    """
+    folders = _folders_with_points()
+    selected = set(load_device_folders())
+
+    branches: dict[str, list[str]] = {}
+    for folder in folders:
+        parent = folder.rsplit("/", 1)[0] if "/" in folder else ""
+        if parent:
+            branches.setdefault(parent, []).append(folder)
+
+    candidates = []
+    for branch, children in branches.items():
+        if len(children) < 2:
+            continue
+        missing = [c for c in children if c not in selected]
+        candidates.append({
+            "prefix": branch,
+            "name": decode_niagara_name(branch.rsplit("/", 1)[-1]),
+            "children": len(children),
+            "already": len(children) - len(missing),
+            "missing": len(missing),
+            "points": sum(folders[c] for c in children),
+        })
+
+    candidates.sort(key=lambda c: (-c["missing"], c["prefix"]))
+    return jsonify({"candidates": candidates})
+
+
+@app.route("/api/device-folders/add-children", methods=["POST"])
+def add_child_device_folders():
+    """Mark every folder directly under a branch as its own device."""
+    data = request.get_json() or {}
+    prefix = (data.get("prefix") or "").strip().strip("/")
+    if not prefix:
+        return jsonify({"error": "prefix required"}), 400
+
+    folders = _folders_with_points()
+    children = [
+        f for f in folders
+        if f.startswith(prefix + "/") and "/" not in f[len(prefix) + 1:]
+    ]
+    if not children:
+        return jsonify({"error": "no folders with points under this prefix"}), 404
+
+    selected = load_device_folders()
+    existing = set(selected)
+    added = [c for c in sorted(children) if c not in existing]
+    if added:
+        save_device_folders(selected + added)
+
+    return jsonify({
+        "ok": True, "prefix": prefix,
+        "added": len(added), "already": len(children) - len(added),
+    })
+
+
 @app.route("/api/devices/enable-slots", methods=["POST"])
 def enable_slot_points():
     """Enable exactly the points bound to a device's slots.
@@ -813,6 +886,28 @@ def enable_slot_points():
     if not wanted:
         return jsonify({"ok": True, "enabled": 0, "already": 0})
 
+    return _enable_paths(wanted, group)
+
+
+@app.route("/api/devices/enable-slots-all", methods=["POST"])
+def enable_all_slot_points():
+    """Enable the bound points of every typed device at once.
+
+    Doing this device by device is impractical once a site has a couple of
+    hundred of them.
+    """
+    wanted = {
+        path
+        for entry in load_device_types().values()
+        for path in entry.get("bindings", {}).values()
+        if path
+    }
+    if not wanted:
+        return jsonify({"ok": True, "enabled": 0, "already": 0})
+    return _enable_paths(wanted)
+
+
+def _enable_paths(wanted: set[str], group: str | None = None):
     selections = load_point_selections()
     enabled = already = 0
     for path in wanted:
@@ -828,9 +923,10 @@ def enable_slot_points():
     if enabled:
         _write_selections(selections)
 
-    return jsonify({
-        "ok": True, "group": group, "enabled": enabled, "already": already,
-    })
+    payload = {"ok": True, "enabled": enabled, "already": already}
+    if group:
+        payload["group"] = group
+    return jsonify(payload)
 
 
 @app.route("/api/devices/unassign", methods=["POST"])

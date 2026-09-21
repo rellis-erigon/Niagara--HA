@@ -633,8 +633,12 @@ tr:hover td { background: var(--row-hover); }
       <option value="">All types</option>
       <option value="__none__">Untyped only</option>
     </select>
+    <button class="btn btn-sm" id="btn-add-devices"
+            title="Mark every folder under a branch as its own device">Add Devices</button>
     <button class="btn btn-sm btn-primary" id="btn-autotype"
             title="Assign the suggested type to every device that has none">Auto-type All</button>
+    <button class="btn btn-sm" id="btn-enable-all"
+            title="Enable the bound points of every typed device">Enable All Slots</button>
   </div>
   <div class="table-wrap">
     <table class="device-table">
@@ -1431,6 +1435,85 @@ async function enableSlotPoints(group) {
     toast('Could not enable slot points');
   }
 }
+
+
+$('#btn-enable-all').addEventListener('click', async e => {
+  const btn = e.currentTarget;
+  btn.disabled = true; btn.textContent = 'Working...';
+  try {
+    const res = await api('/api/devices/enable-slots-all', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    toast(`Enabled ${res.enabled} point(s); ${res.already} already on`);
+    await loadDevices();
+    loadStats();
+  } catch (err) {
+    toast('Could not enable slot points');
+  } finally {
+    btn.disabled = false; btn.textContent = 'Enable All Slots';
+  }
+});
+
+$('#btn-add-devices').addEventListener('click', async () => {
+  let candidates;
+  try {
+    candidates = (await api('/api/device-folders/candidates')).candidates || [];
+  } catch (e) {
+    toast('Could not load folders');
+    return;
+  }
+  const rows = candidates.filter(c => c.missing > 0).slice(0, 40);
+  const body = rows.length ? rows.map(c => `
+      <tr>
+        <td>
+          <div class="slot-key">${esc(c.name)}</div>
+          <div class="slot-meta">${esc(c.prefix)}</div>
+        </td>
+        <td style="white-space:nowrap">${c.missing} new / ${c.children} folders</td>
+        <td style="text-align:right">
+          <button class="btn btn-sm btn-primary" data-add="${esc(c.prefix)}">Add ${c.missing}</button>
+        </td>
+      </tr>`).join('')
+    : '<tr><td class="empty">Every folder with points is already a device.</td></tr>';
+
+  $('#modal-root').innerHTML = `
+    <div class="modal-backdrop" onclick="if(event.target===this)closeModal()">
+      <div class="modal modal-wide">
+        <h2>Add Devices</h2>
+        <p style="font-size:0.85rem;color:var(--muted);margin-bottom:12px">
+          Branches whose sub-folders each look like a device — guest rooms,
+          exhaust fans, distribution boards. Adding marks every sub-folder as
+          its own device; you can then type them in one go.
+        </p>
+        <div style="max-height:50vh;overflow:auto">
+          <table class="slot-table">${body}</table>
+        </div>
+        <div style="display:flex;justify-content:flex-end;margin-top:18px">
+          <button class="btn" onclick="closeModal()">Close</button>
+        </div>
+      </div>
+    </div>`;
+
+  document.querySelectorAll('[data-add]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      btn.disabled = true; btn.textContent = 'Adding...';
+      try {
+        const res = await api('/api/device-folders/add-children', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ prefix: btn.dataset.add }),
+        });
+        closeModal();
+        toast(`Added ${res.added} device(s)`);
+        await loadDevices();
+        loadStats();
+      } catch (e) {
+        toast('Could not add devices');
+        btn.disabled = false;
+      }
+    });
+  });
+});
 
 async function openDeviceConfig(group) {
   let detail;
