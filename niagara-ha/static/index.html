@@ -1386,6 +1386,8 @@ function renderDevices() {
         ${d.bound_disabled ? `<button class="btn btn-sm btn-primary" data-enable="${esc(d.group)}"
            title="Enable the ${d.bound_disabled} bound point(s) not yet enabled">Enable ${d.bound_disabled}</button>` : ''}
       ` : ''}
+      ${d.template ? `<button class="btn btn-sm" data-card="${esc(d.group)}"
+        title="Show the Lovelace card for this device">Card</button>` : ''}
       <button class="btn btn-sm" data-points="${esc(d.group)}"
         data-on="${d.enabled_count < d.point_count ? '1' : '0'}"
         title="${d.enabled_count < d.point_count
@@ -1402,6 +1404,9 @@ function renderDevices() {
   });
   document.querySelectorAll('[data-enable]').forEach(btn => {
     btn.addEventListener('click', () => enableSlotPoints(btn.dataset.enable));
+  });
+  document.querySelectorAll('[data-card]').forEach(btn => {
+    btn.addEventListener('click', () => showDeviceCard(btn.dataset.card));
   });
   document.querySelectorAll('[data-points]').forEach(btn => {
     btn.addEventListener('click', () =>
@@ -1581,6 +1586,7 @@ async function openTemplateList() {
         <div class="slot-meta">${esc(t.id)} · ${t.slots.length} slots${t.builtin ? ' · built-in' : ''}</div>
       </td>
       <td style="text-align:right;white-space:nowrap">
+        <button class="btn btn-sm" data-exp-tpl="${esc(t.id)}">Export</button>
         <button class="btn btn-sm" data-edit-tpl="${esc(t.id)}">${t.builtin ? 'Customize' : 'Edit'}</button>
         ${t.builtin ? '' : `<button class="btn btn-sm" data-del-tpl="${esc(t.id)}">Delete</button>`}
       </td>
@@ -1599,13 +1605,21 @@ async function openTemplateList() {
           <table class="slot-table">${rows}</table>
         </div>
         <div style="display:flex;gap:8px;justify-content:space-between;margin-top:18px">
-          <button class="btn btn-primary" id="tpl-new">New Template</button>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-primary" id="tpl-new">New Template</button>
+            <button class="btn" id="tpl-import">Import</button>
+            <button class="btn" id="tpl-export-all">Export All</button>
+          </div>
           <button class="btn" onclick="closeModal()">Close</button>
         </div>
       </div>
     </div>`;
 
   $('#tpl-new').addEventListener('click', () => openTemplateEditor(null));
+  $('#tpl-import').addEventListener('click', openTemplateImport);
+  $('#tpl-export-all').addEventListener('click', () => exportTemplates(''));
+  document.querySelectorAll('[data-exp-tpl]').forEach(b =>
+    b.addEventListener('click', () => exportTemplates(b.dataset.expTpl)));
   document.querySelectorAll('[data-edit-tpl]').forEach(b =>
     b.addEventListener('click', () => openTemplateEditor(b.dataset.editTpl)));
   document.querySelectorAll('[data-del-tpl]').forEach(b =>
@@ -1692,6 +1706,8 @@ function openTemplateEditor(id) {
         </div>
         <input class="slot-select" id="tpl-desc" placeholder="Description"
                value="${base ? esc(base.description || '') : ''}">
+        <textarea class="slot-select" id="tpl-card" rows="4" style="margin-top:8px;font-family:monospace"
+          placeholder="Optional Lovelace card YAML, using {{slot.key}} placeholders">${base && base.card && Object.keys(base.card).length ? esc(toYaml(base.card)) : ''}</textarea>
         <input class="slot-select" id="tpl-devmatch" style="margin-top:8px"
                placeholder="Folder name hints, e.g. *fridge*, *freezer*"
                value="${base ? esc((base.device_match || []).join(', ')) : ''}">
@@ -1725,6 +1741,15 @@ function openTemplateEditor(id) {
       device_match: $('#tpl-devmatch').value.split(',').map(v => v.trim()).filter(Boolean),
       slots: editorSlots,
     };
+    const cardText = $('#tpl-card').value.trim();
+    if (cardText) {
+      try {
+        payload.card = parseSimpleYaml(cardText);
+      } catch (err) {
+        toast('Card YAML could not be parsed: ' + err.message);
+        return;
+      }
+    }
     try {
       const res = await fetch(BASE + '/api/templates', {
         method: 'POST',
@@ -1741,6 +1766,190 @@ function openTemplateEditor(id) {
       toast('Could not save template');
     }
   });
+}
+
+
+/* -- YAML helpers (small subset: the card shapes we emit) ------------- */
+
+function toYaml(value, indent) {
+  indent = indent || 0;
+  const pad = '  '.repeat(indent);
+  if (Array.isArray(value)) {
+    if (!value.length) return '[]';
+    return value.map(v => {
+      const body = toYaml(v, indent + 1);
+      return (v && typeof v === 'object')
+        ? pad + '- ' + body.trimStart()
+        : pad + '- ' + body;
+    }).join('\n');
+  }
+  if (value && typeof value === 'object') {
+    return Object.entries(value).map(([k, v], i) => {
+      if (v && typeof v === 'object') {
+        const nested = toYaml(v, indent + 1);
+        return (i === 0 ? '' : pad) + k + ':\n' + nested;
+      }
+      return (i === 0 ? '' : pad) + k + ': ' + toYaml(v, indent);
+    }).join('\n');
+  }
+  if (value == null) return '';
+  if (typeof value === 'string' && /[:#{}\[\]]|^\s|\s$/.test(value)) {
+    return '"' + value.replace(/"/g, '\\"') + '"';
+  }
+  return String(value);
+}
+
+function parseSimpleYaml(text) {
+  const lines = text.split('\n').filter(l => l.trim() && !l.trim().startsWith('#'));
+  const scalar = t => {
+    t = t.trim();
+    if ((t.startsWith('"') && t.endsWith('"')) || (t.startsWith("'") && t.endsWith("'")))
+      return t.slice(1, -1);
+    if (t === 'true') return true;
+    if (t === 'false') return false;
+    if (t !== '' && !isNaN(Number(t))) return Number(t);
+    return t;
+  };
+  const indentOf = l => l.length - l.replace(/^\s*/, '').length;
+
+  function blockIn(src, i, indent) {
+    const obj = {};
+    while (i < src.length) {
+      const line = src[i];
+      const ind = indentOf(line);
+      if (ind < indent) break;
+      if (ind > indent) { i += 1; continue; }
+      const trimmed = line.trim();
+      if (trimmed.startsWith('- ')) break;
+      const idx = trimmed.indexOf(':');
+      if (idx < 0) { i += 1; continue; }
+      const key = trimmed.slice(0, idx).trim();
+      const rest = trimmed.slice(idx + 1).trim();
+      if (rest) { obj[key] = scalar(rest); i += 1; continue; }
+      let j = i + 1;
+      if (j < src.length && indentOf(src[j]) > indent) {
+        const [val, used] = nested(src, j, indentOf(src[j]));
+        obj[key] = val;
+        i = used;
+      } else if (j < src.length && src[j].trim().startsWith('- ') && indentOf(src[j]) === indent) {
+        const [val, used] = nested(src, j, indent);
+        obj[key] = val;
+        i = used;
+      } else { obj[key] = null; i = j; }
+    }
+    return [obj, i];
+  }
+
+  function nested(src, i, indent) {
+    if (src[i].trim().startsWith('- ')) {
+      const arr = [];
+      while (i < src.length && indentOf(src[i]) >= indent && src[i].trim().startsWith('- ')) {
+        const body = src[i].trim().slice(2);
+        if (body.includes(':')) {
+          const chunk = [' '.repeat(indent + 2) + body];
+          let j = i + 1;
+          while (j < src.length && indentOf(src[j]) > indent && !src[j].trim().startsWith('- ')) {
+            chunk.push(src[j]); j += 1;
+          }
+          arr.push(blockIn(chunk, 0, indent + 2)[0]);
+          i = j;
+        } else { arr.push(scalar(body)); i += 1; }
+      }
+      return [arr, i];
+    }
+    return blockIn(src, i, indent);
+  }
+
+  const [result] = blockIn(lines, 0, indentOf(lines[0] || ''));
+  if (!result || !Object.keys(result).length) throw new Error('nothing parsed');
+  return result;
+}
+
+async function exportTemplates(id) {
+  try {
+    const q = id ? '?id=' + encodeURIComponent(id) : '';
+    const res = await api('/api/templates/export' + q);
+    showYamlModal(id ? `Export: ${id}` : `Export all (${res.count} templates)`, res.yaml);
+  } catch (e) {
+    toast('Could not export');
+  }
+}
+
+function showYamlModal(title, text) {
+  $('#modal-root').innerHTML = `
+    <div class="modal-backdrop" onclick="if(event.target===this)closeModal()">
+      <div class="modal modal-wide">
+        <h2>${esc(title)}</h2>
+        <textarea id="yaml-out" class="slot-select" rows="18"
+          style="font-family:monospace;white-space:pre">${esc(text)}</textarea>
+        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
+          <button class="btn" id="yaml-copy">Copy</button>
+          <button class="btn" onclick="closeModal()">Close</button>
+        </div>
+      </div>
+    </div>`;
+  $('#yaml-copy').addEventListener('click', () => {
+    const ta = $('#yaml-out');
+    ta.select();
+    try { document.execCommand('copy'); toast('Copied'); }
+    catch (e) { toast('Select the text and copy manually'); }
+  });
+}
+
+function openTemplateImport() {
+  $('#modal-root').innerHTML = `
+    <div class="modal-backdrop" onclick="if(event.target===this)closeModal()">
+      <div class="modal modal-wide">
+        <h2>Import Templates</h2>
+        <p style="font-size:0.85rem;color:var(--muted);margin-bottom:10px">
+          Paste exported YAML. Several templates can be separated by
+          <code>---</code>. Each is validated on its own, so one bad template
+          will not discard the rest.
+        </p>
+        <textarea id="yaml-in" class="slot-select" rows="16"
+          style="font-family:monospace" placeholder="id: my_template&#10;name: My Template&#10;slots:&#10;  - key: temperature"></textarea>
+        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
+          <button class="btn" onclick="closeModal()">Cancel</button>
+          <button class="btn btn-primary" id="yaml-import">Import</button>
+        </div>
+      </div>
+    </div>`;
+  $('#yaml-import').addEventListener('click', async () => {
+    const text = $('#yaml-in').value;
+    if (!text.trim()) { toast('Nothing to import'); return; }
+    try {
+      const res = await fetch(BASE + '/api/templates/import', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ yaml: text }),
+      });
+      const body = await res.json();
+      if (!res.ok) { toast(body.error || 'Import failed'); return; }
+      closeModal();
+      const errs = (body.errors || []).length;
+      toast(`Imported ${body.saved.length} template(s)` + (errs ? `, ${errs} rejected` : ''));
+      if (errs) alert('Rejected:\n' + body.errors.join('\n'));
+      templates = [];
+      await loadDevices();
+    } catch (e) {
+      toast('Import failed');
+    }
+  });
+}
+
+async function showDeviceCard(group) {
+  try {
+    const res = await api('/api/devices/card?group=' + encodeURIComponent(group));
+    const yamlText = toYaml(res.card);
+    showYamlModal(`Card: ${res.device_name}`,
+      yamlText + '\n\n# Slots above are point paths. Run the\n'
+      + '# niagara.generate_card action in Home Assistant to get\n'
+      + '# this card with real entity ids:\n'
+      + '#   action: niagara.generate_card\n'
+      + '#   data:\n'
+      + '#     device: ' + group);
+  } catch (e) {
+    toast('No card for this device type');
+  }
 }
 
 async function openDeviceConfig(group) {

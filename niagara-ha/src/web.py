@@ -11,6 +11,9 @@ from flask import Flask, jsonify, request, send_from_directory
 from device_templates import (
     STATE_DRAFT,
     TemplateError,
+    export_templates,
+    import_templates,
+    render_card,
     bind_template,
     decode_niagara_name,
     delete_user_template,
@@ -1009,6 +1012,71 @@ def set_device_points_enabled():
     return jsonify({
         "ok": True, "group": group, "enabled": enabled,
         "changed": changed, "targets": len(targets),
+    })
+
+
+@app.route("/api/templates/export")
+def export_template_yaml():
+    """Export one template, or all of them, as shareable YAML."""
+    templates = load_templates()
+    wanted = request.args.get("id", "")
+    if wanted:
+        template = templates.get(wanted)
+        if template is None:
+            return jsonify({"error": "unknown template"}), 404
+        chosen = [template]
+    else:
+        chosen = sorted(templates.values(), key=lambda t: t.id)
+    return jsonify({"yaml": export_templates(chosen), "count": len(chosen)})
+
+
+@app.route("/api/templates/import", methods=["POST"])
+def import_template_yaml():
+    data = request.get_json() or {}
+    text = data.get("yaml") or ""
+    if not text.strip():
+        return jsonify({"error": "No YAML supplied"}), 400
+    try:
+        saved, errors = import_templates(text)
+    except TemplateError as err:
+        return jsonify({"error": str(err)}), 400
+    except OSError as err:
+        return jsonify({"error": f"Could not write templates: {err}"}), 500
+    return jsonify({"ok": True, "saved": saved, "errors": errors})
+
+
+@app.route("/api/devices/card")
+def device_card():
+    """The card for a device, with slot placeholders resolved to point paths.
+
+    The add-on does not know Home Assistant entity ids, only point paths.
+    The integration turns these into entity ids; this endpoint supplies the
+    shape and the mapping.
+    """
+    group = request.args.get("group", "")
+    if not group:
+        return jsonify({"error": "group required"}), 400
+
+    assigned = load_device_types().get(group)
+    if not assigned:
+        return jsonify({"error": "device has no type assigned"}), 404
+
+    template = load_templates().get(assigned["template"])
+    if template is None:
+        return jsonify({"error": "template no longer exists"}), 404
+    if not template.card:
+        return jsonify({"error": "this template defines no card"}), 404
+
+    bindings = {k: v for k, v in assigned.get("bindings", {}).items() if v}
+    name = decode_niagara_name(group.rstrip("/").split("/")[-1])
+    card = render_card(template, {**bindings, "device_name": name})
+
+    return jsonify({
+        "group": group,
+        "device_name": name,
+        "template": template.id,
+        "card": card,
+        "bindings": bindings,
     })
 
 

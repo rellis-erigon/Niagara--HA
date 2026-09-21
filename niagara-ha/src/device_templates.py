@@ -83,6 +83,11 @@ class Template:
     # "SOLAR" is a strong hint no amount of point-name matching gives, since
     # a solar meter's points look like any other meter's.
     device_match: list[str] = field(default_factory=list)
+    # A Lovelace card definition whose entity fields are "{{slot.<key>}}"
+    # placeholders. A template already knows what each slot means, which is
+    # exactly what a card needs — so the card is declared once here rather
+    # than rebuilt by hand for every device of that type.
+    card: dict[str, Any] = field(default_factory=dict)
     # Built-ins ship in the image and are read-only; a user template with the
     # same id shadows one, which is how you customise without forking.
     builtin: bool = False
@@ -96,6 +101,7 @@ class Template:
             icon=data.get("icon"),
             slots=[Slot.from_dict(s) for s in data.get("slots", [])],
             device_match=list(data.get("device_match", [])),
+            card=dict(data.get("card") or {}),
         )
 
     def matches_device_name(self, group: str) -> bool:
@@ -112,6 +118,7 @@ class Template:
             "icon": self.icon,
             "builtin": self.builtin,
             "device_match": self.device_match,
+            "card": self.card,
             "slots": [
                 {
                     "key": s.key, "name": s.name, "required": s.required,
@@ -415,6 +422,14 @@ def validate_template_payload(data: Any) -> dict:
     }
     if data.get("icon"):
         payload["icon"] = str(data["icon"]).strip()
+    card = data.get("card")
+    if card:
+        if not isinstance(card, dict):
+            raise TemplateError("card must be an object")
+        if not card.get("type"):
+            raise TemplateError("card needs a type, e.g. entities")
+        payload["card"] = card
+
     device_match = data.get("device_match") or []
     if isinstance(device_match, list):
         cleaned = [str(v).strip() for v in device_match if str(v).strip()]
@@ -452,3 +467,122 @@ def delete_user_template(template_id: str) -> bool:
         return False
     logger.info("Deleted user template %s", template_id)
     return True
+
+
+# -- Card rendering ------------------------------------------------------
+
+# Accepts "{{slot.room_temperature}}" and bare "{{device_name}}".
+_SLOT_TOKEN_RE = re.compile(
+    r"^\s*\{\{\s*(?:slot\.)?([a-z0-9_-]+)\s*\}\}\s*$", re.I,
+)
+
+
+def resolve_card(card: Any, mapping: dict[str, str | None]) -> Any:
+    """Replace {{slot.key}} placeholders with whatever mapping provides.
+
+    Anything referring to a slot with no replacement is dropped rather than
+    left dangling — a card naming an entity that does not exist renders as a
+    broken row, which is worse than a shorter card.
+    """
+    if isinstance(card, str):
+        match = _SLOT_TOKEN_RE.match(card)
+        if match:
+            return mapping.get(match.group(1).lower())
+        return card
+
+    if isinstance(card, list):
+        out = []
+        for item in card:
+            resolved = resolve_card(item, mapping)
+            if resolved is None:
+                continue
+            if isinstance(resolved, dict) and resolved.get("__drop__"):
+                continue
+            out.append(resolved)
+        return out
+
+    if isinstance(card, dict):
+        out: dict[str, Any] = {}
+        for key, item in card.items():
+            resolved = resolve_card(item, mapping)
+            if resolved is None:
+                # A row whose entity is unresolved is not a row at all.
+                if key in ("entity", "entities"):
+                    return {"__drop__": True}
+                continue
+            out[key] = resolved
+        return out
+
+    return card
+
+
+def render_card(template: "Template", mapping: dict[str, str | None]) -> dict | None:
+    if not template.card:
+        return None
+    rendered = resolve_card(template.card, mapping)
+    if not isinstance(rendered, dict) or rendered.get("__drop__"):
+        return None
+    return rendered
+
+
+# -- Import / export -----------------------------------------------------
+
+def export_templates(templates: list["Template"]) -> str:
+    """Serialise templates as a multi-document YAML file."""
+    docs = []
+    for template in templates:
+        doc: dict[str, Any] = {
+            "id": template.id,
+            "name": template.name,
+            "description": template.description,
+        }
+        if template.icon:
+            doc["icon"] = template.icon
+        if template.device_match:
+            doc["device_match"] = template.device_match
+        doc["slots"] = [
+            {k: val for k, val in (
+                ("key", s.key), ("name", s.name), ("required", s.required),
+                ("device_class", s.device_class), ("state_class", s.state_class),
+                ("units", s.units), ("point_types", s.point_types),
+                ("match", s.match), ("validation", s.validation),
+            ) if val not in (None, [], {}, False) or k in ("key", "name")}
+            for s in template.slots
+        ]
+        if template.card:
+            doc["card"] = template.card
+        docs.append(doc)
+    return yaml.safe_dump_all(
+        docs, default_flow_style=False, sort_keys=False,
+        allow_unicode=True, width=10000,
+    )
+
+
+def import_templates(text: str) -> tuple[list[str], list[str]]:
+    """Load one or many templates from YAML. Returns (saved ids, errors).
+
+    Each document is validated and saved independently, so one bad template
+    in a shared file does not discard the rest.
+    """
+    try:
+        docs = list(yaml.safe_load_all(text))
+    except yaml.YAMLError as err:
+        raise TemplateError(f"Could not parse YAML: {err}") from err
+
+    saved: list[str] = []
+    errors: list[str] = []
+    for index, doc in enumerate(docs, 1):
+        if doc is None:
+            continue
+        if isinstance(doc, list):
+            docs.extend(doc)
+            continue
+        try:
+            payload = save_user_template(doc)
+            saved.append(payload["id"])
+        except TemplateError as err:
+            name = doc.get("id", f"document {index}") if isinstance(doc, dict) else f"document {index}"
+            errors.append(f"{name}: {err}")
+    if not saved and not errors:
+        raise TemplateError("No templates found in that YAML")
+    return saved, errors

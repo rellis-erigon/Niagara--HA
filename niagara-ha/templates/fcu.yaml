@@ -52,3 +52,20 @@ slots:
     device_class: problem
     point_types: [boolean]
     match: ["alarm", "*alarm*", "*fault*"]
+
+card:
+  type: entities
+  title: "{{device_name}}"
+  entities:
+    - entity: "{{slot.room_temperature}}"
+      name: Room Temperature
+    - entity: "{{slot.setpoint}}"
+      name: Setpoint
+    - entity: "{{slot.mode}}"
+      name: Mode
+    - entity: "{{slot.fan_status}}"
+      name: Fan
+    - entity: "{{slot.run_status}}"
+      name: Running
+    - entity: "{{slot.alarm}}"
+      name: Alarm

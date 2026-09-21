@@ -34,3 +34,16 @@ slots:
     units: [kPa, Pa, psi, bar, mbar]
     point_types: [numeric, integer]
     match: ["*press*", "*psi*"]
+
+card:
+  type: entities
+  title: "{{device_name}}"
+  entities:
+    - entity: "{{slot.run_status}}"
+      name: Running
+    - entity: "{{slot.speed}}"
+      name: Speed
+    - entity: "{{slot.pressure}}"
+      name: Pressure
+    - entity: "{{slot.fault}}"
+      name: Fault

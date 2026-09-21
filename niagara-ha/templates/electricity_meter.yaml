@@ -97,3 +97,32 @@ slots:
     point_types: [numeric, integer]
     match: ["phase_3_a", "a3", "a_c", "*phase*3*a", "*l3*current*", "*current*3*"]
     validation: {min: 0}
+
+card:
+  type: entities
+  title: "{{device_name}}"
+  entities:
+    - entity: "{{slot.energy_total}}"
+      name: Total Energy
+    - entity: "{{slot.power_active}}"
+      name: Active Power
+    - entity: "{{slot.power_factor}}"
+      name: Power Factor
+    - entity: "{{slot.frequency}}"
+      name: Frequency
+    - type: section
+      label: Voltage
+    - entity: "{{slot.voltage_l1}}"
+      name: L1
+    - entity: "{{slot.voltage_l2}}"
+      name: L2
+    - entity: "{{slot.voltage_l3}}"
+      name: L3
+    - type: section
+      label: Current
+    - entity: "{{slot.current_l1}}"
+      name: L1
+    - entity: "{{slot.current_l2}}"
+      name: L2
+    - entity: "{{slot.current_l3}}"
+      name: L3

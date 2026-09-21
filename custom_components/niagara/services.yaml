@@ -1,0 +1,16 @@
+generate_card:
+  name: Generate device card
+  description: >-
+    Build a Lovelace card for a typed Niagara device. The device's template
+    declares which slot goes where; this resolves those slots to the entity
+    ids they became and returns ready-to-paste YAML.
+  fields:
+    device:
+      name: Device
+      description: >-
+        The device folder path, exactly as shown in the add-on's Devices view
+        (for example BunningsMercureJace2/MercureBMS/HVAC/AC/Rooms/$3320).
+      required: true
+      example: BunningsMercureJace2/MercureBMS/HVAC/AC/Rooms/$3320
+      selector:
+        text:

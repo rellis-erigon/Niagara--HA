@@ -168,3 +168,28 @@ slots:
     device_class: problem
     point_types: [boolean]
     match: ["bypass not available", "*bypass*not*avail*", "*bypass*unavail*"]
+
+card:
+  type: entities
+  title: "{{device_name}}"
+  entities:
+    - entity: "{{slot.battery_percentage}}"
+      name: Battery
+    - entity: "{{slot.battery_time_remaining}}"
+      name: Runtime Remaining
+    - entity: "{{slot.battery_temperature}}"
+      name: Battery Temperature
+    - entity: "{{slot.output_power}}"
+      name: Output Power
+    - entity: "{{slot.system_capacity}}"
+      name: Capacity
+    - entity: "{{slot.efficiency}}"
+      name: Efficiency
+    - type: section
+      label: Status
+    - entity: "{{slot.on_bypass}}"
+      name: On Bypass
+    - entity: "{{slot.input_power_problem}}"
+      name: Input Power Problem
+    - entity: "{{slot.bypass_unavailable}}"
+      name: Bypass Unavailable

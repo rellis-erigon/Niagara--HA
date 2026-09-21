@@ -317,3 +317,101 @@ def test_fridge_template_binds_a_walk_in():
     assert bindings["temperature"].endswith("-Temp/")
     assert bindings["door"].endswith("-Door/")
     assert bindings["compressor"].endswith("-Comp/")
+
+
+# -- Cards ---------------------------------------------------------------
+
+CARD_TEMPLATE = {
+    "id": "carded", "name": "Carded",
+    "slots": [{"key": "temperature", "name": "Temperature", "required": True},
+              {"key": "door", "name": "Door"}],
+    "card": {"type": "entities", "title": "{{device_name}}", "entities": [
+        {"entity": "{{slot.temperature}}", "name": "Temperature"},
+        {"entity": "{{slot.door}}", "name": "Door"},
+    ]},
+}
+
+
+def test_card_renders_with_every_slot_bound(user_dir):
+    dt.save_user_template(CARD_TEMPLATE)
+    template = dt.load_templates()["carded"]
+    card = dt.render_card(template, {
+        "temperature": "/p/temp/", "door": "/p/door/", "device_name": "Fridge 1",
+    })
+    assert card["title"] == "Fridge 1"
+    assert [e["entity"] for e in card["entities"]] == ["/p/temp/", "/p/door/"]
+
+
+def test_unbound_slot_rows_are_dropped(user_dir):
+    """A card naming an entity that does not exist renders broken."""
+    dt.save_user_template(CARD_TEMPLATE)
+    template = dt.load_templates()["carded"]
+    card = dt.render_card(template, {"temperature": "/p/temp/", "device_name": "F"})
+    assert len(card["entities"]) == 1
+    assert card["entities"][0]["entity"] == "/p/temp/"
+
+
+def test_template_without_a_card_renders_none(user_dir):
+    dt.save_user_template(MINIMAL)
+    assert dt.render_card(dt.load_templates()["fridge_custom"], {}) is None
+
+
+def test_card_must_have_a_type():
+    with pytest.raises(dt.TemplateError):
+        dt.validate_template_payload(
+            {"id": "x", "slots": [], "card": {"entities": []}})
+
+
+def test_card_must_be_an_object():
+    with pytest.raises(dt.TemplateError):
+        dt.validate_template_payload({"id": "x", "slots": [], "card": "entities"})
+
+
+def test_builtin_templates_carry_cards():
+    templates = dt.load_templates()
+    assert templates["fcu"].card.get("type") == "entities"
+    assert templates["electricity_meter"].card.get("type") == "entities"
+
+
+# -- Import / export -----------------------------------------------------
+
+def test_export_then_import_round_trips(user_dir):
+    dt.save_user_template(CARD_TEMPLATE)
+    exported = dt.export_templates([dt.load_templates()["carded"]])
+    assert dt.delete_user_template("carded") is True
+
+    saved, errors = dt.import_templates(exported)
+    assert saved == ["carded"]
+    assert errors == []
+    restored = dt.load_templates()["carded"]
+    assert restored.card["type"] == "entities"
+    assert [s.key for s in restored.slots] == ["temperature", "door"]
+
+
+def test_import_keeps_good_templates_when_one_is_bad(user_dir):
+    text = (
+        "id: good_one\nname: Good\nslots:\n  - key: temperature\n"
+        "---\n"
+        "id: BAD ID\nname: Bad\nslots: []\n"
+    )
+    saved, errors = dt.import_templates(text)
+    assert saved == ["good_one"]
+    assert len(errors) == 1
+    assert "good_one" in dt.load_templates()
+
+
+def test_import_rejects_unparseable_yaml(user_dir):
+    with pytest.raises(dt.TemplateError):
+        dt.import_templates("id: x\n  bad: [indent")
+
+
+def test_import_rejects_yaml_with_no_templates(user_dir):
+    with pytest.raises(dt.TemplateError):
+        dt.import_templates("# just a comment\n")
+
+
+def test_export_all_includes_every_template(user_dir):
+    templates = dt.load_templates()
+    exported = dt.export_templates(sorted(templates.values(), key=lambda t: t.id))
+    for template_id in ("fcu", "electricity_meter", "ups_3phase", "fridge"):
+        assert f"id: {template_id}" in exported

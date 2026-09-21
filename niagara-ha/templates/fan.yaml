@@ -31,3 +31,16 @@ slots:
     name: Start/Stop Command
     point_types: [boolean]
     match: ["*command*", "*cmd*", "*start*stop*"]
+
+card:
+  type: entities
+  title: "{{device_name}}"
+  entities:
+    - entity: "{{slot.run_status}}"
+      name: Running
+    - entity: "{{slot.speed}}"
+      name: Speed
+    - entity: "{{slot.command}}"
+      name: Command
+    - entity: "{{slot.fault}}"
+      name: Fault

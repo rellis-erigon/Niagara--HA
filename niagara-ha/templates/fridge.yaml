@@ -46,3 +46,18 @@ slots:
     validation:
       min: -40
       max: 30
+
+card:
+  type: entities
+  title: "{{device_name}}"
+  entities:
+    - entity: "{{slot.temperature}}"
+      name: Temperature
+    - entity: "{{slot.setpoint}}"
+      name: Setpoint
+    - entity: "{{slot.door}}"
+      name: Door
+    - entity: "{{slot.compressor}}"
+      name: Compressor
+    - entity: "{{slot.alarm}}"
+      name: Alarm

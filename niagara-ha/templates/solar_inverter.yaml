@@ -51,3 +51,18 @@ slots:
     name: Fault
     point_types: [boolean]
     match: ["*fault*", "*alarm*", "*trip*"]
+
+card:
+  type: entities
+  title: "{{device_name}}"
+  entities:
+    - entity: "{{slot.energy_generated}}"
+      name: Energy Generated
+    - entity: "{{slot.power_output}}"
+      name: Power Output
+    - entity: "{{slot.dc_voltage}}"
+      name: DC Voltage
+    - entity: "{{slot.efficiency}}"
+      name: Efficiency
+    - entity: "{{slot.fault}}"
+      name: Fault

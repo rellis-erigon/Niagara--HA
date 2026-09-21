@@ -33,3 +33,14 @@ slots:
     point_types: [numeric, integer]
     match: ["*tank*lvl*", "*tank*level*", "*level*", "*lvl*"]
     validation: {min: 0, max: 100}
+
+card:
+  type: entities
+  title: "{{device_name}}"
+  entities:
+    - entity: "{{slot.volume_total}}"
+      name: Total Volume
+    - entity: "{{slot.flow_rate}}"
+      name: Flow Rate
+    - entity: "{{slot.tank_level}}"
+      name: Tank Level

@@ -46,3 +46,18 @@ slots:
     device_class: occupancy
     point_types: [boolean]
     match: ["*occup*", "*presence*"]
+
+card:
+  type: entities
+  title: "{{device_name}}"
+  entities:
+    - entity: "{{slot.temperature}}"
+      name: Temperature
+    - entity: "{{slot.setpoint}}"
+      name: Setpoint
+    - entity: "{{slot.humidity}}"
+      name: Humidity
+    - entity: "{{slot.co2}}"
+      name: CO2
+    - entity: "{{slot.occupancy}}"
+      name: Occupancy
