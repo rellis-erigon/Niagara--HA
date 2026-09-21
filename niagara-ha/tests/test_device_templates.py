@@ -134,7 +134,20 @@ def test_fcu_prefers_the_specific_status_slot(templates):
     assert bindings["fan_status"].endswith("/IndoorFanStatus/")
     assert bindings["room_temperature"].endswith("/RoomTemp/")
     assert bindings["command"].endswith("/StartStopCommand/")
-    assert bindings["setpoint"].endswith("/TempAdjust/")
+
+
+def test_temp_adjust_is_not_a_setpoint(templates):
+    """TempAdjust is an offset from the base setpoint, so 0 is normal for it.
+
+    Binding it to the absolute setpoint slot, which expects 5-40 °C, blocked
+    every guest room on a perfectly healthy reading.
+    """
+    bindings = dt.bind_template(templates["fcu"], FCU)
+    assert bindings["temp_adjust"].endswith("/TempAdjust/")
+    assert bindings["setpoint"] is None
+
+    adjust = next(s for s in templates["fcu"].slots if s.key == "temp_adjust")
+    assert adjust.validation["min"] < 0
 
 
 def test_required_slots_are_filled_before_optional(templates):
