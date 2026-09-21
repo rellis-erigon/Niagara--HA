@@ -89,3 +89,29 @@ def test_element_without_href_is_skipped(client):
 def test_value_tag_without_val_is_skipped(client):
     elem = ET.fromstring(f'<real xmlns="{OBIX_NS}" href="/a/"/>')
     assert client._parse_watch_element(elem) is None
+
+
+# -- Path stability ------------------------------------------------------
+#
+# read_point used to return a point whose path came from _parse_point, which
+# falls back to parent_path + name when the element has no href — doubling the
+# last segment. The polling loop assigns its result back over active_points,
+# so one successful read rewrote every path into a form the station rejects,
+# and every subsequent poll failed permanently.
+
+def test_read_point_keeps_requested_path_without_href(client, monkeypatch):
+    path = "/config/Drivers/NiagaraNetwork/J2/points/Site/Active_Power_P1/"
+    monkeypatch.setattr(client, "_get", lambda p: ET.fromstring(
+        f'<real xmlns="{OBIX_NS}" name="Active_Power_P1" val="12.5"/>'))
+    point = client.read_point(path)
+    assert point is not None
+    assert point.path == path
+
+
+def test_read_point_keeps_requested_path_with_foreign_href(client, monkeypatch):
+    path = "/config/Drivers/NiagaraNetwork/J2/points/Site/Temp/"
+    monkeypatch.setattr(client, "_get", lambda p: ET.fromstring(
+        f'<real xmlns="{OBIX_NS}" name="Temp" href="/somewhere/else/" val="21.0"/>'))
+    point = client.read_point(path)
+    assert point is not None
+    assert point.path == path

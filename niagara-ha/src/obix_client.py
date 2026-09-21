@@ -579,7 +579,16 @@ class ObixClient:
         name = root.get("name", path.rstrip("/").split("/")[-1])
 
         if tag in ("real", "bool", "int", "str", "enum", "abstime", "reltime"):
-            return self._parse_point(root, tag, "/".join(path.split("/")[:-1]) + "/", name)
+            point = self._parse_point(
+                root, tag, "/".join(path.split("/")[:-1]) + "/", name,
+            )
+            if point:
+                # _parse_point derives a path from the element's href, falling
+                # back to parent_path + name — which doubles the last segment
+                # when the element carries no href. The path we were asked to
+                # read is authoritative, exactly as in the "out" branch below.
+                point.path = path
+            return point
 
         out_elem = root.find(f".//{{{OBIX_NS}}}real[@name='out']")
         if out_elem is None:
@@ -708,6 +717,10 @@ class ObixClient:
             try:
                 refreshed = self.read_point(pt.path)
                 if refreshed:
+                    # The path we polled is the identity of this point. A
+                    # refreshed copy must never redefine it, or the next cycle
+                    # polls a path that does not exist and fails permanently.
+                    refreshed.path = pt.path
                     return pt.path, refreshed, True
             except Exception as e:
                 logger.debug("Poll error for %s: %s", pt.path, e)
