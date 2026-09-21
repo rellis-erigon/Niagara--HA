@@ -565,6 +565,7 @@ def integration_points():
                 "slot_name": slot.name,
                 "device_class": slot.device_class,
                 "state_class": slot.state_class,
+                "slot_units": slot.units,
                 "device_group": group,
             }
 

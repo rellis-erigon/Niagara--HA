@@ -221,6 +221,14 @@ class NiagaraNumericSensor(NiagaraEntity, SensorEntity):
                 unit is None or _unit_valid_for_class(unit, declared)
             ):
                 device_class = declared
+                # Niagara tags a unit on only some of a site's identical
+                # meters. A class like energy is useless to the energy
+                # dashboard without one, and the slot has already declared
+                # which units it accepts — so take the first. This is the
+                # template author asserting what the slot measures, not the
+                # name-based guessing removed in 2.4.1.
+                if unit is None and point.slot_units:
+                    unit = point.slot_units[0]
 
         if device_class is not None:
             self._attr_device_class = device_class

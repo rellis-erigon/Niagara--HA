@@ -80,6 +80,7 @@ class NiagaraPoint:
     slot_name: str | None = None
     slot_device_class: str | None = None
     slot_state_class: str | None = None
+    slot_units: list[str] = field(default_factory=list)
 
 
 class NiagaraCoordinator(DataUpdateCoordinator[dict[str, NiagaraPoint]]):
@@ -206,6 +207,7 @@ class NiagaraCoordinator(DataUpdateCoordinator[dict[str, NiagaraPoint]]):
                 slot_name=p.get("slot_name"),
                 slot_device_class=p.get("device_class"),
                 slot_state_class=p.get("state_class"),
+                slot_units=p.get("slot_units") or [],
             )
 
         return {
