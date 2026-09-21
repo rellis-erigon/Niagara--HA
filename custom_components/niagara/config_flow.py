@@ -1,26 +1,75 @@
 """Config flow for Niagara BMS integration."""
 
 import logging
+import os
 from typing import Any
 
 import aiohttp
 import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry, ConfigFlow, OptionsFlow
-from homeassistant.core import callback
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.data_entry_flow import FlowResult
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .const import (
+    ADDON_SLUG_SUFFIX,
     CONF_ADDON_URL,
     CONF_AREA_DEPTH,
     CONF_DEVICE_NAME,
     DEFAULT_ADDON_URL,
     DEFAULT_AREA_DEPTH,
     DEFAULT_DEVICE_NAME,
+    DEFAULT_INGRESS_PORT,
     DEFAULT_POLL_INTERVAL,
     DOMAIN,
+    SUPERVISOR_API,
 )
 
 _LOGGER = logging.getLogger(__name__)
+
+
+async def async_discover_addon_url(hass: HomeAssistant) -> str | None:
+    """Ask Supervisor where the Niagara BMS Bridge add-on is reachable.
+
+    The add-on's hostname includes a per-install repository hash, so the only
+    reliable way to know it is to ask. Returns None when not running under
+    Supervisor, or when the add-on is not installed.
+    """
+    token = os.environ.get("SUPERVISOR_TOKEN")
+    if not token:
+        return None
+
+    headers = {"Authorization": f"Bearer {token}"}
+    session = async_get_clientsession(hass)
+    timeout = aiohttp.ClientTimeout(total=10)
+
+    try:
+        async with session.get(
+            f"{SUPERVISOR_API}/addons", headers=headers, timeout=timeout,
+        ) as resp:
+            resp.raise_for_status()
+            addons = (await resp.json()).get("data", {}).get("addons", [])
+
+        slug = next(
+            (a["slug"] for a in addons
+             if a.get("slug", "").endswith(ADDON_SLUG_SUFFIX)),
+            None,
+        )
+        if not slug:
+            return None
+
+        async with session.get(
+            f"{SUPERVISOR_API}/addons/{slug}/info", headers=headers, timeout=timeout,
+        ) as resp:
+            resp.raise_for_status()
+            info = (await resp.json()).get("data", {})
+    except (aiohttp.ClientError, TimeoutError, ValueError) as err:
+        _LOGGER.debug("Add-on discovery via Supervisor failed: %s", err)
+        return None
+
+    host = info.get("hostname") or slug.replace("_", "-")
+    port = info.get("ingress_port") or DEFAULT_INGRESS_PORT
+    return f"http://{host}:{port}"
 
 
 class NiagaraConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -39,15 +88,15 @@ class NiagaraConfigFlow(ConfigFlow, domain=DOMAIN):
             self._abort_if_unique_id_configured()
 
             try:
-                async with aiohttp.ClientSession() as session:
-                    async with session.get(
-                        f"{addon_url}/api/integration/points",
-                        timeout=aiohttp.ClientTimeout(total=10),
-                    ) as resp:
-                        resp.raise_for_status()
-                        data = await resp.json()
-                        point_count = data.get("enabled", 0)
-                        total = data.get("total", 0)
+                session = async_get_clientsession(self.hass)
+                async with session.get(
+                    f"{addon_url}/api/integration/points",
+                    timeout=aiohttp.ClientTimeout(total=30),
+                ) as resp:
+                    resp.raise_for_status()
+                    data = await resp.json()
+                    point_count = data.get("enabled", 0)
+                    total = data.get("total", 0)
             except Exception:
                 _LOGGER.exception("Failed to connect to add-on")
                 errors["base"] = "cannot_connect"
@@ -63,10 +112,12 @@ class NiagaraConfigFlow(ConfigFlow, domain=DOMAIN):
                     },
                 )
 
+        suggested_url = await async_discover_addon_url(self.hass) or DEFAULT_ADDON_URL
+
         return self.async_show_form(
             step_id="user",
             data_schema=vol.Schema({
-                vol.Required(CONF_ADDON_URL, default=DEFAULT_ADDON_URL): str,
+                vol.Required(CONF_ADDON_URL, default=suggested_url): str,
                 vol.Optional(CONF_DEVICE_NAME, default=DEFAULT_DEVICE_NAME): str,
                 vol.Optional("scan_interval", default=DEFAULT_POLL_INTERVAL): int,
                 vol.Optional(CONF_AREA_DEPTH, default=DEFAULT_AREA_DEPTH): int,

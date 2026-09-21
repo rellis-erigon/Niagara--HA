@@ -10,6 +10,7 @@ import logging
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryNotReady
 
 from .const import DOMAIN
 from .coordinator import NiagaraCoordinator
@@ -22,7 +23,14 @@ PLATFORMS = [Platform.SENSOR, Platform.BINARY_SENSOR]
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Niagara BMS from a config entry."""
     coordinator = NiagaraCoordinator(hass, entry)
-    await coordinator.async_setup()
+    try:
+        await coordinator.async_setup()
+    except Exception as err:
+        # The add-on may still be discovering points on a large station.
+        # Let HA retry rather than leaving the entry permanently failed.
+        raise ConfigEntryNotReady(
+            f"Niagara BMS add-on not ready at {coordinator.host}: {err}"
+        ) from err
     await coordinator.async_config_entry_first_refresh()
 
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
