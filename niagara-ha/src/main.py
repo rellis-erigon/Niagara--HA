@@ -181,9 +181,14 @@ def main() -> None:
                 using_watch = obix.setup_watch(active_points, poll_interval)
                 if using_watch:
                     captured = 0
+                    now = time.time()
                     for pt in active_points:
                         if pt.value is not None:
-                            last_values[pt.path] = str(pt.value)
+                            last_values[pt.path] = {
+                                "value": str(pt.value),
+                                "status": pt.status or "ok",
+                                "ts": now,
+                            }
                             captured += 1
                     logger.info(
                         "Watch mode: initial values captured for %d of %d active points",
@@ -221,15 +226,33 @@ def main() -> None:
         updated = obix.poll_points(active_points, max_workers=poll_workers)
         active_points = updated
 
+        now = time.time()
         changed = 0
+        failed = 0
         for pt in updated:
+            entry = last_values.get(pt.path)
             if pt.value is not None:
                 val_str = str(pt.value)
-                if last_values.get(pt.path) != val_str:
-                    last_values[pt.path] = val_str
+                if entry is None or entry.get("value") != val_str:
                     changed += 1
+                last_values[pt.path] = {
+                    "value": val_str,
+                    "status": pt.status or "ok",
+                    "ts": now,
+                }
+            else:
+                # Read failed. Keep the last good value but mark it faulted and
+                # leave its timestamp alone, so its age grows and consumers can
+                # tell a frozen reading from a fresh one.
+                failed += 1
+                if entry is not None:
+                    entry["status"] = "fault"
 
-        logger.debug("Poll: %d changed, %d total", changed, len(updated))
+        _prune_values_cache(last_values, {pt.path for pt in active_points})
+
+        logger.debug(
+            "Poll: %d changed, %d failed, %d total", changed, failed, len(updated),
+        )
         _write_values_cache(last_values)
 
         if mqtt_pub:
@@ -249,17 +272,53 @@ def main() -> None:
     obix.close()
 
 
-def _load_values_cache() -> dict[str, str]:
+def _load_values_cache() -> dict[str, dict]:
+    """Load the value cache, upgrading the old flat {path: value} format.
+
+    Entries are {"value": str, "status": str, "ts": float}. Migrated entries
+    get ts 0.0 so they read as stale until genuinely polled.
+    """
     try:
-        if VALUES_FILE.exists():
-            with open(VALUES_FILE) as f:
-                return json.load(f)
+        if not VALUES_FILE.exists():
+            return {}
+        with open(VALUES_FILE) as f:
+            raw = json.load(f)
     except (json.JSONDecodeError, OSError) as e:
         logger.debug("Failed to read values cache: %s", e)
-    return {}
+        return {}
+
+    if not isinstance(raw, dict):
+        return {}
+
+    migrated = 0
+    out: dict[str, dict] = {}
+    for path, entry in raw.items():
+        if isinstance(entry, dict) and "value" in entry:
+            out[path] = entry
+        else:
+            out[path] = {"value": entry, "status": "unknown", "ts": 0.0}
+            migrated += 1
+    if migrated:
+        logger.info("Upgraded %d cached values to the timestamped format", migrated)
+    return out
 
 
-def _write_values_cache(values: dict[str, str]) -> None:
+def _prune_values_cache(values: dict[str, dict], active_paths: set[str]) -> int:
+    """Drop cached values for points that are no longer enabled.
+
+    Without this the cache grows without bound: disabled points, renamed
+    paths and points from earlier bugs all linger forever and are served to
+    the integration as if current.
+    """
+    stale = [p for p in values if p not in active_paths]
+    for path in stale:
+        del values[path]
+    if stale:
+        logger.info("Pruned %d cached values no longer enabled", len(stale))
+    return len(stale)
+
+
+def _write_values_cache(values: dict[str, dict]) -> None:
     try:
         POINTS_DIR.mkdir(parents=True, exist_ok=True)
         tmp = VALUES_FILE.with_suffix(".tmp")

@@ -54,6 +54,14 @@ def _parent_path(path: str) -> str:
     return "/".join(parts[:-1])
 
 
+# A value older than this many poll intervals is treated as stale. Three
+# cycles tolerates a single missed poll and a slow one without flapping.
+STALE_INTERVAL_MULTIPLIER = 3
+
+# Statuses the add-on reports that mean the reading cannot be trusted.
+BAD_STATUSES = frozenset({"fault", "down", "stale", "disabled", "unknown"})
+
+
 @dataclass
 class NiagaraPoint:
     path: str
@@ -65,6 +73,7 @@ class NiagaraPoint:
     enum_range: list[str] = field(default_factory=list)
     group: str = "Ungrouped"
     status: str | None = None
+    age: float | None = None
 
 
 class NiagaraCoordinator(DataUpdateCoordinator[dict[str, NiagaraPoint]]):
@@ -83,6 +92,8 @@ class NiagaraCoordinator(DataUpdateCoordinator[dict[str, NiagaraPoint]]):
         scan_interval = entry.options.get(
             "scan_interval", entry.data.get("scan_interval", DEFAULT_POLL_INTERVAL)
         )
+        self.scan_interval = scan_interval
+        self.stale_after = scan_interval * STALE_INTERVAL_MULTIPLIER
 
         self.points: dict[str, NiagaraPoint] = {}
         self.device_folders: list[str] = []
@@ -137,9 +148,20 @@ class NiagaraCoordinator(DataUpdateCoordinator[dict[str, NiagaraPoint]]):
                 self.device_folders = data["device_folders"]
 
             values = await self._fetch_values()
-            for path, val in values.items():
-                if path in self.points:
-                    self.points[path].value = str(val) if val is not None else None
+            for path, entry in values.items():
+                point = self.points.get(path)
+                if point is None:
+                    continue
+                if isinstance(entry, dict):
+                    val = entry.get("value")
+                    point.value = str(val) if val is not None else None
+                    point.status = entry.get("status")
+                    point.age = entry.get("age")
+                else:
+                    # Add-on predating the timestamped format.
+                    point.value = str(entry) if entry is not None else None
+                    point.status = None
+                    point.age = None
             return self.points
         except Exception as err:
             raise UpdateFailed(f"Error polling add-on: {err}") from err
@@ -171,6 +193,8 @@ class NiagaraCoordinator(DataUpdateCoordinator[dict[str, NiagaraPoint]]):
                 writable=p.get("writable", False),
                 enum_range=p.get("enum_range", []),
                 group=p.get("group", "Ungrouped"),
+                status=p.get("status"),
+                age=p.get("age"),
             )
 
         return {

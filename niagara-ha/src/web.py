@@ -3,6 +3,7 @@
 import json
 import logging
 import os
+import time
 from pathlib import Path
 
 from flask import Flask, jsonify, request, send_from_directory
@@ -132,7 +133,12 @@ def _points_match_prefix(path: str, prefix_parts: list[str]) -> bool:
     return segs[:len(prefix_parts)] == prefix_parts
 
 
-def _load_values() -> dict[str, str]:
+def _load_values() -> dict[str, dict]:
+    """Return the value cache as {path: {"value", "status", "ts"}}.
+
+    Tolerates the old flat {path: value} format so a downgrade or a
+    half-written file cannot take the UI down.
+    """
     try:
         mtime = VALUES_FILE.stat().st_mtime
     except OSError:
@@ -140,20 +146,32 @@ def _load_values() -> dict[str, str]:
     if mtime != _values_cache["mtime"]:
         try:
             with open(VALUES_FILE) as f:
-                _values_cache["data"] = json.load(f)
+                raw = json.load(f)
         except (json.JSONDecodeError, OSError):
-            _values_cache["data"] = {}
+            raw = {}
+        if not isinstance(raw, dict):
+            raw = {}
+        _values_cache["data"] = {
+            path: (entry if isinstance(entry, dict) and "value" in entry
+                   else {"value": entry, "status": "unknown", "ts": 0.0})
+            for path, entry in raw.items()
+        }
         _values_cache["mtime"] = mtime
     return _values_cache["data"]
 
 
+def _plain_value(entry: dict | None):
+    return entry.get("value") if entry else None
+
+
 @app.route("/api/values")
 def values():
+    """Flat path:value map — the sidebar UI's contract, unchanged."""
     vals = _load_values()
     paths = request.args.getlist("paths[]")
     if paths:
-        vals = {p: vals[p] for p in paths if p in vals}
-    return jsonify(vals)
+        return jsonify({p: _plain_value(vals.get(p)) for p in paths if p in vals})
+    return jsonify({p: _plain_value(e) for p, e in vals.items()})
 
 
 @app.route("/api/points")
@@ -497,18 +515,22 @@ def integration_points():
     values = _load_values()
     device_folders = load_device_folders()
 
+    now = time.time()
     points = []
     for entry in selections.values():
         if not entry.get("enabled", False):
             continue
         path = entry.get("path", "")
+        cached = values.get(path)
         points.append({
             "path": path,
             "name": entry.get("name", ""),
             "type": entry.get("type", "unknown"),
             "unit": entry.get("unit", ""),
             "group": entry.get("group", "Ungrouped"),
-            "value": values.get(path),
+            "value": _plain_value(cached),
+            "status": cached.get("status", "unknown") if cached else "unknown",
+            "age": round(now - cached["ts"], 1) if cached and cached.get("ts") else None,
             "writable": entry.get("writable", False),
             "enum_range": entry.get("enum_range", []),
         })
@@ -531,14 +553,52 @@ def integration_values():
     """
     selections = _load_selections()
     values = _load_values()
+    now = time.time()
 
     result = {}
     for entry in selections.values():
-        if entry.get("enabled", False):
-            path = entry.get("path", "")
-            result[path] = values.get(path)
+        if not entry.get("enabled", False):
+            continue
+        path = entry.get("path", "")
+        cached = values.get(path)
+        if cached is None:
+            result[path] = None
+            continue
+        result[path] = {
+            "value": cached.get("value"),
+            "status": cached.get("status", "unknown"),
+            "age": round(now - cached["ts"], 1) if cached.get("ts") else None,
+        }
 
     return jsonify(result)
+
+
+@app.route("/api/health")
+def health():
+    """Liveness for the integration: is the bridge actually getting data?
+
+    Lets Home Assistant tell "add-on down" from "add-on up, Niagara down",
+    which previously looked identical from the integration's side.
+    """
+    selections = _load_selections()
+    values = _load_values()
+    now = time.time()
+
+    enabled = [e for e in selections.values() if e.get("enabled", False)]
+    ages = [
+        now - v["ts"] for p, v in values.items() if v.get("ts")
+    ]
+    faulted = sum(1 for v in values.values() if v.get("status") == "fault")
+
+    return jsonify({
+        "ok": bool(ages) and min(ages) < 300,
+        "points_total": len(selections),
+        "points_enabled": len(enabled),
+        "values_cached": len(values),
+        "values_faulted": faulted,
+        "newest_value_age": round(min(ages), 1) if ages else None,
+        "oldest_value_age": round(max(ages), 1) if ages else None,
+    })
 
 
 def _write_selections(selections: dict[str, dict]) -> None:
