@@ -1,0 +1,39 @@
+name: Version check
+
+# The add-on and the integration ship as a matched pair. They previously
+# versioned independently, which let an add-on run against an integration from
+# before an architecture change. This fails the build when they disagree.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  versions-match:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compare add-on and integration versions
+        run: |
+          addon=$(grep -E '^version:' niagara-ha/config.yaml \
+                  | head -1 | sed -E 's/.*"(.*)".*/\1/')
+          integration=$(python3 -c \
+            "import json;print(json.load(open('custom_components/niagara/manifest.json'))['version'])")
+
+          echo "add-on:      $addon"
+          echo "integration: $integration"
+
+          if [ -z "$addon" ] || [ -z "$integration" ]; then
+            echo "::error::Could not read one of the versions"
+            exit 1
+          fi
+
+          if [ "$addon" != "$integration" ]; then
+            echo "::error::Version mismatch — add-on $addon, integration $integration."
+            echo "Both must be bumped together. See R14 in the PRD."
+            exit 1
+          fi
+
+          echo "Versions match: $addon"
