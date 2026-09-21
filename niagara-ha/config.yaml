@@ -1,6 +1,6 @@
 name: "Niagara BMS Bridge"
 description: "Connect Tridium Niagara 4 BMS to Home Assistant via oBIX"
-version: "2.7.0"
+version: "2.8.0"
 slug: niagara-ha
 url: "https://github.com/rellis-erigon/niagara--ha"
 init: false

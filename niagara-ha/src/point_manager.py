@@ -339,6 +339,8 @@ def save_point_selections(
             entry["type"] = pt.point_type
             entry["unit"] = pt.unit or ""
             entry["writable"] = pt.writable
+            if pt.precision is not None:
+                entry["precision"] = pt.precision
             if pt.enum_range:
                 entry["enum_range"] = pt.enum_range
         else:
@@ -350,6 +352,7 @@ def save_point_selections(
                 "type": pt.point_type,
                 "unit": pt.unit or "",
                 "writable": pt.writable,
+                **({"precision": pt.precision} if pt.precision is not None else {}),
                 "enabled": should_enable,
             }
             if pt.enum_range:

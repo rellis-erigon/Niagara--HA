@@ -21,6 +21,11 @@ from device_templates import (
     score_candidate,
     suggest_template,
 )
+from validation import (
+    BLOCKED,
+    load_observations,
+    validate_device,
+)
 from point_manager import (
     POINTS_DIR,
     POINTS_FILE,
@@ -545,6 +550,7 @@ def integration_points():
             "status": cached.get("status", "unknown") if cached else "unknown",
             "age": round(now - cached["ts"], 1) if cached and cached.get("ts") else None,
             "writable": entry.get("writable", False),
+            "precision": entry.get("precision"),
             "enum_range": entry.get("enum_range", []),
         })
 
@@ -632,6 +638,9 @@ def list_devices():
     templates = load_templates()
     assigned = load_device_types()
     groups = _device_groups()
+    values = _load_values()
+    observations = load_observations()
+    now = time.time()
 
     devices = []
     for group, points in sorted(groups.items()):
@@ -664,6 +673,14 @@ def list_devices():
             record["required_bound"] = sum(
                 1 for s in required if bindings.get(s.key)
             )
+            report = validate_device(
+                template, bindings, {p.get("path"): p for p in points},
+                values, observations, now,
+            )
+            record["severity"] = report["severity"]
+            record["blocked"] = report["blocked"]
+            record["warnings"] = report["warnings"]
+            record["publishable"] = report["publishable"]
         else:
             suggested, _ = suggest_template(templates, points, group)
             record["suggested"] = suggested
@@ -732,11 +749,25 @@ def device_detail():
             ],
         })
 
+    effective = {
+        s["key"]: s["bound_path"] for s in slots if s["bound_path"]
+    }
+    report = validate_device(
+        template, effective, by_path, _load_values(), load_observations(),
+    )
+    issues_by_slot = {s["key"]: s for s in report["slots"]}
+    for slot in slots:
+        detail = issues_by_slot.get(slot["key"], {})
+        slot["severity"] = detail.get("severity", "ok")
+        slot["issues"] = detail.get("issues", [])
+
     return jsonify({
         "group": group,
         "template": template.id,
         "template_name": template.name,
         "state": assigned["state"] if assigned else None,
+        "severity": report["severity"],
+        "publishable": report["publishable"],
         "slots": slots,
         "points": [_point_summary(p) for p in points],
     })

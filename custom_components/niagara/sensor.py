@@ -25,6 +25,8 @@ UNIT_MAP = {
     "in. w.c.": "inH2O", "MWh": "MWh", "GJ": "GJ", "MJ": "MJ", "BTU": "BTU",
     "therm": "therm", "mbar": "mbar", "bar": "bar", "m³": "m³", "ft³": "ft³",
     "L": "L", "gal": "gal", "CCF": "CCF", "m³/h": "m³/h", "ft³/h": "ft³/h", "L/h": "L/h",
+    "min": "min", "h": "h", "s": "s",
+    "kVA": "kVA", "VA": "VA", "kvar": "kvar",
 }
 
 # "%" is deliberately absent. In a BMS a percentage is far more often a valve
@@ -46,6 +48,9 @@ UNIT_DEVICE_CLASS = {
     "m³": SensorDeviceClass.VOLUME, "ft³": SensorDeviceClass.VOLUME,
     "L": SensorDeviceClass.VOLUME, "gal": SensorDeviceClass.VOLUME,
     "CCF": SensorDeviceClass.VOLUME,
+    "kVA": SensorDeviceClass.APPARENT_POWER, "VA": SensorDeviceClass.APPARENT_POWER,
+    "min": SensorDeviceClass.DURATION, "h": SensorDeviceClass.DURATION,
+    "s": SensorDeviceClass.DURATION,
 }
 
 # Name patterns only ever *refine* a class when the point already has a unit
@@ -128,6 +133,8 @@ VALID_UNITS_FOR_CLASS: dict[SensorDeviceClass, set[str]] = {
     SensorDeviceClass.WATER: {"L", "m³", "gal", "ft³", "CCF"},
     SensorDeviceClass.GAS: {"m³", "ft³", "CCF"},
     SensorDeviceClass.VOLUME: {"L", "m³", "gal", "ft³", "CCF"},
+    SensorDeviceClass.APPARENT_POWER: {"VA", "kVA", "mVA"},
+    SensorDeviceClass.DURATION: {"d", "h", "min", "s", "ms"},
 }
 
 
@@ -209,6 +216,11 @@ class NiagaraNumericSensor(NiagaraEntity, SensorEntity):
 
         if unit is not None:
             self._attr_native_unit_of_measurement = unit
+
+        # Niagara knows how many decimals the point is meant to show. Without
+        # it a float32 reaches HA as 22.700000762939453.
+        if point.precision is not None:
+            self._attr_suggested_display_precision = point.precision
 
         if device_class is None:
             icon = _infer_icon(point.name)

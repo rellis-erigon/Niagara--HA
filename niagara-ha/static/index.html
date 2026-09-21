@@ -541,6 +541,12 @@ tr:hover td { background: var(--row-hover); }
 .pill-ok { background: #dcfce7; color: #166534; }
 .pill-warn { background: #fef3c7; color: #92400e; }
 .pill-none { background: transparent; color: var(--muted); font-style: italic; }
+.pill-blocked { background: #fee2e2; color: #991b1b; }
+@media (prefers-color-scheme: dark) { .pill-blocked { background: #7f1d1d; color: #fecaca; } }
+.issue { font-size: 0.72rem; margin-top: 3px; }
+.issue-blocked { color: var(--danger); }
+.issue-warning { color: #b45309; }
+@media (prefers-color-scheme: dark) { .issue-warning { color: #fbbf24; } }
 @media (prefers-color-scheme: dark) {
   .pill-ok { background: #14532d; color: #86efac; }
   .pill-warn { background: #713f12; color: #fde68a; }
@@ -632,6 +638,8 @@ tr:hover td { background: var(--row-hover); }
     <select class="category-select" id="device-type-filter">
       <option value="">All types</option>
       <option value="__none__">Untyped only</option>
+      <option value="__blocked__">Blocked only</option>
+      <option value="__warning__">Warnings only</option>
     </select>
     <button class="btn btn-sm" id="btn-add-devices"
             title="Mark every folder under a branch as its own device">Add Devices</button>
@@ -649,12 +657,13 @@ tr:hover td { background: var(--row-hover); }
           <th style="width:90px">Enabled</th>
           <th style="width:210px">Device Type</th>
           <th style="width:110px">Slots</th>
-          <th style="width:100px">State</th>
+          <th style="width:110px">Health</th>
+          <th style="width:90px">State</th>
           <th style="width:110px"></th>
         </tr>
       </thead>
       <tbody id="device-table">
-        <tr><td colspan="6" class="loading">Loading...</td></tr>
+        <tr><td colspan="7" class="loading">Loading...</td></tr>
       </tbody>
     </table>
   </div>
@@ -1294,11 +1303,11 @@ async function loadTemplates() {
 
 async function loadDevices() {
   await loadTemplates();
-  $('#device-table').innerHTML = '<tr><td colspan="6" class="loading">Loading...</td></tr>';
+  $('#device-table').innerHTML = '<tr><td colspan="7" class="loading">Loading...</td></tr>';
   try {
     devices = (await api('/api/devices')).devices || [];
   } catch (e) {
-    $('#device-table').innerHTML = '<tr><td colspan="6" class="empty">Could not load devices</td></tr>';
+    $('#device-table').innerHTML = '<tr><td colspan="7" class="empty">Could not load devices</td></tr>';
     return;
   }
   renderDevices();
@@ -1321,12 +1330,14 @@ function renderDevices() {
   const rows = devices.filter(d => {
     if (term && !d.name.toLowerCase().includes(term) && !d.group.toLowerCase().includes(term)) return false;
     if (deviceFilter.type === '__none__') return !d.template;
+    if (deviceFilter.type === '__blocked__') return d.severity === 'blocked';
+    if (deviceFilter.type === '__warning__') return d.severity === 'warning';
     if (deviceFilter.type && d.template !== deviceFilter.type) return false;
     return true;
   });
 
   if (!rows.length) {
-    $('#device-table').innerHTML = '<tr><td colspan="6" class="empty">No devices match</td></tr>';
+    $('#device-table').innerHTML = '<tr><td colspan="7" class="empty">No devices match</td></tr>';
     return;
   }
 
@@ -1342,6 +1353,15 @@ function renderDevices() {
     }
     let state = '<span class="pill pill-none">untyped</span>';
     if (d.state) state = `<span class="pill pill-draft">${esc(d.state)}</span>`;
+
+    let health = '<span class="pill pill-none">—</span>';
+    if (d.severity) {
+      const cls = { ok: 'pill-ok', warning: 'pill-warn', blocked: 'pill-blocked' }[d.severity];
+      const label = d.severity === 'ok' ? 'ready'
+        : d.severity === 'warning' ? `${d.warnings} warning${d.warnings === 1 ? '' : 's'}`
+        : `${d.blocked} blocked`;
+      health = `<span class="pill ${cls}">${esc(label)}</span>`;
+    }
 
     const suggestion = (!d.template && d.suggested_name)
       ? `<div class="slot-meta">suggested: ${esc(d.suggested_name)}</div>` : '';
@@ -1359,6 +1379,7 @@ function renderDevices() {
         ${suggestion}
       </td>
       <td>${slots}</td>
+      <td>${health}</td>
       <td>${state}</td>
       <td style="white-space:nowrap">${d.template ? `
         <button class="btn btn-sm" data-config="${esc(d.group)}">Configure</button>
@@ -1760,6 +1781,9 @@ async function openDeviceConfig(group) {
          </label>`
       : '';
 
+    const issues = (s.issues || []).map(i =>
+      `<div class="issue issue-${esc(i.severity)}">${esc(i.message)}</div>`).join('');
+
     return `<tr>
       <td style="width:38%">
         <div class="slot-key">${esc(s.name)}${s.required ? '<span class="slot-req">*</span>' : ''}</div>
@@ -1768,6 +1792,7 @@ async function openDeviceConfig(group) {
       <td>
         <select class="slot-select" data-slot="${esc(s.key)}">${opts}</select>
         ${toggle}
+        ${issues}
       </td>
     </tr>`;
   }).join('');
@@ -1779,6 +1804,9 @@ async function openDeviceConfig(group) {
         <p style="font-size:0.85rem;color:var(--muted);margin-bottom:12px">
           ${esc(detail.template_name)} — choose which point fills each slot.
           Slots marked <span class="slot-req">*</span> are required.
+          ${detail.severity && detail.severity !== 'ok'
+            ? ` This device is <strong>${esc(detail.severity)}</strong>: values below
+                contradict what the template expects.` : ''}
         </p>
         <table class="slot-table">${slotRows}</table>
         <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:18px">

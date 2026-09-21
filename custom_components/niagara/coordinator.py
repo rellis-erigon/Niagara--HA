@@ -74,6 +74,7 @@ class NiagaraPoint:
     group: str = "Ungrouped"
     status: str | None = None
     age: float | None = None
+    precision: int | None = None
 
 
 class NiagaraCoordinator(DataUpdateCoordinator[dict[str, NiagaraPoint]]):
@@ -195,6 +196,7 @@ class NiagaraCoordinator(DataUpdateCoordinator[dict[str, NiagaraPoint]]):
                 group=p.get("group", "Ungrouped"),
                 status=p.get("status"),
                 age=p.get("age"),
+                precision=p.get("precision"),
             )
 
         return {

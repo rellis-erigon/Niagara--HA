@@ -14,6 +14,13 @@ import time
 from pathlib import Path
 
 from obix_client import ObixClient, ObixError
+from validation import (
+    load_observations,
+    monotonic_paths,
+    record_observation,
+    save_observations,
+)
+from device_templates import load_device_types, load_templates
 from point_manager import (
     DEVICE_FOLDERS_FILE,
     POINTS_DIR,
@@ -133,7 +140,9 @@ def main() -> None:
     points_mtime = 0.0
     folders_mtime = 0.0
     discovered_count = 0
-    last_values: dict[str, str] = _load_values_cache()
+    last_values: dict[str, dict] = _load_values_cache()
+    observations = load_observations()
+    observation_paths: set[str] = set()
     last_statuses: dict[str, str] = {}
     using_watch = False
     if last_values:
@@ -161,6 +170,9 @@ def main() -> None:
                 folders_mtime = _get_file_mtime(DEVICE_FOLDERS_FILE)
                 all_points = {pt.path: pt for pt in discovered_points}
                 active_points = filter_enabled(discovered_points, selections)
+                observation_paths = monotonic_paths(
+                    load_templates(), load_device_types(),
+                )
                 logger.info(
                     "Active points: %d of %d (use the web UI to enable/disable)",
                     len(active_points), discovered_count,
@@ -221,6 +233,9 @@ def main() -> None:
             last_statuses.clear()
             if using_watch:
                 using_watch = obix.setup_watch(active_points, poll_interval)
+            observation_paths = monotonic_paths(
+                load_templates(), load_device_types(),
+            )
             logger.info("Reloaded: %d active points", len(active_points))
 
         updated = obix.poll_points(active_points, max_workers=poll_workers)
@@ -249,6 +264,14 @@ def main() -> None:
                     entry["status"] = "fault"
 
         _prune_values_cache(last_values, {pt.path for pt in active_points})
+
+        # A cumulative total cannot be judged from one reading, so track the
+        # running maximum and count decreases for slots declaring monotonic.
+        if observation_paths:
+            for pt in updated:
+                if pt.value is not None and pt.path in observation_paths:
+                    record_observation(observations, pt.path, pt.value, now)
+            save_observations(observations)
 
         logger.debug(
             "Poll: %d changed, %d failed, %d total", changed, failed, len(updated),

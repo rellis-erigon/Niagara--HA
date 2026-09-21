@@ -8,6 +8,7 @@ instead of N individual GETs) and Batch reads for bulk operations.
 """
 
 import logging
+import re
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from typing import Optional
@@ -67,6 +68,14 @@ OBIX_UNIT_MAP = {
     "amps": "A",
     "degrees_celsius": "°C",
     "degrees_fahrenheit": "°F",
+    "minute": "min",
+    "minutes": "min",
+    "hour": "h",
+    "second": "s",
+    "kilovolt_ampere": "kVA",
+    "kilovolt_amperes": "kVA",
+    "volt_ampere": "VA",
+    "kilovolt_ampere_reactive": "kvar",
 }
 
 
@@ -89,6 +98,54 @@ WATCH_VALUE_TAGS = frozenset({
 # If more than this fraction of subscribed points come back rejected, the Watch
 # service is not usable for this station and legacy polling is used instead.
 WATCH_REJECT_THRESHOLD = 0.5
+
+# Niagara reports a point's status inside its display string as a brace
+# group — "22.7 °C {ok}", "0.00 °C {stale}" — and leaves the oBIX status
+# attribute empty. Reading only that attribute made every point look healthy,
+# including 70 hotel rooms frozen at 0.0 °C because their BACnet proxy had
+# stopped updating.
+_DISPLAY_STATUS_RE = re.compile(r"\{([^}]*)\}")
+
+# Ordered worst-first: a point can carry several flags at once.
+_STATUS_PRECEDENCE = (
+    "fault", "down", "disabled", "stale", "overridden", "alarm", "ok",
+)
+
+
+def _status_from_display(display: str) -> Optional[str]:
+    """Extract the worst status flag Niagara put in a display string."""
+    if not display:
+        return None
+    match = _DISPLAY_STATUS_RE.search(display)
+    if not match:
+        return None
+    flags = {f.strip().lower() for f in match.group(1).split(",") if f.strip()}
+    if not flags:
+        return None
+    for candidate in _STATUS_PRECEDENCE:
+        if candidate in flags:
+            return candidate
+    return sorted(flags)[0]
+
+
+# Niagara facets carry the station's own display precision, e.g.
+# "units=u:celsius;°C;(K);+273.15;|precision=i:1". Without it a float32 value
+# reaches Home Assistant as 22.700000762939453.
+_PRECISION_RE = re.compile(r"precision=i:(\d+)")
+
+
+def _precision_from_facets(facets: str) -> Optional[int]:
+    if not facets:
+        return None
+    match = _PRECISION_RE.search(facets)
+    if not match:
+        return None
+    try:
+        precision = int(match.group(1))
+    except ValueError:
+        return None
+    return precision if 0 <= precision <= 6 else None
+
 
 SKIP_POINT_NAMES = frozenset({
     # Station metadata
@@ -132,6 +189,7 @@ class NiagaraPoint:
     point_type: str = "unknown"
     unit: Optional[str] = None
     writable: bool = False
+    precision: Optional[int] = None
     enum_range: list[str] = field(default_factory=list)
 
 
@@ -477,6 +535,12 @@ class ObixClient:
             elif tag in value_tags:
                 children_by_name[name] = (child, tag)
 
+        facets = ""
+        for child in root:
+            if child.get("name") == "facets":
+                facets = child.get("val", "") or ""
+                break
+
         if "out" in children_by_name:
             out_elem, out_tag = children_by_name["out"]
             parent_name = path.rstrip("/").split("/")[-1]
@@ -485,6 +549,7 @@ class ObixClient:
                 if point:
                     point.path = path
                     point.name = parent_name
+                    point.precision = _precision_from_facets(facets)
                     points.append(point)
         else:
             for name, (child, tag) in children_by_name.items():
@@ -522,8 +587,8 @@ class ObixClient:
         }
 
         val = elem.get("val")
-        status = elem.get("status", "ok")
         display = elem.get("display", "")
+        status = _status_from_display(display) or elem.get("status") or "ok"
         raw_unit = elem.get("unit")
         unit = _normalize_unit(raw_unit) if raw_unit else None
         writable = elem.get("writable", "false") == "true"

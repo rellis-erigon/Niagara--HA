@@ -1,0 +1,170 @@
+id: ups_3phase
+name: UPS (3-Phase)
+description: Three-phase uninterruptible power supply — battery, input and output per phase
+icon: mdi:battery-charging
+
+device_match: ["*ups*", "*uninterrupt*"]
+
+slots:
+  - key: battery_percentage
+    name: Battery Charge
+    required: true
+    device_class: battery
+    state_class: measurement
+    units: ["%"]
+    point_types: [numeric, integer]
+    match: ["battery percentage", "*battery*percent*", "*battery*charge*", "*soc*"]
+    validation: {min: 0, max: 100}
+
+  - key: output_power
+    name: Output Power
+    required: true
+    device_class: power
+    state_class: measurement
+    units: [kW, W]
+    point_types: [numeric, integer]
+    match: ["system output power", "*output*power*", "*load*power*"]
+    validation: {min: 0}
+
+  - key: battery_time_remaining
+    name: Battery Time Remaining
+    device_class: duration
+    state_class: measurement
+    units: [min, h, s]
+    point_types: [numeric, integer]
+    match: ["battery time remaining", "*time*remain*", "*autonomy*", "*runtime*"]
+    validation: {min: 0}
+
+  - key: battery_temperature
+    name: Battery Temperature
+    device_class: temperature
+    state_class: measurement
+    units: ["°C", "°F"]
+    point_types: [numeric, integer]
+    match: ["battery temperature", "*battery*temp*"]
+    validation: {min: -20, max: 80}
+
+  - key: system_capacity
+    name: System Capacity
+    device_class: apparent_power
+    state_class: measurement
+    units: [kVA, VA]
+    point_types: [numeric, integer]
+    match: ["system capacity", "*capacity*", "*rating*"]
+    validation: {min: 0}
+
+  - key: efficiency
+    name: Efficiency
+    state_class: measurement
+    units: ["%"]
+    point_types: [numeric, integer]
+    match: ["average system efficiency", "*efficiency*"]
+    validation: {min: 0, max: 100}
+
+  - key: input_frequency
+    name: Input Frequency
+    device_class: frequency
+    state_class: measurement
+    units: [Hz]
+    point_types: [numeric, integer]
+    match: ["system input frequency", "*input*freq*", "*frequency*"]
+    validation: {min: 40, max: 70}
+
+  - key: input_voltage_ab
+    name: Input Voltage A-B
+    device_class: voltage
+    state_class: measurement
+    units: [V, kV]
+    point_types: [numeric, integer]
+    match: ["system input rms a-b", "*input*rms*a-b*", "*input*a-b*"]
+    validation: {min: 0, max: 1000}
+
+  - key: input_voltage_bc
+    name: Input Voltage B-C
+    device_class: voltage
+    state_class: measurement
+    units: [V, kV]
+    point_types: [numeric, integer]
+    match: ["system input rms b-c", "*input*rms*b-c*", "*input*b-c*"]
+    validation: {min: 0, max: 1000}
+
+  - key: input_voltage_ca
+    name: Input Voltage C-A
+    device_class: voltage
+    state_class: measurement
+    units: [V, kV]
+    point_types: [numeric, integer]
+    match: ["system input rms c-a", "*input*rms*c-a*", "*input*c-a*"]
+    validation: {min: 0, max: 1000}
+
+  - key: input_current_a
+    name: Input Current Phase A
+    device_class: current
+    state_class: measurement
+    units: [A, mA]
+    point_types: [numeric, integer]
+    match: ["system input rms current phase a", "*input*current*phase*a*", "*current*a*"]
+    validation: {min: 0}
+
+  - key: input_current_b
+    name: Input Current Phase B
+    device_class: current
+    state_class: measurement
+    units: [A, mA]
+    point_types: [numeric, integer]
+    match: ["system input rms current phase b", "*input*current*phase*b*", "*current*b*"]
+    validation: {min: 0}
+
+  - key: input_current_c
+    name: Input Current Phase C
+    device_class: current
+    state_class: measurement
+    units: [A, mA]
+    point_types: [numeric, integer]
+    match: ["system input rms current phase c", "*input*current*phase*c*", "*current*c*"]
+    validation: {min: 0}
+
+  - key: output_voltage_ab
+    name: Output Voltage A-B
+    device_class: voltage
+    state_class: measurement
+    units: [V, kV]
+    point_types: [numeric, integer]
+    match: ["system output voltage a-b", "*output*voltage*a-b*"]
+    validation: {min: 0, max: 1000}
+
+  - key: output_voltage_bc
+    name: Output Voltage B-C
+    device_class: voltage
+    state_class: measurement
+    units: [V, kV]
+    point_types: [numeric, integer]
+    match: ["system output voltage b-c", "*output*voltage*b-c*"]
+    validation: {min: 0, max: 1000}
+
+  - key: output_voltage_ca
+    name: Output Voltage C-A
+    device_class: voltage
+    state_class: measurement
+    units: [V, kV]
+    point_types: [numeric, integer]
+    match: ["system output voltage c-a", "*output*voltage*c-a*"]
+    validation: {min: 0, max: 1000}
+
+  - key: on_bypass
+    name: On Bypass
+    device_class: problem
+    point_types: [boolean]
+    match: ["ups output on bypass", "*on*bypass*", "*bypass*active*"]
+
+  - key: input_power_problem
+    name: Input Power Problem
+    device_class: problem
+    point_types: [boolean]
+    match: ["system input power problem", "*input*power*problem*", "*input*fault*"]
+
+  - key: bypass_unavailable
+    name: Bypass Unavailable
+    device_class: problem
+    point_types: [boolean]
+    match: ["bypass not available", "*bypass*not*avail*", "*bypass*unavail*"]
