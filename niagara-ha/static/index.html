@@ -1643,6 +1643,8 @@ async function openTemplateList() {
         <div class="slot-meta">${esc(t.id)} · ${t.slots.length} slots${t.builtin ? ' · built-in' : ''}</div>
       </td>
       <td style="text-align:right;white-space:nowrap">
+        <button class="btn btn-sm" data-rebind-tpl="${esc(t.id)}"
+          title="Re-apply this template to every device using it">Re-apply</button>
         <button class="btn btn-sm" data-exp-tpl="${esc(t.id)}">Export</button>
         <button class="btn btn-sm" data-edit-tpl="${esc(t.id)}">${t.builtin ? 'Customize' : 'Edit'}</button>
         ${t.builtin ? '' : `<button class="btn btn-sm" data-del-tpl="${esc(t.id)}">Delete</button>`}
@@ -1677,6 +1679,22 @@ async function openTemplateList() {
   $('#tpl-export-all').addEventListener('click', () => exportTemplates(''));
   document.querySelectorAll('[data-exp-tpl]').forEach(b =>
     b.addEventListener('click', () => exportTemplates(b.dataset.expTpl)));
+  document.querySelectorAll('[data-rebind-tpl]').forEach(b =>
+    b.addEventListener('click', async () => {
+      const id = b.dataset.rebindTpl;
+      if (!confirm(`Re-apply "${id}" to every device using it?\n\n`
+        + 'Slot bindings are recalculated from the template, so any manual '
+        + 'binding on those devices is replaced.')) return;
+      try {
+        const res = await api('/api/devices/rebind', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ template: id }),
+        });
+        toast(`Re-applied to ${res.rebound} device(s); ${res.changed} changed`);
+        closeModal();
+        await loadDevices();
+      } catch (e) { toast('Could not re-apply'); }
+    }));
   document.querySelectorAll('[data-edit-tpl]').forEach(b =>
     b.addEventListener('click', () => openTemplateEditor(b.dataset.editTpl)));
   document.querySelectorAll('[data-del-tpl]').forEach(b =>

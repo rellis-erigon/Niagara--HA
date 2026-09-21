@@ -946,6 +946,56 @@ def add_child_device_folders():
     })
 
 
+@app.route("/api/devices/rebind", methods=["POST"])
+def rebind_devices():
+    """Re-run auto-binding against the current template definition.
+
+    Editing a template does nothing to devices already typed with it: their
+    bindings were resolved when the type was assigned. Without this, adding
+    or changing a slot means retyping every device by hand.
+
+    Manual overrides are replaced, which is why the caller has to ask for it
+    explicitly — either for one device, or for every device of one template.
+    """
+    data = request.get_json() or {}
+    group = (data.get("group") or "").strip()
+    template_id = (data.get("template") or "").strip()
+    if not group and not template_id:
+        return jsonify({"error": "group or template required"}), 400
+
+    templates = load_templates()
+    devices = load_device_types()
+    groups = _points_by_group()
+
+    targets = [group] if group else [
+        g for g, e in devices.items() if e.get("template") == template_id
+    ]
+
+    rebound, changed = 0, 0
+    for target in targets:
+        entry = devices.get(target)
+        if not entry:
+            continue
+        template = templates.get(entry["template"])
+        if template is None:
+            continue
+        points = groups.get(target, [])
+        if not points:
+            continue
+        fresh = {
+            k: val for k, val in
+            bind_template(template, points).items() if val
+        }
+        if fresh != entry.get("bindings"):
+            changed += 1
+        entry["bindings"] = fresh
+        rebound += 1
+
+    if rebound:
+        save_device_types(devices)
+    return jsonify({"ok": True, "rebound": rebound, "changed": changed})
+
+
 @app.route("/api/devices/enable-slots", methods=["POST"])
 def enable_slot_points():
     """Enable exactly the points bound to a device's slots.
