@@ -515,6 +515,47 @@ tr:hover td { background: var(--row-hover); }
   border-color: var(--primary);
 }
 .device-btn.is-device:hover { background: var(--primary-hover); }
+
+/* -- Devices view -------------------------------------------------- */
+.viewnav { display: flex; gap: 4px; margin-bottom: 16px; }
+.viewnav .btn.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+.device-table { width: 100%; border-collapse: collapse; }
+.device-table th {
+  text-align: left; font-size: 0.75rem; text-transform: uppercase;
+  letter-spacing: 0.04em; color: var(--muted); font-weight: 600;
+  padding: 10px 12px; border-bottom: 1px solid var(--border);
+}
+.device-table td { padding: 10px 12px; border-bottom: 1px solid var(--border); }
+.device-table tr:hover td { background: var(--row-hover); }
+.device-name { font-weight: 500; }
+.device-path { font-size: 0.75rem; color: var(--muted); }
+.type-select {
+  padding: 5px 8px; border: 1px solid var(--border); border-radius: 6px;
+  background: var(--card); color: var(--text); font-size: 0.85rem; max-width: 190px;
+}
+.pill {
+  display: inline-block; padding: 2px 9px; border-radius: 999px;
+  font-size: 0.75rem; font-weight: 500;
+}
+.pill-draft { background: var(--tag-bg); color: var(--muted); }
+.pill-ok { background: #dcfce7; color: #166534; }
+.pill-warn { background: #fef3c7; color: #92400e; }
+.pill-none { background: transparent; color: var(--muted); font-style: italic; }
+@media (prefers-color-scheme: dark) {
+  .pill-ok { background: #14532d; color: #86efac; }
+  .pill-warn { background: #713f12; color: #fde68a; }
+}
+.slot-table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+.slot-table td { padding: 7px 4px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+.slot-key { font-size: 0.85rem; }
+.slot-req { color: var(--danger); margin-left: 3px; }
+.slot-meta { font-size: 0.72rem; color: var(--muted); }
+.slot-select {
+  width: 100%; padding: 5px 8px; border: 1px solid var(--border);
+  border-radius: 6px; background: var(--card); color: var(--text); font-size: 0.82rem;
+}
+.modal-wide { max-width: 720px; }
+.empty { padding: 40px; text-align: center; color: var(--muted); }
 </style>
 </head>
 <body>
@@ -524,7 +565,13 @@ tr:hover td { background: var(--row-hover); }
   <div class="stats" id="stats"></div>
 </div>
 
-<div class="layout">
+
+<div class="viewnav">
+  <button class="btn active" data-view="points">Points</button>
+  <button class="btn" data-view="devices">Devices</button>
+</div>
+
+<div class="layout" id="view-points">
   <div class="sidebar">
     <div class="sidebar-header">
       <span>Browse</span>
@@ -575,6 +622,36 @@ tr:hover td { background: var(--row-hover); }
       </table>
     </div>
     <div class="pagination" id="pagination"></div>
+  </div>
+</div>
+
+
+<div id="view-devices" style="display:none">
+  <div class="toolbar">
+    <input type="text" class="search-box" id="device-search" placeholder="Search devices...">
+    <select class="category-select" id="device-type-filter">
+      <option value="">All types</option>
+      <option value="__none__">Untyped only</option>
+    </select>
+    <button class="btn btn-sm btn-primary" id="btn-autotype"
+            title="Assign the suggested type to every device that has none">Auto-type All</button>
+  </div>
+  <div class="table-wrap">
+    <table class="device-table">
+      <thead>
+        <tr>
+          <th>Device</th>
+          <th style="width:80px">Points</th>
+          <th style="width:210px">Device Type</th>
+          <th style="width:110px">Slots</th>
+          <th style="width:100px">State</th>
+          <th style="width:110px"></th>
+        </tr>
+      </thead>
+      <tbody id="device-table">
+        <tr><td colspan="6" class="loading">Loading...</td></tr>
+      </tbody>
+    </table>
   </div>
 </div>
 
@@ -1172,6 +1249,241 @@ async function loadDeviceFolders() {
     deviceFolders = [];
   }
 }
+
+
+/* -- Devices view ---------------------------------------------------- */
+
+let templates = [];
+let devices = [];
+let deviceFilter = { search: '', type: '' };
+
+document.querySelectorAll('.viewnav .btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.viewnav .btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    const devicesView = btn.dataset.view === 'devices';
+    $('#view-points').style.display = devicesView ? 'none' : '';
+    $('#view-devices').style.display = devicesView ? '' : 'none';
+    if (devicesView && !devices.length) loadDevices();
+  });
+});
+
+async function loadTemplates() {
+  if (templates.length) return templates;
+  try {
+    templates = (await api('/api/templates')).templates || [];
+  } catch (e) {
+    templates = [];
+  }
+  const filter = $('#device-type-filter');
+  templates.forEach(t => {
+    const opt = document.createElement('option');
+    opt.value = t.id;
+    opt.textContent = t.name;
+    filter.appendChild(opt);
+  });
+  return templates;
+}
+
+async function loadDevices() {
+  await loadTemplates();
+  $('#device-table').innerHTML = '<tr><td colspan="6" class="loading">Loading...</td></tr>';
+  try {
+    devices = (await api('/api/devices')).devices || [];
+  } catch (e) {
+    $('#device-table').innerHTML = '<tr><td colspan="6" class="empty">Could not load devices</td></tr>';
+    return;
+  }
+  renderDevices();
+}
+
+function templateOptions(selected) {
+  const none = `<option value=""${selected ? '' : ' selected'}>— none —</option>`;
+  return none + templates.map(t =>
+    `<option value="${t.id}"${t.id === selected ? ' selected' : ''}>${esc(t.name)}</option>`
+  ).join('');
+}
+
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g,
+    c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+function renderDevices() {
+  const term = deviceFilter.search.toLowerCase();
+  const rows = devices.filter(d => {
+    if (term && !d.name.toLowerCase().includes(term) && !d.group.toLowerCase().includes(term)) return false;
+    if (deviceFilter.type === '__none__') return !d.template;
+    if (deviceFilter.type && d.template !== deviceFilter.type) return false;
+    return true;
+  });
+
+  if (!rows.length) {
+    $('#device-table').innerHTML = '<tr><td colspan="6" class="empty">No devices match</td></tr>';
+    return;
+  }
+
+  $('#device-table').innerHTML = rows.map(d => {
+    let slots = '<span class="pill pill-none">—</span>';
+    if (d.template) {
+      const complete = d.required_bound >= d.required_total;
+      slots = `<span class="pill ${complete ? 'pill-ok' : 'pill-warn'}">`
+            + `${d.required_bound}/${d.required_total} required</span>`;
+    }
+    let state = '<span class="pill pill-none">untyped</span>';
+    if (d.state) state = `<span class="pill pill-draft">${esc(d.state)}</span>`;
+
+    const suggestion = (!d.template && d.suggested_name)
+      ? `<div class="slot-meta">suggested: ${esc(d.suggested_name)}</div>` : '';
+
+    return `<tr data-group="${esc(d.group)}">
+      <td>
+        <div class="device-name">${esc(d.name)}</div>
+        <div class="device-path">${esc(d.group)}</div>
+      </td>
+      <td>${d.point_count}</td>
+      <td>
+        <select class="type-select" data-group="${esc(d.group)}">${templateOptions(d.template)}</select>
+        ${suggestion}
+      </td>
+      <td>${slots}</td>
+      <td>${state}</td>
+      <td>${d.template
+        ? `<button class="btn btn-sm" data-config="${esc(d.group)}">Configure</button>`
+        : ''}</td>
+    </tr>`;
+  }).join('');
+
+  document.querySelectorAll('.type-select').forEach(sel => {
+    sel.addEventListener('change', () => assignType(sel.dataset.group, sel.value));
+  });
+  document.querySelectorAll('[data-config]').forEach(btn => {
+    btn.addEventListener('click', () => openDeviceConfig(btn.dataset.config));
+  });
+}
+
+async function assignType(group, templateId) {
+  try {
+    if (!templateId) {
+      await api('/api/devices/unassign', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ group }),
+      });
+      toast('Device type cleared');
+    } else {
+      const res = await api('/api/devices/assign', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ group, template: templateId }),
+      });
+      toast(res.missing_required && res.missing_required.length
+        ? `Assigned — ${res.missing_required.length} required slot(s) unbound`
+        : 'Device type assigned');
+    }
+    await loadDevices();
+  } catch (e) {
+    toast('Could not change device type');
+  }
+}
+
+$('#btn-autotype').addEventListener('click', async e => {
+  const btn = e.currentTarget;
+  btn.disabled = true;
+  btn.textContent = 'Working...';
+  try {
+    const res = await api('/api/devices/autotype', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    toast(`Typed ${res.assigned} device(s), ${res.skipped} left untyped`);
+    await loadDevices();
+  } catch (err) {
+    toast('Auto-typing failed');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Auto-type All';
+  }
+});
+
+async function openDeviceConfig(group) {
+  let detail;
+  try {
+    detail = await api('/api/devices/detail?group=' + encodeURIComponent(group));
+  } catch (e) {
+    toast('Could not load device');
+    return;
+  }
+
+  const slotRows = detail.slots.map(s => {
+    const opts = ['<option value="">— unbound —</option>'].concat(
+      s.candidates.map(c =>
+        `<option value="${esc(c.path)}"${c.path === s.bound_path ? ' selected' : ''}>`
+        + `${esc(c.name)}${c.unit ? ' [' + esc(c.unit) + ']' : ''}</option>`)
+    );
+    // A bound point that matched no pattern still has to appear, or opening
+    // the dialog would silently drop a manual override.
+    if (s.bound_path && !s.candidates.some(c => c.path === s.bound_path)) {
+      opts.splice(1, 0,
+        `<option value="${esc(s.bound_path)}" selected>${esc(s.bound_name)} (manual)</option>`);
+    }
+    const meta = [s.device_class, (s.units || []).join(' / ')].filter(Boolean).join(' · ');
+    return `<tr>
+      <td style="width:40%">
+        <div class="slot-key">${esc(s.name)}${s.required ? '<span class="slot-req">*</span>' : ''}</div>
+        <div class="slot-meta">${esc(meta)}</div>
+      </td>
+      <td><select class="slot-select" data-slot="${esc(s.key)}">${opts.join('')}</select></td>
+    </tr>`;
+  }).join('');
+
+  $('#modal-root').innerHTML = `
+    <div class="modal-backdrop" onclick="if(event.target===this)closeModal()">
+      <div class="modal modal-wide">
+        <h2>${esc(detail.group.split('/').pop())}</h2>
+        <p style="font-size:0.85rem;color:var(--muted);margin-bottom:12px">
+          ${esc(detail.template_name)} — choose which point fills each slot.
+          Slots marked <span class="slot-req">*</span> are required.
+        </p>
+        <table class="slot-table">${slotRows}</table>
+        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:18px">
+          <button class="btn" onclick="closeModal()">Cancel</button>
+          <button class="btn btn-primary" id="slots-save">Save Bindings</button>
+        </div>
+      </div>
+    </div>`;
+
+  $('#slots-save').addEventListener('click', async () => {
+    const bindings = {};
+    document.querySelectorAll('.slot-select').forEach(sel => {
+      bindings[sel.dataset.slot] = sel.value || null;
+    });
+    try {
+      const res = await api('/api/devices/assign', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ group, template: detail.template, bindings }),
+      });
+      closeModal();
+      toast(res.missing_required && res.missing_required.length
+        ? `Saved — ${res.missing_required.length} required slot(s) still unbound`
+        : 'Bindings saved');
+      await loadDevices();
+    } catch (e) {
+      toast('Could not save bindings');
+    }
+  });
+}
+
+$('#device-search').addEventListener('input', e => {
+  deviceFilter.search = e.target.value;
+  renderDevices();
+});
+$('#device-type-filter').addEventListener('change', e => {
+  deviceFilter.type = e.target.value;
+  renderDevices();
+});
 
 loadDeviceFolders().then(() => {
   loadStats();
