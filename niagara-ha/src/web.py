@@ -595,11 +595,32 @@ def list_templates():
 
 
 def _points_by_group() -> dict[str, list[dict]]:
+    """All points per device folder, enabled or not.
+
+    Binding deliberately considers disabled points too. A folder selected as
+    a device with nothing enabled yet is the normal starting state — it must
+    still be listed and typable, and assigning a type is what tells us which
+    of its points are worth enabling.
+    """
     groups: dict[str, list[dict]] = {}
     for entry in _load_selections().values():
-        if entry.get("enabled", False):
-            groups.setdefault(entry.get("group", "Ungrouped"), []).append(entry)
+        groups.setdefault(entry.get("group", "Ungrouped"), []).append(entry)
     return groups
+
+
+def _device_groups() -> dict[str, list[dict]]:
+    """Folders that should appear as devices.
+
+    A folder the user marked as a device in the tree, or any folder that
+    already has points enabled. Listing only the latter hid every selected
+    folder whose points had not been enabled yet.
+    """
+    groups = _points_by_group()
+    selected = set(load_device_folders())
+    return {
+        group: points for group, points in groups.items()
+        if group in selected or any(p.get("enabled") for p in points)
+    }
 
 
 @app.route("/api/devices")
@@ -607,26 +628,34 @@ def list_devices():
     """Every device folder, with its assigned type and how full it is."""
     templates = load_templates()
     assigned = load_device_types()
-    groups = _points_by_group()
+    groups = _device_groups()
 
     devices = []
     for group, points in sorted(groups.items()):
         entry = assigned.get(group)
         template = templates.get(entry["template"]) if entry else None
+        enabled_paths = {p.get("path") for p in points if p.get("enabled")}
         record = {
             "group": group,
             "name": decode_niagara_name(group.rstrip("/").split("/")[-1]),
             "point_count": len(points),
+            "enabled_count": len(enabled_paths),
             "template": entry["template"] if entry else None,
             "template_name": template.name if template else None,
             "state": entry["state"] if entry else None,
             "bound": 0,
+            "bound_disabled": 0,
             "required_total": 0,
             "required_bound": 0,
         }
         if template:
             bindings = entry.get("bindings", {})
-            record["bound"] = sum(1 for v in bindings.values() if v)
+            bound_paths = [v for v in bindings.values() if v]
+            record["bound"] = len(bound_paths)
+            # Bound but not enabled means the slot will produce no entity.
+            record["bound_disabled"] = sum(
+                1 for p in bound_paths if p not in enabled_paths
+            )
             required = template.required_slots
             record["required_total"] = len(required)
             record["required_bound"] = sum(
@@ -653,7 +682,7 @@ def device_detail():
     templates = load_templates()
     points = _points_by_group().get(group, [])
     if not points:
-        return jsonify({"error": "no enabled points in this group"}), 404
+        return jsonify({"error": "no points in this group"}), 404
 
     assigned = load_device_types().get(group)
     template_id = request.args.get("template") or (
@@ -730,7 +759,7 @@ def assign_device_type():
 
     points = _points_by_group().get(group, [])
     if not points:
-        return jsonify({"error": "no enabled points in this group"}), 404
+        return jsonify({"error": "no points in this group"}), 404
 
     bindings = dict(bind_template(template, points))
     overrides = data.get("bindings") or {}
@@ -763,6 +792,47 @@ def assign_device_type():
     })
 
 
+@app.route("/api/devices/enable-slots", methods=["POST"])
+def enable_slot_points():
+    """Enable exactly the points bound to a device's slots.
+
+    A folder marked as a device usually starts with nothing enabled. Rather
+    than making the user hunt through 20,000 points, assigning a type says
+    precisely which handful matter — so this enables those and nothing else.
+    """
+    data = request.get_json() or {}
+    group = (data.get("group") or "").strip()
+    if not group:
+        return jsonify({"error": "group required"}), 400
+
+    assigned = load_device_types().get(group)
+    if not assigned:
+        return jsonify({"error": "device has no type assigned"}), 404
+
+    wanted = {p for p in assigned.get("bindings", {}).values() if p}
+    if not wanted:
+        return jsonify({"ok": True, "enabled": 0, "already": 0})
+
+    selections = load_point_selections()
+    enabled = already = 0
+    for path in wanted:
+        entry = selections.get(path)
+        if entry is None:
+            continue
+        if entry.get("enabled", False):
+            already += 1
+        else:
+            entry["enabled"] = True
+            enabled += 1
+
+    if enabled:
+        _write_selections(selections)
+
+    return jsonify({
+        "ok": True, "group": group, "enabled": enabled, "already": already,
+    })
+
+
 @app.route("/api/devices/unassign", methods=["POST"])
 def unassign_device_type():
     data = request.get_json() or {}
@@ -787,7 +857,7 @@ def autotype_devices():
     assigned = 0
     skipped = []
 
-    for group, points in sorted(_points_by_group().items()):
+    for group, points in sorted(_device_groups().items()):
         if group in devices:
             continue
         template_id, _ = suggest_template(templates, points, group)

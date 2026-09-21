@@ -641,7 +641,7 @@ tr:hover td { background: var(--row-hover); }
       <thead>
         <tr>
           <th>Device</th>
-          <th style="width:80px">Points</th>
+          <th style="width:90px">Enabled</th>
           <th style="width:210px">Device Type</th>
           <th style="width:110px">Slots</th>
           <th style="width:100px">State</th>
@@ -1329,6 +1329,9 @@ function renderDevices() {
       const complete = d.required_bound >= d.required_total;
       slots = `<span class="pill ${complete ? 'pill-ok' : 'pill-warn'}">`
             + `${d.required_bound}/${d.required_total} required</span>`;
+      if (d.bound_disabled) {
+        slots += `<div class="slot-meta">${d.bound_disabled} bound point(s) disabled</div>`;
+      }
     }
     let state = '<span class="pill pill-none">untyped</span>';
     if (d.state) state = `<span class="pill pill-draft">${esc(d.state)}</span>`;
@@ -1341,16 +1344,20 @@ function renderDevices() {
         <div class="device-name">${esc(d.name)}</div>
         <div class="device-path">${esc(d.group)}</div>
       </td>
-      <td>${d.point_count}</td>
+      <td>
+        <span class="${d.enabled_count ? '' : 'slot-meta'}">${d.enabled_count}/${d.point_count}</span>
+      </td>
       <td>
         <select class="type-select" data-group="${esc(d.group)}">${templateOptions(d.template)}</select>
         ${suggestion}
       </td>
       <td>${slots}</td>
       <td>${state}</td>
-      <td>${d.template
-        ? `<button class="btn btn-sm" data-config="${esc(d.group)}">Configure</button>`
-        : ''}</td>
+      <td style="white-space:nowrap">${d.template ? `
+        <button class="btn btn-sm" data-config="${esc(d.group)}">Configure</button>
+        ${d.bound_disabled ? `<button class="btn btn-sm btn-primary" data-enable="${esc(d.group)}"
+           title="Enable the ${d.bound_disabled} bound point(s) not yet enabled">Enable ${d.bound_disabled}</button>` : ''}
+      ` : ''}</td>
     </tr>`;
   }).join('');
 
@@ -1359,6 +1366,9 @@ function renderDevices() {
   });
   document.querySelectorAll('[data-config]').forEach(btn => {
     btn.addEventListener('click', () => openDeviceConfig(btn.dataset.config));
+  });
+  document.querySelectorAll('[data-enable]').forEach(btn => {
+    btn.addEventListener('click', () => enableSlotPoints(btn.dataset.enable));
   });
 }
 
@@ -1406,6 +1416,21 @@ $('#btn-autotype').addEventListener('click', async e => {
     btn.textContent = 'Auto-type All';
   }
 });
+
+async function enableSlotPoints(group) {
+  try {
+    const res = await api('/api/devices/enable-slots', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ group }),
+    });
+    toast(`Enabled ${res.enabled} point(s) for this device`);
+    await loadDevices();
+    loadStats();
+  } catch (e) {
+    toast('Could not enable slot points');
+  }
+}
 
 async function openDeviceConfig(group) {
   let detail;
