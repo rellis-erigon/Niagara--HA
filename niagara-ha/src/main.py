@@ -177,10 +177,15 @@ def main() -> None:
 
                 using_watch = obix.setup_watch(active_points, poll_interval)
                 if using_watch:
+                    captured = 0
                     for pt in active_points:
                         if pt.value is not None:
                             last_values[pt.path] = str(pt.value)
-                    logger.info("Watch mode: initial values captured for %d points", len(last_values))
+                            captured += 1
+                    logger.info(
+                        "Watch mode: initial values captured for %d of %d active points",
+                        captured, len(active_points),
+                    )
                 else:
                     logger.info("Legacy polling mode: %d workers", poll_workers)
             else:

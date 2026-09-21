@@ -79,6 +79,17 @@ def _normalize_unit(raw: str) -> str | None:
     return OBIX_UNIT_MAP.get(unit_name, OBIX_UNIT_MAP.get(key, unit_name))
 
 
+# oBIX value-object tags. Anything else in a Watch values list (notably <err>)
+# is not a reading and must not be counted as one.
+WATCH_VALUE_TAGS = frozenset({
+    "real", "int", "bool", "str", "enum",
+    "abstime", "reltime", "date", "time", "uri",
+})
+
+# If more than this fraction of subscribed points come back rejected, the Watch
+# service is not usable for this station and legacy polling is used instead.
+WATCH_REJECT_THRESHOLD = 0.5
+
 SKIP_POINT_NAMES = frozenset({
     # Station metadata
     "stationName", "hostName", "hostId",
@@ -153,6 +164,7 @@ class ObixClient:
         self._has_watch_service = False
         self._has_batch_service = False
         self._consecutive_full_failures = 0
+        self._watch_rejected = 0
 
     @property
     def connected(self) -> bool:
@@ -339,22 +351,37 @@ class ObixClient:
         self._watch_points.clear()
 
     def _parse_watch_element(self, elem: ET.Element) -> Optional[dict]:
+        """Parse one element of a Watch values list.
+
+        Niagara returns an <err> element for every URI its Watch service
+        cannot resolve, mixed into the same list as real values. Those carry
+        no val attribute, so they must be rejected here — counting them as
+        values makes a completely failed Watch look like a working one.
+
+        The href Niagara returns matches the path we subscribed with, so it
+        is used as the key unchanged.
+        """
         tag = elem.tag.replace(f"{{{OBIX_NS}}}", "")
         href = elem.get("href", "")
         if not href:
             return None
 
-        if href.startswith("/obix"):
-            path = href
-        elif href.startswith("/"):
-            path = href
-        else:
-            path = href
+        if tag == "err":
+            self._watch_rejected += 1
+            logger.debug(
+                "Watch rejected %s: %s",
+                href, elem.get("is") or elem.get("display", "unknown error"),
+            )
+            return None
+
+        if tag not in WATCH_VALUE_TAGS:
+            return None
 
         val = elem.get("val")
-        status = elem.get("status", "ok")
+        if val is None:
+            return None
 
-        return {"path": path, "value": val, "status": status}
+        return {"path": href, "value": val, "status": elem.get("status", "ok")}
 
     # -- Batch reads ---------------------------------------------------
 
@@ -590,10 +617,23 @@ class ObixClient:
             return False
 
         paths = [pt.path for pt in points]
+        self._watch_rejected = 0
         initial = self._watch_add(paths)
+        rejected = self._watch_rejected
 
-        if not initial and paths:
-            logger.warning("Watch.add returned no initial values — Watch may not be working")
+        if paths and rejected:
+            logger.warning(
+                "Watch rejected %d of %d points (station returned BadUriErr or "
+                "similar) — %d usable values",
+                rejected, len(paths), len(initial),
+            )
+
+        if paths and (not initial or rejected >= len(paths) * WATCH_REJECT_THRESHOLD):
+            logger.warning(
+                "Watch unusable for this station (%d/%d rejected) — "
+                "falling back to legacy polling",
+                rejected, len(paths),
+            )
             self._watch_delete()
             return False
 
