@@ -38,8 +38,19 @@ slots:
     state_class: measurement
     units: ["°C", "°F"]
     point_types: [numeric, integer]
-    match: ["*tempadjust*", "*setpoint*", "*stpt*"]
+    match: ["*setpoint*", "*stpt*", "*set*pt*"]
     validation: {min: 5, max: 40}
+
+  # TempAdjust is an offset from the room's base setpoint, not an absolute
+  # temperature — 0 is its normal resting value, so it needs its own range.
+  - key: temp_adjust
+    name: Setpoint Adjust
+    device_class: temperature
+    state_class: measurement
+    units: ["°C", "°F"]
+    point_types: [numeric, integer]
+    match: ["*tempadjust*", "*temp*adjust*", "*adjust*"]
+    validation: {min: -10, max: 10}
 
   - key: fan_status
     name: Fan Status
@@ -61,6 +72,8 @@ card:
       name: Room Temperature
     - entity: "{{slot.setpoint}}"
       name: Setpoint
+    - entity: "{{slot.temp_adjust}}"
+      name: Setpoint Adjust
     - entity: "{{slot.mode}}"
       name: Mode
     - entity: "{{slot.fan_status}}"

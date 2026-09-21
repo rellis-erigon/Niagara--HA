@@ -189,7 +189,13 @@ def validate_slot(
             WARNING, f"Value {raw!r} is outside the point's declared range",
         ))
 
-    return worst([i["severity"] for i in issues]), issues
+    severity = worst([i["severity"] for i in issues])
+    if severity == BLOCKED and not slot.required:
+        # Losing a whole meter because an optional frequency point reads 0
+        # is worse than publishing it with that one reading flagged. Only a
+        # required slot can block a device.
+        severity = WARNING
+    return severity, issues
 
 
 def validate_device(

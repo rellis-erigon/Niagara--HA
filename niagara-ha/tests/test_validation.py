@@ -45,7 +45,7 @@ def test_ok_value_passes():
 
 def test_out_of_range_is_blocked():
     severity, issues = v.validate_slot(
-        slot(units=["°C"], validation={"min": 5, "max": 40}),
+        slot(required=True, units=["°C"], validation={"min": 5, "max": 40}),
         point(), value("847.0"), None, NOW)
     assert severity == v.BLOCKED
     assert "above" in issues[0]["message"]
@@ -54,7 +54,7 @@ def test_out_of_range_is_blocked():
 def test_below_minimum_is_blocked():
     """A hotel room at 0.0 °C, the case this exists for."""
     severity, _ = v.validate_slot(
-        slot(units=["°C"], validation={"min": 5, "max": 40}),
+        slot(required=True, units=["°C"], validation={"min": 5, "max": 40}),
         point(), value("0.0"), None, NOW)
     assert severity == v.BLOCKED
 
@@ -92,7 +92,7 @@ def test_no_value_blocks_a_required_slot():
 
 def test_wrong_unit_is_blocked():
     severity, issues = v.validate_slot(
-        slot(units=["kWh"]), point(unit="°C"), value("5"), None, NOW)
+        slot(required=True, units=["kWh"]), point(unit="°C"), value("5"), None, NOW)
     assert severity == v.BLOCKED
     assert "not one this slot accepts" in issues[0]["message"]
 
@@ -106,7 +106,8 @@ def test_missing_unit_only_warns():
 
 def test_non_numeric_value_is_blocked():
     severity, _ = v.validate_slot(
-        slot(units=["°C"], point_types=["numeric"], validation={"min": 0}),
+        slot(required=True, units=["°C"], point_types=["numeric"],
+             validation={"min": 0}),
         point(), value("banana"), None, NOW)
     assert severity == v.BLOCKED
 
@@ -250,3 +251,23 @@ def test_a_device_with_only_optional_slots_unbound_is_publishable():
         {"/p/": value("22.0")}, {}, NOW)
     assert report["publishable"] is True
     assert report["severity"] == v.OK
+
+
+def test_an_optional_slot_never_blocks():
+    """Losing a whole meter over an optional frequency reading 0 is worse
+    than publishing it with that one value flagged."""
+    severity, issues = v.validate_slot(
+        slot(required=False, units=["Hz"], validation={"min": 40, "max": 70}),
+        point(unit="Hz"), value("0"), None, NOW)
+
+    assert severity == v.WARNING
+    # The issue itself is still reported at full severity, so the UI can
+    # show why the reading is not to be trusted.
+    assert any(i["severity"] == v.BLOCKED for i in issues)
+
+
+def test_a_required_slot_still_blocks():
+    severity, _ = v.validate_slot(
+        slot(required=True, units=["Hz"], validation={"min": 40, "max": 70}),
+        point(unit="Hz"), value("0"), None, NOW)
+    assert severity == v.BLOCKED
