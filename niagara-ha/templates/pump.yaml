@@ -11,7 +11,7 @@ slots:
     required: true
     device_class: running
     point_types: [boolean]
-    match: ["*run*status*", "*run*", "*on*off*", "*enable*"]
+    match: ["*run*status*", "*run*", "sts", "*_sts", "*on*off*", "*enable*"]
 
   - key: fault
     name: Fault
@@ -24,7 +24,7 @@ slots:
     state_class: measurement
     units: ["%", Hz]
     point_types: [numeric, integer]
-    match: ["*speed*", "*inverter*output*", "*vfd*", "*freq*"]
+    match: ["*speed*", "*spd*", "*inverter*output*", "*vfd*", "*freq*"]
     validation: {min: 0, max: 100}
 
   - key: pressure

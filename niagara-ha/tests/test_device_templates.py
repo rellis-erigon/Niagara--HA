@@ -204,3 +204,26 @@ def test_empty_bindings_are_not_stored(types_file):
         "template": "pump", "bindings": {"run_status": None}, "state": "draft",
     }})
     assert dt.load_device_types()["Site/DB1"]["bindings"] == {}
+
+
+# Carpark exhaust drives abbreviate hard: Sts for status, Spd for speed.
+DRIVE = [
+    point("Alarm", point_type="boolean"),
+    point("Drive1Spd"),
+    point("Name", point_type="string"),
+    point("Sts", point_type="boolean"),
+]
+
+
+def test_abbreviated_drive_points_bind(templates):
+    assert dt.suggest_template(templates, DRIVE, "Site/HVAC/Carpark/Drive1")[0] == "fan"
+    bindings = dt.bind_template(templates["fan"], DRIVE)
+    assert bindings["run_status"].endswith("/Sts/")
+    assert bindings["speed"].endswith("/Drive1Spd/")
+    assert bindings["fault"].endswith("/Alarm/")
+
+
+def test_sts_pattern_does_not_capture_status_points(templates):
+    """"sts" must not match "Status"; the FCU relies on that distinction."""
+    bindings = dt.bind_template(templates["fcu"], FCU)
+    assert bindings["fan_status"].endswith("/IndoorFanStatus/")
