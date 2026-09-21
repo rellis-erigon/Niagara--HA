@@ -542,6 +542,8 @@ tr:hover td { background: var(--row-hover); }
 .pill-warn { background: #fef3c7; color: #92400e; }
 .pill-none { background: transparent; color: var(--muted); font-style: italic; }
 .pill-blocked { background: #fee2e2; color: #991b1b; }
+.pill-published { background: #dbeafe; color: #1e40af; }
+@media (prefers-color-scheme: dark) { .pill-published { background: #1e3a8a; color: #bfdbfe; } }
 @media (prefers-color-scheme: dark) { .pill-blocked { background: #7f1d1d; color: #fecaca; } }
 .issue { font-size: 0.72rem; margin-top: 3px; }
 .issue-blocked { color: var(--danger); }
@@ -640,12 +642,16 @@ tr:hover td { background: var(--row-hover); }
       <option value="__none__">Untyped only</option>
       <option value="__blocked__">Blocked only</option>
       <option value="__warning__">Warnings only</option>
+      <option value="__draft__">Draft only</option>
+      <option value="__published__">Published only</option>
     </select>
     <button class="btn btn-sm" id="btn-add-devices"
             title="Mark every folder under a branch as its own device">Add Devices</button>
     <button class="btn btn-sm btn-primary" id="btn-autotype"
             title="Assign the suggested type to every device that has none">Auto-type All</button>
     <button class="btn btn-sm" id="btn-templates" title="Create and customize device templates">Templates</button>
+    <button class="btn btn-sm btn-primary" id="btn-publish-all"
+            title="Publish every typed device that passes validation">Publish All</button>
     <button class="btn btn-sm" id="btn-enable-all"
             title="Enable the bound points of every typed device">Enable All Slots</button>
   </div>
@@ -1332,6 +1338,8 @@ function renderDevices() {
     if (deviceFilter.type === '__none__') return !d.template;
     if (deviceFilter.type === '__blocked__') return d.severity === 'blocked';
     if (deviceFilter.type === '__warning__') return d.severity === 'warning';
+    if (deviceFilter.type === '__draft__') return d.template && d.state !== 'published';
+    if (deviceFilter.type === '__published__') return d.state === 'published';
     if (deviceFilter.type && d.template !== deviceFilter.type) return false;
     return true;
   });
@@ -1352,7 +1360,10 @@ function renderDevices() {
       }
     }
     let state = '<span class="pill pill-none">untyped</span>';
-    if (d.state) state = `<span class="pill pill-draft">${esc(d.state)}</span>`;
+    if (d.state) {
+      const cls = d.state === 'published' ? 'pill-published' : 'pill-draft';
+      state = `<span class="pill ${cls}">${esc(d.state)}</span>`;
+    }
 
     let health = '<span class="pill pill-none">—</span>';
     if (d.severity) {
@@ -1386,6 +1397,10 @@ function renderDevices() {
         ${d.bound_disabled ? `<button class="btn btn-sm btn-primary" data-enable="${esc(d.group)}"
            title="Enable the ${d.bound_disabled} bound point(s) not yet enabled">Enable ${d.bound_disabled}</button>` : ''}
       ` : ''}
+      ${d.template ? `<button class="btn btn-sm ${d.state === 'published' ? '' : 'btn-primary'}"
+        data-publish="${esc(d.group)}" data-pub="${d.state === 'published' ? '0' : '1'}"
+        ${d.state !== 'published' && d.severity === 'blocked' ? 'disabled title="Blocked — fix the issues first"' : ''}
+        >${d.state === 'published' ? 'Unpublish' : 'Publish'}</button>` : ''}
       ${d.template ? `<button class="btn btn-sm" data-card="${esc(d.group)}"
         title="Show the Lovelace card for this device">Card</button>` : ''}
       <button class="btn btn-sm" data-points="${esc(d.group)}"
@@ -1404,6 +1419,10 @@ function renderDevices() {
   });
   document.querySelectorAll('[data-enable]').forEach(btn => {
     btn.addEventListener('click', () => enableSlotPoints(btn.dataset.enable));
+  });
+  document.querySelectorAll('[data-publish]').forEach(btn => {
+    btn.addEventListener('click', () =>
+      publishDevice(btn.dataset.publish, btn.dataset.pub === '1'));
   });
   document.querySelectorAll('[data-card]').forEach(btn => {
     btn.addEventListener('click', () => showDeviceCard(btn.dataset.card));
@@ -1553,6 +1572,44 @@ $('#btn-add-devices').addEventListener('click', async () => {
   });
 });
 
+
+
+async function publishDevice(group, publish) {
+  try {
+    const res = await fetch(BASE + '/api/devices/publish', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ group, publish }),
+    });
+    const body = await res.json();
+    if (!res.ok) {
+      toast(body.error || 'Could not change publish state');
+      if (body.issues && body.issues.length) alert('Blocked by:\n• ' + body.issues.join('\n• '));
+      return;
+    }
+    toast(publish ? 'Device published' : 'Device unpublished');
+    await loadDevices();
+  } catch (e) {
+    toast('Could not change publish state');
+  }
+}
+
+$('#btn-publish-all').addEventListener('click', async e => {
+  const btn = e.currentTarget;
+  btn.disabled = true; btn.textContent = 'Working...';
+  try {
+    const res = await api('/api/devices/publish-all', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    toast(`Published ${res.published} device(s)`
+      + (res.blocked ? `; ${res.blocked} blocked` : ''));
+    await loadDevices();
+  } catch (err) {
+    toast('Could not publish');
+  } finally {
+    btn.disabled = false; btn.textContent = 'Publish All';
+  }
+});
 
 async function setDevicePoints(group, enabled) {
   try {

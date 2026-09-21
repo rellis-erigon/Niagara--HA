@@ -27,6 +27,9 @@ NAME_PATTERNS_BINARY = [
     (re.compile(r"motion|\bpir\b", re.I), BinarySensorDeviceClass.MOTION),
 ]
 
+# Templates name classes as plain strings; map them to the enums once.
+_DEVICE_CLASS_BY_NAME = {cls.value: cls for cls in BinarySensorDeviceClass}
+
 # Niagara reports booleans in several shapes depending on the driver.
 TRUE_VALUES = frozenset({"true", "1", "on", "active", "enabled", "yes", "open"})
 FALSE_VALUES = frozenset({"false", "0", "off", "inactive", "disabled", "no", "closed"})
@@ -57,6 +60,13 @@ class NiagaraBinarySensor(NiagaraEntity, BinarySensorEntity):
     def __init__(self, coordinator: NiagaraCoordinator, point: NiagaraPoint) -> None:
         super().__init__(coordinator, point)
         self._warned_unparseable = False
+
+        if point.slot_device_class:
+            declared = _DEVICE_CLASS_BY_NAME.get(point.slot_device_class.lower())
+            if declared is not None:
+                self._attr_device_class = declared
+                return
+
         for pattern, dc in NAME_PATTERNS_BINARY:
             if pattern.search(point.name):
                 self._attr_device_class = dc

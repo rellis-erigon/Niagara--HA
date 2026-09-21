@@ -10,6 +10,7 @@ from flask import Flask, jsonify, request, send_from_directory
 
 from device_templates import (
     STATE_DRAFT,
+    STATE_PUBLISHED,
     TemplateError,
     export_templates,
     import_templates,
@@ -535,6 +536,36 @@ def integration_points():
     selections = _load_selections()
     values = _load_values()
     device_folders = load_device_folders()
+    strict = bool(_addon_options().get("strict_publishing", False))
+
+    # A published device tells us what each of its points means, so the
+    # integration can name an entity "Fan" instead of "IndoorFanStatus" and
+    # take its device class from the template rather than guessing.
+    templates = load_templates()
+    slot_meta: dict[str, dict] = {}
+    published_paths: set[str] = set()
+    typed_paths: set[str] = set()
+    for group, assigned in load_device_types().items():
+        template = templates.get(assigned.get("template"))
+        if template is None:
+            continue
+        bindings = assigned.get("bindings", {})
+        is_published = assigned.get("state") == STATE_PUBLISHED
+        for slot in template.slots:
+            path = bindings.get(slot.key)
+            if not path:
+                continue
+            typed_paths.add(path)
+            if not is_published:
+                continue
+            published_paths.add(path)
+            slot_meta[path] = {
+                "slot": slot.key,
+                "slot_name": slot.name,
+                "device_class": slot.device_class,
+                "state_class": slot.state_class,
+                "device_group": group,
+            }
 
     now = time.time()
     points = []
@@ -542,8 +573,13 @@ def integration_points():
         if not entry.get("enabled", False):
             continue
         path = entry.get("path", "")
+        # With the gate on, a point only reaches HA through a published
+        # device; without it, enabled points behave as they always have.
+        if strict and path not in published_paths:
+            continue
         cached = values.get(path)
         points.append({
+            **(slot_meta.get(path) or {}),
             "path": path,
             "name": entry.get("name", ""),
             "type": entry.get("type", "unknown"),
@@ -562,6 +598,8 @@ def integration_points():
         "device_folders": device_folders,
         "total": len(selections),
         "enabled": len(points),
+        "strict_publishing": strict,
+        "published_points": len(published_paths),
     })
 
 
@@ -1096,6 +1134,90 @@ def remove_template(template_id):
     if delete_user_template(template_id):
         return jsonify({"ok": True, "deleted": template_id})
     return jsonify({"error": "no user template with that id"}), 404
+
+
+def _addon_options() -> dict:
+    try:
+        with open("/data/options.json") as handle:
+            return json.load(handle)
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+@app.route("/api/devices/publish", methods=["POST"])
+def publish_device():
+    """Publish a device, or unpublish it.
+
+    Publishing is refused while validation reports blocked: the whole point
+    of the gate is that a device showing an implausible value does not reach
+    Home Assistant looking like a real reading.
+    """
+    data = request.get_json() or {}
+    group = (data.get("group") or "").strip()
+    publish = bool(data.get("publish", True))
+    if not group:
+        return jsonify({"error": "group required"}), 400
+
+    devices = load_device_types()
+    entry = devices.get(group)
+    if not entry:
+        return jsonify({"error": "device has no type assigned"}), 404
+
+    if publish:
+        template = load_templates().get(entry["template"])
+        if template is None:
+            return jsonify({"error": "template no longer exists"}), 404
+        points = _points_by_group().get(group, [])
+        report = validate_device(
+            template, entry.get("bindings", {}),
+            {p.get("path"): p for p in points}, _load_values(),
+            load_observations(),
+        )
+        if not report["publishable"]:
+            blocking = [
+                issue["message"]
+                for slot in report["slots"] for issue in slot["issues"]
+                if issue["severity"] == BLOCKED
+            ]
+            return jsonify({
+                "error": "Device is blocked and cannot be published",
+                "issues": blocking,
+            }), 409
+
+    entry["state"] = STATE_PUBLISHED if publish else STATE_DRAFT
+    save_device_types(devices)
+    return jsonify({"ok": True, "group": group, "state": entry["state"]})
+
+
+@app.route("/api/devices/publish-all", methods=["POST"])
+def publish_all_devices():
+    """Publish every typed device that passes validation."""
+    templates = load_templates()
+    devices = load_device_types()
+    groups = _points_by_group()
+    values = _load_values()
+    observations = load_observations()
+
+    published, blocked = 0, []
+    for group, entry in devices.items():
+        template = templates.get(entry["template"])
+        if template is None:
+            continue
+        report = validate_device(
+            template, entry.get("bindings", {}),
+            {p.get("path"): p for p in groups.get(group, [])},
+            values, observations,
+        )
+        if report["publishable"]:
+            if entry.get("state") != STATE_PUBLISHED:
+                entry["state"] = STATE_PUBLISHED
+                published += 1
+        else:
+            blocked.append(group)
+
+    if published:
+        save_device_types(devices)
+    return jsonify({"ok": True, "published": published, "blocked": len(blocked)})
 
 
 @app.route("/api/devices/unassign", methods=["POST"])

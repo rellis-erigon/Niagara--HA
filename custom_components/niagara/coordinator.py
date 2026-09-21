@@ -75,6 +75,11 @@ class NiagaraPoint:
     status: str | None = None
     age: float | None = None
     precision: int | None = None
+    # Set when the point fills a slot on a published device.
+    slot: str | None = None
+    slot_name: str | None = None
+    slot_device_class: str | None = None
+    slot_state_class: str | None = None
 
 
 class NiagaraCoordinator(DataUpdateCoordinator[dict[str, NiagaraPoint]]):
@@ -197,6 +202,10 @@ class NiagaraCoordinator(DataUpdateCoordinator[dict[str, NiagaraPoint]]):
                 status=p.get("status"),
                 age=p.get("age"),
                 precision=p.get("precision"),
+                slot=p.get("slot"),
+                slot_name=p.get("slot_name"),
+                slot_device_class=p.get("device_class"),
+                slot_state_class=p.get("state_class"),
             )
 
         return {

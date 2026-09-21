@@ -138,6 +138,11 @@ VALID_UNITS_FOR_CLASS: dict[SensorDeviceClass, set[str]] = {
 }
 
 
+# Templates name classes as plain strings; map them to the enums once.
+_DEVICE_CLASS_BY_NAME = {cls.value: cls for cls in SensorDeviceClass}
+_STATE_CLASS_BY_NAME = {cls.value: cls for cls in SensorStateClass}
+
+
 def _unit_valid_for_class(unit: str, device_class: SensorDeviceClass) -> bool:
     valid = VALID_UNITS_FOR_CLASS.get(device_class)
     if valid is None:
@@ -207,12 +212,28 @@ class NiagaraNumericSensor(NiagaraEntity, SensorEntity):
             point.name, point.path, point.unit,
         )
 
+        # A template slot states what the point is, so it outranks inference
+        # — that is the whole reason templates exist. It still has to survive
+        # unit validation, or we would reintroduce contradicted classes.
+        if point.slot_device_class:
+            declared = _DEVICE_CLASS_BY_NAME.get(point.slot_device_class.lower())
+            if declared is not None and (
+                unit is None or _unit_valid_for_class(unit, declared)
+            ):
+                device_class = declared
+
         if device_class is not None:
             self._attr_device_class = device_class
 
         # Numeric points are always statistics-worthy, class or not, so a
         # valve position still graphs and still gets long-term statistics.
         self._attr_state_class = _infer_state_class(device_class, unit)
+        if point.slot_state_class:
+            declared_state = _STATE_CLASS_BY_NAME.get(
+                point.slot_state_class.lower(),
+            )
+            if declared_state is not None:
+                self._attr_state_class = declared_state
 
         if unit is not None:
             self._attr_native_unit_of_measurement = unit

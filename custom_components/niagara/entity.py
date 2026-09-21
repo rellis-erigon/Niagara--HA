@@ -25,7 +25,10 @@ class NiagaraEntity(CoordinatorEntity[NiagaraCoordinator]):
         super().__init__(coordinator)
         self._point = point
         self._attr_unique_id = f"niagara_{stable_id(point.path)}"
-        self._attr_name = decode_niagara_name(point.name)
+        # A published device names its points by what they do — "Fan" rather
+        # than "IndoorFanStatus". The unique id stays keyed on the path, so
+        # renaming never orphans an entity.
+        self._attr_name = point.slot_name or decode_niagara_name(point.name)
 
         group = coordinator.get_group(point)
         group_parts = [decode_niagara_name(p) for p in group.split("/")]

@@ -191,3 +191,62 @@ def test_clean_device_is_publishable():
         {"/p/": value("22.4")}, {}, NOW)
     assert report["severity"] == v.OK
     assert report["publishable"] is True
+
+
+# -- The publish gate ----------------------------------------------------
+#
+# Publishing is what puts a device in front of Home Assistant, so a device
+# whose values contradict its template must not get through.
+
+class _Template:
+    def __init__(self, slots):
+        self.slots = slots
+
+
+def test_a_blocked_device_reports_its_blocking_issues():
+    template = _Template([
+        slot(key="temperature", required=True, units=["°C"],
+             validation={"min": 5, "max": 40}),
+        slot(key="door", required=False),
+    ])
+    report = v.validate_device(
+        template, {"temperature": "/p/"}, {"/p/": point()},
+        {"/p/": value("0.0")}, {}, NOW)
+
+    assert report["publishable"] is False
+    blocking = [i["message"] for s in report["slots"] for i in s["issues"]
+                if i["severity"] == v.BLOCKED]
+    assert len(blocking) == 1
+    assert "below" in blocking[0]
+
+
+def test_warnings_alone_do_not_block_publishing():
+    """A stale reading is worth surfacing, not worth refusing."""
+    template = _Template([slot(key="temperature", required=True, units=["°C"])])
+    report = v.validate_device(
+        template, {"temperature": "/p/"}, {"/p/": point()},
+        {"/p/": value("21.0", status="fault")}, {}, NOW)
+
+    assert report["severity"] == v.WARNING
+    assert report["publishable"] is True
+    assert report["warnings"] == 1
+
+
+def test_an_unbound_required_slot_blocks_publishing():
+    template = _Template([slot(key="temperature", required=True)])
+    report = v.validate_device(template, {}, {}, {}, {}, NOW)
+    assert report["publishable"] is False
+    assert report["blocked"] == 1
+
+
+def test_a_device_with_only_optional_slots_unbound_is_publishable():
+    template = _Template([
+        slot(key="temperature", required=True, units=["°C"],
+             validation={"min": 5, "max": 40}),
+        slot(key="door", required=False),
+    ])
+    report = v.validate_device(
+        template, {"temperature": "/p/"}, {"/p/": point()},
+        {"/p/": value("22.0")}, {}, NOW)
+    assert report["publishable"] is True
+    assert report["severity"] == v.OK
