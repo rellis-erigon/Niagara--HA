@@ -17,13 +17,19 @@ from .entity import NiagaraEntity
 
 _LOGGER = logging.getLogger(__name__)
 
+# Short tokens are anchored: "run" previously matched any word containing
+# those letters, so unrelated points were classed as running equipment.
 NAME_PATTERNS_BINARY = [
-    (re.compile(r"alarm|fault|trip|alert|emergency|smoke|fire", re.I), BinarySensorDeviceClass.PROBLEM),
-    (re.compile(r"fan|motor|pump|compressor|run", re.I), BinarySensorDeviceClass.RUNNING),
+    (re.compile(r"alarm|fault|trip|alert|emergency|smoke|\bfire\b", re.I), BinarySensorDeviceClass.PROBLEM),
+    (re.compile(r"\bfan\b|motor|pump|compressor|\brun", re.I), BinarySensorDeviceClass.RUNNING),
     (re.compile(r"door|window|damper|valve", re.I), BinarySensorDeviceClass.OPENING),
     (re.compile(r"occup", re.I), BinarySensorDeviceClass.OCCUPANCY),
-    (re.compile(r"motion|pir", re.I), BinarySensorDeviceClass.MOTION),
+    (re.compile(r"motion|\bpir\b", re.I), BinarySensorDeviceClass.MOTION),
 ]
+
+# Niagara reports booleans in several shapes depending on the driver.
+TRUE_VALUES = frozenset({"true", "1", "on", "active", "enabled", "yes", "open"})
+FALSE_VALUES = frozenset({"false", "0", "off", "inactive", "disabled", "no", "closed"})
 
 ICON_PATTERNS = [
     (re.compile(r"fan|vfd", re.I), "mdi:fan"),
@@ -50,6 +56,7 @@ class NiagaraBinarySensor(NiagaraEntity, BinarySensorEntity):
 
     def __init__(self, coordinator: NiagaraCoordinator, point: NiagaraPoint) -> None:
         super().__init__(coordinator, point)
+        self._warned_unparseable = False
         for pattern, dc in NAME_PATTERNS_BINARY:
             if pattern.search(point.name):
                 self._attr_device_class = dc
@@ -63,7 +70,26 @@ class NiagaraBinarySensor(NiagaraEntity, BinarySensorEntity):
 
     @property
     def is_on(self) -> bool | None:
+        """Return None rather than False for a value we cannot interpret.
+
+        Previously anything outside the true-list read as False, so an
+        unrecognised state reported a confidently wrong "off" — bad for an
+        alarm or a running status.
+        """
         point = self._current_point
-        if point and point.value is not None:
-            return point.value.lower() in ("true", "1", "on", "active", "enabled")
+        if point is None or point.value is None:
+            return None
+
+        value = str(point.value).strip().lower()
+        if value in TRUE_VALUES:
+            return True
+        if value in FALSE_VALUES:
+            return False
+
+        if not self._warned_unparseable:
+            self._warned_unparseable = True
+            _LOGGER.warning(
+                "%s reported %r, which is not a recognised boolean",
+                point.path, point.value,
+            )
         return None

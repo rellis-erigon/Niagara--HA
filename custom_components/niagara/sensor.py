@@ -27,9 +27,13 @@ UNIT_MAP = {
     "L": "L", "gal": "gal", "CCF": "CCF", "m³/h": "m³/h", "ft³/h": "ft³/h", "L/h": "L/h",
 }
 
+# "%" is deliberately absent. In a BMS a percentage is far more often a valve
+# position, damper position or VFD speed than humidity, and the unit lookup
+# wins over the name patterns below — so mapping it here labelled thousands of
+# fan and valve points as humidity sensors. A percentage only becomes humidity
+# or battery when the point's name says so.
 UNIT_DEVICE_CLASS = {
     "°F": SensorDeviceClass.TEMPERATURE, "°C": SensorDeviceClass.TEMPERATURE,
-    "%": SensorDeviceClass.HUMIDITY,
     "kW": SensorDeviceClass.POWER, "W": SensorDeviceClass.POWER,
     "kWh": SensorDeviceClass.ENERGY, "Wh": SensorDeviceClass.ENERGY,
     "MWh": SensorDeviceClass.ENERGY, "GJ": SensorDeviceClass.ENERGY,
@@ -44,19 +48,26 @@ UNIT_DEVICE_CLASS = {
     "CCF": SensorDeviceClass.VOLUME,
 }
 
+# Name patterns only ever *refine* a class when the point already has a unit
+# that supports it. They no longer carry a fallback unit: inventing "°C" for a
+# point that reports no unit silently mislabels every station configured in
+# Fahrenheit, and HA needs a real unit for these classes anyway.
+#
+# Short tokens are anchored. Without \b, "sp" matched "Speed", "rh" matched
+# "Overheat" and "run" matched any word containing those letters.
 NAME_PATTERNS_SENSOR = [
-    (re.compile(r"temp|room.?t|zone.?t|supply.?air|return.?air|discharge|duct.?t|oat|sat|rat|dat|chwt|hwt", re.I), SensorDeviceClass.TEMPERATURE, "°C"),
-    (re.compile(r"humid|rh$|rel.?hum", re.I), SensorDeviceClass.HUMIDITY, "%"),
-    (re.compile(r"co2|carbon.?di", re.I), SensorDeviceClass.CO2, "ppm"),
-    (re.compile(r"press|psi|static.?p", re.I), SensorDeviceClass.PRESSURE, None),
-    (re.compile(r"power|kw$|demand", re.I), SensorDeviceClass.POWER, "kW"),
-    (re.compile(r"energy|kwh|consumption", re.I), SensorDeviceClass.ENERGY, "kWh"),
-    (re.compile(r"volt", re.I), SensorDeviceClass.VOLTAGE, "V"),
-    (re.compile(r"current|amp", re.I), SensorDeviceClass.CURRENT, "A"),
-    (re.compile(r"freq|hz$", re.I), SensorDeviceClass.FREQUENCY, "Hz"),
-    (re.compile(r"water.?meter|water.?consump|water.?total|water.?usage|dcw|dhw|chw.?flow|hydraulic", re.I), SensorDeviceClass.WATER, "L"),
-    (re.compile(r"gas.?meter|gas.?consump|gas.?total|gas.?usage|natural.?gas", re.I), SensorDeviceClass.GAS, "m³"),
-    (re.compile(r"batter|soc$|state.?of.?charge", re.I), SensorDeviceClass.BATTERY, "%"),
+    (re.compile(r"temp|room.?t\b|zone.?t\b|supply.?air|return.?air|discharge|duct.?t\b|\boat\b|\bsat\b|\brat\b|\bdat\b|\bchwt\b|\bhwt\b", re.I), SensorDeviceClass.TEMPERATURE),
+    (re.compile(r"humid|\brh\b|rel.?hum|dew.?point", re.I), SensorDeviceClass.HUMIDITY),
+    (re.compile(r"\bco2\b|carbon.?di", re.I), SensorDeviceClass.CO2),
+    (re.compile(r"press|\bpsi\b|static.?p", re.I), SensorDeviceClass.PRESSURE),
+    (re.compile(r"power|\bkw\b|demand", re.I), SensorDeviceClass.POWER),
+    (re.compile(r"energy|\bkwh\b|consumption", re.I), SensorDeviceClass.ENERGY),
+    (re.compile(r"volt", re.I), SensorDeviceClass.VOLTAGE),
+    (re.compile(r"current|\bamp", re.I), SensorDeviceClass.CURRENT),
+    (re.compile(r"freq|\bhz\b", re.I), SensorDeviceClass.FREQUENCY),
+    (re.compile(r"water.?meter|water.?consump|water.?total|water.?usage|\bdcw\b|\bdhw\b|chw.?flow|hydraulic", re.I), SensorDeviceClass.WATER),
+    (re.compile(r"gas.?meter|gas.?consump|gas.?total|gas.?usage|natural.?gas", re.I), SensorDeviceClass.GAS),
+    (re.compile(r"batter|\bsoc\b|state.?of.?charge", re.I), SensorDeviceClass.BATTERY),
 ]
 
 ICON_PATTERNS = [
@@ -112,6 +123,11 @@ VALID_UNITS_FOR_CLASS: dict[SensorDeviceClass, set[str]] = {
     SensorDeviceClass.HUMIDITY: {"%"},
     SensorDeviceClass.CO2: {"ppm"},
     SensorDeviceClass.BATTERY: {"%"},
+    # Without these, a class with no entry accepted any unit at all — which
+    # turned a tank level reported in "%" into a WATER sensor.
+    SensorDeviceClass.WATER: {"L", "m³", "gal", "ft³", "CCF"},
+    SensorDeviceClass.GAS: {"m³", "ft³", "CCF"},
+    SensorDeviceClass.VOLUME: {"L", "m³", "gal", "ft³", "CCF"},
 }
 
 
@@ -127,6 +143,37 @@ def _infer_icon(name: str) -> str | None:
         if pattern.search(name):
             return icon
     return None
+
+
+def infer_device_class_and_unit(
+    name: str, path: str, raw_unit: str | None,
+) -> tuple[SensorDeviceClass | None, str | None]:
+    """Decide a point's device class and HA unit.
+
+    The point's own unit leads; a name only refines when that unit supports
+    the class. A point with no unit gets no device class, because every class
+    worth assigning here needs one and guessing it mislabels whole stations.
+    """
+    unit: str | None = None
+    device_class: SensorDeviceClass | None = None
+
+    if raw_unit:
+        unit = UNIT_MAP.get(raw_unit, raw_unit)
+        device_class = UNIT_DEVICE_CLASS.get(raw_unit)
+        if device_class == SensorDeviceClass.VOLUME:
+            device_class = _refine_volume_class(name, path)
+
+    if device_class is None and unit is not None:
+        for pattern, candidate in NAME_PATTERNS_SENSOR:
+            if pattern.search(name) and _unit_valid_for_class(unit, candidate):
+                device_class = candidate
+                break
+
+    if device_class is not None and unit is not None:
+        if not _unit_valid_for_class(unit, device_class):
+            device_class = None
+
+    return device_class, unit
 
 
 async def async_setup_entry(
@@ -149,32 +196,16 @@ class NiagaraNumericSensor(NiagaraEntity, SensorEntity):
 
     def __init__(self, coordinator: NiagaraCoordinator, point: NiagaraPoint) -> None:
         super().__init__(coordinator, point)
-        device_class = None
-        unit = None
-
-        if point.unit:
-            unit = UNIT_MAP.get(point.unit, point.unit)
-            device_class = UNIT_DEVICE_CLASS.get(point.unit)
-            if device_class == SensorDeviceClass.VOLUME:
-                device_class = _refine_volume_class(point.name, point.path)
-
-        if device_class is None:
-            for pattern, dc, fallback_unit in NAME_PATTERNS_SENSOR:
-                if pattern.search(point.name):
-                    if unit is None and fallback_unit:
-                        device_class = dc
-                        unit = fallback_unit
-                    elif unit is not None and _unit_valid_for_class(unit, dc):
-                        device_class = dc
-                    break
-
-        if device_class is not None and unit is not None:
-            if not _unit_valid_for_class(unit, device_class):
-                device_class = None
+        device_class, unit = infer_device_class_and_unit(
+            point.name, point.path, point.unit,
+        )
 
         if device_class is not None:
             self._attr_device_class = device_class
-            self._attr_state_class = _infer_state_class(device_class, unit)
+
+        # Numeric points are always statistics-worthy, class or not, so a
+        # valve position still graphs and still gets long-term statistics.
+        self._attr_state_class = _infer_state_class(device_class, unit)
 
         if unit is not None:
             self._attr_native_unit_of_measurement = unit
@@ -196,12 +227,20 @@ class NiagaraNumericSensor(NiagaraEntity, SensorEntity):
 
 
 class NiagaraEnumSensor(NiagaraEntity, SensorEntity):
-    """Enum sensor from a Niagara BMS point."""
+    """Enum sensor from a Niagara BMS point.
+
+    HA only accepts `options` alongside `device_class = ENUM`, and rejects any
+    state outside that list. Previously options were declared without the class
+    and unlisted values were passed through, which HA logs as an error.
+    """
 
     def __init__(self, coordinator: NiagaraCoordinator, point: NiagaraPoint) -> None:
         super().__init__(coordinator, point)
-        if point.enum_range:
-            self._attr_options = point.enum_range
+        self._options = [str(o) for o in point.enum_range if str(o).strip()]
+        self._warned_unlisted = False
+        if self._options:
+            self._attr_device_class = SensorDeviceClass.ENUM
+            self._attr_options = self._options
         icon = _infer_icon(point.name)
         if icon:
             self._attr_icon = icon
@@ -209,7 +248,24 @@ class NiagaraEnumSensor(NiagaraEntity, SensorEntity):
     @property
     def native_value(self) -> str | None:
         point = self._current_point
-        return point.value if point else None
+        if point is None or point.value is None:
+            return None
+
+        value = str(point.value)
+        if not self._options:
+            return value
+        if value in self._options:
+            return value
+
+        # Niagara reported a state outside the declared range. Returning it
+        # would make HA raise on every update, so report unknown instead.
+        if not self._warned_unlisted:
+            self._warned_unlisted = True
+            _LOGGER.warning(
+                "%s reported %r, which is not in its declared range %s",
+                point.path, value, self._options,
+            )
+        return None
 
 
 class NiagaraStringSensor(NiagaraEntity, SensorEntity):
