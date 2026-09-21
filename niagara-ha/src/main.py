@@ -30,6 +30,9 @@ VALUES_FILE = POINTS_DIR / "values.json"
 RECONNECT_DELAY = 10
 MAX_RECONNECT_DELAY = 300
 
+# Set from config.yaml at image build time (see Dockerfile).
+VERSION = os.environ.get("NIAGARA_HA_VERSION") or "unknown"
+
 
 def load_options() -> dict:
     if not OPTIONS_PATH.exists():
@@ -100,7 +103,7 @@ def main() -> None:
     opts = load_options()
     setup_logging(opts.get("log_level", "info"))
 
-    logger.info("Niagara BMS Bridge v1.0.0 starting")
+    logger.info("Niagara BMS Bridge v%s starting", VERSION)
     logger.info("Target: %s:%d (HTTPS=%s)", opts["niagara_host"], opts["niagara_port"], opts["use_https"])
 
     if not opts.get("niagara_host"):
