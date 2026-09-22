@@ -31,13 +31,20 @@ class NiagaraEntity(CoordinatorEntity[NiagaraCoordinator]):
         self._attr_name = point.slot_name or decode_niagara_name(point.name)
 
         group = coordinator.get_group(point)
-        group_parts = [decode_niagara_name(p) for p in group.split("/")]
-        short_group = " / ".join(group_parts[-3:]) if len(group_parts) > 3 else " / ".join(group_parts)
+        group_parts = [
+            decode_niagara_name(p) for p in group.split("/") if p
+        ]
+        # Name a device by the tail of its path. The full path plus the
+        # integration name ran to about 60 characters — "Mercure BMS —
+        # MercureBMS / Electrical / DB-B3-2-Loadingdock-Light" — which every
+        # dashboard truncated, and it repeats on every entity underneath.
+        depth = min(coordinator.device_name_depth, len(group_parts))
+        device_label = " / ".join(group_parts[-depth:]) or coordinator.device_name
         device_id = f"niagara_{stable_id(coordinator.host + '/' + group)}"
 
         device_info = DeviceInfo(
             identifiers={(DOMAIN, device_id)},
-            name=f"{coordinator.device_name} — {short_group}",
+            name=device_label,
             manufacturer="Tridium",
             model="Niagara 4",
             sw_version="oBIX",

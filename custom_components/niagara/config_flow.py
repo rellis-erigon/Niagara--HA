@@ -16,8 +16,10 @@ from .const import (
     CONF_ADDON_URL,
     CONF_AREA_DEPTH,
     CONF_DEVICE_NAME,
+    CONF_DEVICE_NAME_DEPTH,
     DEFAULT_ADDON_URL,
     DEFAULT_AREA_DEPTH,
+    DEFAULT_DEVICE_NAME_DEPTH,
     DEFAULT_DEVICE_NAME,
     DEFAULT_INGRESS_PORT,
     DEFAULT_POLL_INTERVAL,
@@ -159,5 +161,11 @@ class NiagaraOptionsFlow(OptionsFlow):
                     CONF_AREA_DEPTH,
                     default=current.get(CONF_AREA_DEPTH, DEFAULT_AREA_DEPTH),
                 ): int,
+                vol.Optional(
+                    CONF_DEVICE_NAME_DEPTH,
+                    default=current.get(
+                        CONF_DEVICE_NAME_DEPTH, DEFAULT_DEVICE_NAME_DEPTH,
+                    ),
+                ): vol.All(int, vol.Range(min=1, max=4)),
             }),
         )

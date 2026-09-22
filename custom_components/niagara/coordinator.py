@@ -22,7 +22,9 @@ from .const import (
     CONF_ADDON_URL,
     CONF_AREA_DEPTH,
     CONF_DEVICE_NAME,
+    CONF_DEVICE_NAME_DEPTH,
     DEFAULT_AREA_DEPTH,
+    DEFAULT_DEVICE_NAME_DEPTH,
     DEFAULT_DEVICE_NAME,
     DEFAULT_POLL_INTERVAL,
     DOMAIN,
@@ -96,6 +98,10 @@ class NiagaraCoordinator(DataUpdateCoordinator[dict[str, NiagaraPoint]]):
         self.area_depth = entry.options.get(
             CONF_AREA_DEPTH, entry.data.get(CONF_AREA_DEPTH, DEFAULT_AREA_DEPTH)
         )
+        self.device_name_depth = max(1, int(entry.options.get(
+            CONF_DEVICE_NAME_DEPTH,
+            entry.data.get(CONF_DEVICE_NAME_DEPTH, DEFAULT_DEVICE_NAME_DEPTH),
+        )))
 
         scan_interval = entry.options.get(
             "scan_interval", entry.data.get("scan_interval", DEFAULT_POLL_INTERVAL)
