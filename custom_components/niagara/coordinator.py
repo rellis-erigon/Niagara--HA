@@ -15,6 +15,7 @@ from typing import Any
 import aiohttp
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import device_registry as dr, entity_registry as er
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .const import (
@@ -125,12 +126,59 @@ class NiagaraCoordinator(DataUpdateCoordinator[dict[str, NiagaraPoint]]):
             )
         return self._session
 
+    def _purge_orphaned_entities(self) -> int:
+        """Remove entities whose point the add-on no longer serves.
+
+        Entities were never removed, so anything that stopped being a point —
+        a disabled selection, a renamed path, or the history-extension
+        sub-points dropped in 3.2.0 — stayed in the registry forever as a dead
+        row in the dashboard. On this station that was 1,128 of them.
+
+        Only ever called after a successful fetch that returned points, so a
+        transient add-on outage cannot wipe the registry.
+        """
+        if not self.points:
+            return 0
+
+        registry = er.async_get(self.hass)
+        valid = {f"niagara_{stable_id(path)}" for path in self.points}
+        stale = [
+            entity.entity_id
+            for entity in list(registry.entities.values())
+            if entity.config_entry_id == self.entry.entry_id
+            and entity.unique_id not in valid
+        ]
+        for entity_id in stale:
+            registry.async_remove(entity_id)
+
+        if stale:
+            _LOGGER.info(
+                "Removed %d entities whose points no longer exist", len(stale),
+            )
+            self._purge_empty_devices(registry)
+        return len(stale)
+
+    def _purge_empty_devices(self, registry: er.EntityRegistry) -> None:
+        """Drop devices left with no entities once their points went away."""
+        devices = dr.async_get(self.hass)
+        for device in list(devices.devices.values()):
+            if self.entry.entry_id not in device.config_entries:
+                continue
+            if er.async_entries_for_device(
+                registry, device.id, include_disabled_entities=True,
+            ):
+                continue
+            devices.async_update_device(
+                device.id, remove_config_entry_id=self.entry.entry_id,
+            )
+
     async def async_setup(self) -> None:
         """Initial point discovery from the add-on."""
         try:
             data = await self._fetch_points()
             self.points = data["points"]
             self.device_folders = data["device_folders"]
+            self._purge_orphaned_entities()
             _LOGGER.info(
                 "Loaded %d enabled points from add-on (%d total, %d device folders)",
                 len(self.points),
@@ -153,6 +201,7 @@ class NiagaraCoordinator(DataUpdateCoordinator[dict[str, NiagaraPoint]]):
                         pt.value = self.points[path].value
                 self.points = new_points
                 self.device_folders = data["device_folders"]
+                self._purge_orphaned_entities()
 
             values = await self._fetch_values()
             for path, entry in values.items():
