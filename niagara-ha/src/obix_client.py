@@ -147,6 +147,19 @@ def _precision_from_facets(facets: str) -> Optional[int]:
     return precision if 0 <= precision <= 6 else None
 
 
+# Niagara distinguishes a commandable point from a read-only one by its
+# contract, not by an oBIX writable attribute — control:NumericWritable
+# against control:NumericPoint. No point on this station carries a writable
+# attribute at all, so reading only that marked every point writable.
+_WRITABLE_CONTRACT = "Writable"
+
+
+def _is_writable(contract: str | None, elem: ET.Element) -> bool:
+    if elem.get("writable") == "true":
+        return True
+    return _WRITABLE_CONTRACT in (contract or "")
+
+
 SKIP_POINT_NAMES = frozenset({
     # Station metadata
     "stationName", "hostName", "hostId",
@@ -535,6 +548,7 @@ class ObixClient:
             elif tag in value_tags:
                 children_by_name[name] = (child, tag)
 
+        contract = root.get("is") or ""
         facets = ""
         child_names = set()
         for child in root:
@@ -562,6 +576,7 @@ class ObixClient:
                     point.path = path
                     point.name = parent_name
                     point.precision = _precision_from_facets(facets)
+                    point.writable = _is_writable(contract, out_elem)
                     points.append(point)
         else:
             for name, (child, tag) in children_by_name.items():
@@ -654,6 +669,7 @@ class ObixClient:
 
         tag = root.tag.replace(f"{{{OBIX_NS}}}", "")
         name = root.get("name", path.rstrip("/").split("/")[-1])
+        contract = root.get("is") or ""
 
         if tag in ("real", "bool", "int", "str", "enum", "abstime", "reltime"):
             point = self._parse_point(
@@ -665,6 +681,7 @@ class ObixClient:
                 # when the element carries no href. The path we were asked to
                 # read is authoritative, exactly as in the "out" branch below.
                 point.path = path
+                point.writable = _is_writable(contract, root)
             return point
 
         out_elem = root.find(f".//{{{OBIX_NS}}}real[@name='out']")
@@ -682,6 +699,7 @@ class ObixClient:
             point = self._parse_point(out_elem, out_tag, path, name)
             if point:
                 point.path = path
+                point.writable = _is_writable(contract, out_elem)
             return point
 
         return None

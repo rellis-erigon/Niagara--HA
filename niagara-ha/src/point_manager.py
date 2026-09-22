@@ -247,6 +247,9 @@ def _fast_load_points_yaml(filepath: Path) -> dict[str, dict]:
     return result
 
 
+_BOOL_KEYS = frozenset({"enabled", "writable"})
+
+
 def _parse_kv(text: str, target: dict) -> None:
     colon = text.find(":")
     if colon < 1:
@@ -257,8 +260,15 @@ def _parse_kv(text: str, target: dict) -> None:
         val = val[1:-1]
     elif val.startswith('"') and val.endswith('"'):
         val = val[1:-1]
-    if key == "enabled":
+    if key in _BOOL_KEYS:
+        # Everything else stays a string, and "false" is truthy — which is
+        # why every point reported itself writable.
         target[key] = val.lower() == "true"
+    elif key == "precision":
+        try:
+            target[key] = int(val)
+        except ValueError:
+            target[key] = None
     else:
         target[key] = val
 

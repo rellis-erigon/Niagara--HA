@@ -157,3 +157,34 @@ def test_write_is_atomic(tmp_path, monkeypatch):
     }})
     assert (tmp_path / "points.yaml").exists()
     assert not (tmp_path / "points.tmp").exists()
+
+
+def test_boolean_fields_round_trip_as_booleans(tmp_path):
+    """"false" is a truthy string, which made every point look writable."""
+    import point_manager as pm
+
+    entries = [
+        {"path": "/a/", "name": "A", "group": "G", "type": "numeric",
+         "unit": "", "enabled": False, "writable": False},
+        {"path": "/b/", "name": "B", "group": "G", "type": "numeric",
+         "unit": "", "enabled": True, "writable": True},
+    ]
+    path = tmp_path / "points.yaml"
+    path.write_text(pm.fast_dump_points(entries))
+    back = pm._fast_load_points_yaml(path)
+
+    assert back["/a/"]["writable"] is False
+    assert back["/b/"]["writable"] is True
+    assert back["/a/"]["enabled"] is False
+    assert back["/b/"]["enabled"] is True
+
+
+def test_precision_round_trips_as_an_int(tmp_path):
+    import point_manager as pm
+
+    path = tmp_path / "points.yaml"
+    path.write_text(pm.fast_dump_points([
+        {"path": "/a/", "name": "A", "group": "G", "type": "numeric",
+         "unit": "°C", "precision": 1, "enabled": True},
+    ]))
+    assert pm._fast_load_points_yaml(path)["/a/"]["precision"] == 1

@@ -115,3 +115,30 @@ def test_read_point_keeps_requested_path_with_foreign_href(client, monkeypatch):
     point = client.read_point(path)
     assert point is not None
     assert point.path == path
+
+
+# -- Writability ---------------------------------------------------------
+#
+# Niagara marks a commandable point by its contract, not by an oBIX writable
+# attribute. No point on the reference station carries that attribute, so
+# reading only it reported all 1,985 enabled points as writable.
+
+@pytest.mark.parametrize("contract,expected", [
+    ("/obix/def/control:NumericWritable /obix/def/control:NumericPoint obix:Point", True),
+    ("/obix/def/control:BooleanWritable obix:Point", True),
+    ("/obix/def/control:EnumWritable obix:Point", True),
+    ("/obix/def/control:NumericPoint obix:Point", False),
+    ("/obix/def/control:BooleanPoint obix:Point", False),
+    ("", False),
+    (None, False),
+])
+def test_writability_comes_from_the_contract(contract, expected):
+    from obix_client import _is_writable
+    elem = ET.fromstring(f'<real xmlns="{OBIX_NS}" val="1"/>')
+    assert _is_writable(contract, elem) is expected
+
+
+def test_an_explicit_writable_attribute_still_wins():
+    from obix_client import _is_writable
+    elem = ET.fromstring(f'<real xmlns="{OBIX_NS}" val="1" writable="true"/>')
+    assert _is_writable("/obix/def/control:NumericPoint", elem) is True
