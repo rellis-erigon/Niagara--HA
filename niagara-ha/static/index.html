@@ -547,6 +547,15 @@ tr:hover td { background: var(--row-hover); }
 @media (prefers-color-scheme: dark) { .pill-blocked { background: #7f1d1d; color: #fecaca; } }
 .issue { font-size: 0.72rem; margin-top: 3px; }
 .issue-blocked { color: var(--danger); }
+.unit-cell { display: flex; align-items: center; gap: 4px; }
+.unit-value { font-size: 0.85rem; }
+.unit-none { color: var(--muted); font-style: italic; font-size: 0.85rem; }
+.unit-custom { color: var(--primary); font-weight: 600; font-size: 0.85rem; }
+.unit-btn {
+  background: none; border: none; cursor: pointer; color: var(--muted);
+  font-size: 0.8rem; padding: 0 2px; opacity: 0.6;
+}
+.unit-btn:hover { opacity: 1; color: var(--primary); }
 .issue-warning { color: #b45309; }
 @media (prefers-color-scheme: dark) { .issue-warning { color: #fbbf24; } }
 @media (prefers-color-scheme: dark) {
@@ -619,13 +628,14 @@ tr:hover td { background: var(--row-hover); }
             <th style="width:50px">On</th>
             <th>Name</th>
             <th style="width:120px">Value</th>
+            <th style="width:130px">Unit</th>
             <th style="width:100px">Category</th>
             <th style="width:80px">Type</th>
             <th>Group</th>
           </tr>
         </thead>
         <tbody id="point-table">
-          <tr><td colspan="6" class="loading">Select a group or search</td></tr>
+          <tr><td colspan="7" class="loading">Select a group or search</td></tr>
         </tbody>
       </table>
     </div>
@@ -909,6 +919,7 @@ async function loadPoints() {
       <div class="point-path">${esc(p.path)}</div>
     </td>
     <td><span class="point-value point-value-na" data-value-path="${esc(p.path)}">&mdash;</span></td>
+    <td>${unitCell(p)}</td>
     <td><span class="cat-badge cat-${p.category || 'Other'}">${esc(p.category || 'Other')}</span></td>
     <td><span class="point-type">${esc(p.type)}</span></td>
     <td>${esc(decodeNiagara(p.group))}</td>
@@ -1013,6 +1024,94 @@ $('#bulk-disable').addEventListener('click', async () => {
   loadStats();
   loadTree();
   loadPoints();
+});
+
+
+/* -- Unit of measurement overrides ------------------------------------ */
+
+let knownUnits = [];
+
+async function loadUnits() {
+  if (knownUnits.length) return knownUnits;
+  try {
+    knownUnits = (await api('/api/units')).units || [];
+  } catch (e) {
+    knownUnits = [];
+  }
+  return knownUnits;
+}
+
+function unitCell(p) {
+  const shown = p.custom_unit || p.unit || '';
+  const cls = p.custom_unit ? 'unit-custom' : (shown ? 'unit-value' : 'unit-none');
+  const title = p.custom_unit
+    ? `Overridden - Niagara reports "${esc(p.unit || 'none')}"`
+    : 'Unit reported by Niagara';
+  return `<div class="unit-cell">
+      <span class="${cls}" title="${title}">${esc(shown || 'none')}</span>
+      <button class="unit-btn" data-unit-path="${esc(p.path)}"
+        data-unit-current="${esc(p.custom_unit || '')}"
+        data-unit-discovered="${esc(p.unit || '')}"
+        title="Set the unit of measurement">&#9998;</button>
+    </div>`;
+}
+
+async function openUnitEditor(path, current, discovered) {
+  await loadUnits();
+  const options = knownUnits.map(u => `<option value="${esc(u)}"></option>`).join('');
+
+  $('#modal-root').innerHTML = `
+    <div class="modal-backdrop" onclick="if(event.target===this)closeModal()">
+      <div class="modal">
+        <h2>Unit of Measurement</h2>
+        <p style="font-size:0.85rem;color:var(--muted);margin-bottom:12px">
+          Niagara reports <strong>${esc(discovered || 'no unit')}</strong> for this
+          point. Set your own if that is missing or wrong — clearing it goes
+          back to what Niagara reports.
+        </p>
+        <input class="slot-select" id="unit-input" list="unit-options"
+               placeholder="e.g. kWh" value="${esc(current)}">
+        <datalist id="unit-options">${options}</datalist>
+        <div style="display:flex;gap:8px;justify-content:space-between;margin-top:18px">
+          <button class="btn" id="unit-clear">Use Niagara's</button>
+          <div style="display:flex;gap:8px">
+            <button class="btn" onclick="closeModal()">Cancel</button>
+            <button class="btn btn-primary" id="unit-save">Save</button>
+          </div>
+        </div>
+      </div>
+    </div>`;
+
+  const submit = async value => {
+    try {
+      const res = await fetch(BASE + '/api/points/unit', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path, unit: value }),
+      });
+      const body = await res.json();
+      if (!res.ok) { toast(body.error || 'Could not set the unit'); return; }
+      closeModal();
+      toast(value ? `Unit set to ${value}` : "Using Niagara's unit");
+      loadPoints();
+      if (devices.length) loadDevices();
+    } catch (e) {
+      toast('Could not set the unit');
+    }
+  };
+
+  $('#unit-save').addEventListener('click', () => submit($('#unit-input').value.trim()));
+  $('#unit-clear').addEventListener('click', () => submit(''));
+  $('#unit-input').addEventListener('keydown', e => {
+    if (e.key === 'Enter') submit($('#unit-input').value.trim());
+  });
+  $('#unit-input').focus();
+}
+
+// Delegated, because the points table is re-rendered on every page change.
+document.addEventListener('click', e => {
+  const btn = e.target.closest('[data-unit-path]');
+  if (!btn) return;
+  openUnitEditor(btn.dataset.unitPath, btn.dataset.unitCurrent, btn.dataset.unitDiscovered);
 });
 
 function closeModal() {

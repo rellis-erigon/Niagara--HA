@@ -177,6 +177,11 @@ _UNIT_BONUS = 1000
 _EXACT_NAME_BONUS = 500
 
 
+def effective_unit(point: dict) -> str:
+    """A point's unit, preferring a user override of what Niagara reported."""
+    return (point.get("custom_unit") or point.get("unit") or "").strip()
+
+
 def score_candidate(slot: Slot, point: dict) -> int | None:
     """How well a point fits a slot, or None if it cannot fill it at all."""
     name = decode_niagara_name(point.get("name", "")).lower()
@@ -197,7 +202,7 @@ def score_candidate(slot: Slot, point: dict) -> int | None:
     if score is None:
         return None
 
-    unit = (point.get("unit") or "").strip()
+    unit = effective_unit(point)
     if slot.units:
         if unit and unit in slot.units:
             score += _UNIT_BONUS

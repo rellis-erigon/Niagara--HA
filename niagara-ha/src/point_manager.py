@@ -288,7 +288,7 @@ def _yaml_scalar(value) -> str:
 
 
 _ENTRY_KEY_ORDER = (
-    "path", "name", "custom_name", "group", "type", "unit",
+    "path", "name", "custom_name", "group", "type", "unit", "custom_unit",
     "precision", "enabled", "writable",
 )
 

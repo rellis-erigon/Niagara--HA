@@ -87,6 +87,18 @@ app = Flask(__name__, static_folder="/app/static")
 
 PAGE_SIZE = 50
 
+# Offered in the unit picker. Not a restriction — a station may report
+# something none of these cover, so any text is accepted.
+KNOWN_UNITS = [
+    "°C", "°F", "K", "%", "ppm",
+    "kW", "W", "MW", "kWh", "Wh", "MWh", "kVA", "VA", "kvar",
+    "V", "kV", "mV", "A", "mA", "Hz",
+    "Pa", "kPa", "psi", "bar", "mbar", "inH2O",
+    "L", "m³", "gal", "ft³", "CCF",
+    "L/s", "L/h", "m³/h", "ft³/h", "ft³/min", "gal/min",
+    "rpm", "min", "h", "s", "lx", "dB",
+]
+
 _sel_cache: dict = {"mtime": 0.0, "data": {}}
 _values_cache: dict = {"mtime": 0.0, "data": {}}
 
@@ -272,6 +284,45 @@ def rename_point():
         _write_selections(selections)
         return jsonify({"ok": True, "path": path, "custom_name": custom_name})
     return jsonify({"error": "point not found"}), 404
+
+
+@app.route("/api/units")
+def list_units():
+    """Units the panel offers when overriding a point's unit."""
+    return jsonify({"units": KNOWN_UNITS})
+
+
+@app.route("/api/points/unit", methods=["POST"])
+def set_point_unit():
+    """Override a point's unit of measurement.
+
+    Niagara does not always report one — on this station only some of a set
+    of identical meters tag kWh — and it is sometimes plainly wrong. The
+    discovered unit is kept, so clearing the override restores it.
+    """
+    data = request.get_json() or {}
+    path = data.get("path")
+    unit = (data.get("unit") or "").strip()
+    if not path:
+        return jsonify({"error": "path required"}), 400
+    if len(unit) > 24:
+        return jsonify({"error": "unit is too long"}), 400
+
+    selections = load_point_selections()
+    entry = selections.get(path)
+    if entry is None:
+        return jsonify({"error": "point not found"}), 404
+
+    if unit:
+        entry["custom_unit"] = unit
+    else:
+        entry.pop("custom_unit", None)
+    _write_selections(selections)
+
+    return jsonify({
+        "ok": True, "path": path,
+        "custom_unit": unit, "discovered_unit": entry.get("unit", ""),
+    })
 
 
 @app.route("/api/device-folders")
@@ -585,7 +636,9 @@ def integration_points():
             "path": path,
             "name": entry.get("name", ""),
             "type": entry.get("type", "unknown"),
-            "unit": entry.get("unit", ""),
+            "unit": entry.get("custom_unit") or entry.get("unit", ""),
+            "unit_overridden": bool(entry.get("custom_unit")),
+            "discovered_unit": entry.get("unit", ""),
             "group": entry.get("group", "Ungrouped"),
             "value": _plain_value(cached),
             "status": cached.get("status", "unknown") if cached else "unknown",
@@ -820,7 +873,8 @@ def _point_summary(point: dict) -> dict:
     return {
         "path": point.get("path", ""),
         "name": decode_niagara_name(point.get("name", "")),
-        "unit": point.get("unit") or "",
+        "unit": point.get("custom_unit") or point.get("unit") or "",
+        "unit_overridden": bool(point.get("custom_unit")),
         "type": point.get("type", "unknown"),
         "enabled": bool(point.get("enabled")),
     }

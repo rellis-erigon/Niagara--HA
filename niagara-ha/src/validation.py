@@ -138,7 +138,7 @@ def validate_slot(
         age = int(now - timestamp)
         issues.append(_issue(WARNING, f"Last update was {age}s ago"))
 
-    unit = (point.get("unit") or "").strip()
+    unit = (point.get("custom_unit") or point.get("unit") or "").strip()
     if slot.units:
         if not unit:
             issues.append(_issue(

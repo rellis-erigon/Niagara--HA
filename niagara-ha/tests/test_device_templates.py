@@ -428,3 +428,39 @@ def test_export_all_includes_every_template(user_dir):
     exported = dt.export_templates(sorted(templates.values(), key=lambda t: t.id))
     for template_id in ("fcu", "electricity_meter", "ups_3phase", "fridge"):
         assert f"id: {template_id}" in exported
+
+
+# -- Unit overrides ------------------------------------------------------
+#
+# Niagara does not always report a unit — on the reference station only one
+# of 22 identical meters tags kWh — and is sometimes plainly wrong. A user
+# override has to win everywhere the unit is consulted.
+
+def test_effective_unit_prefers_the_override():
+    assert dt.effective_unit({"unit": "", "custom_unit": "kWh"}) == "kWh"
+    assert dt.effective_unit({"unit": "Wh", "custom_unit": "kWh"}) == "kWh"
+
+
+def test_effective_unit_falls_back_to_the_reported_one():
+    assert dt.effective_unit({"unit": "kWh"}) == "kWh"
+    assert dt.effective_unit({"unit": "kWh", "custom_unit": ""}) == "kWh"
+    assert dt.effective_unit({}) == ""
+
+
+def test_an_override_makes_a_point_bindable(templates):
+    """A kWh slot rejects a unitless point far less readily once corrected."""
+    slot = next(s for s in templates["electricity_meter"].slots
+                if s.key == "energy_total")
+    bare = point("MeterTotal", "")
+    fixed = point("MeterTotal", "")
+    fixed["custom_unit"] = "kWh"
+    assert dt.score_candidate(slot, fixed) > dt.score_candidate(slot, bare)
+
+
+def test_a_wrong_override_disqualifies_a_point(templates):
+    """An override is authoritative, so a bad one must be refused like any."""
+    slot = next(s for s in templates["electricity_meter"].slots
+                if s.key == "energy_total")
+    wrong = point("MeterTotal", "kWh")
+    wrong["custom_unit"] = "°C"
+    assert dt.score_candidate(slot, wrong) is None
