@@ -222,6 +222,8 @@ class ObixClient:
     ):
         scheme = "https" if use_https else "http"
         self._base_url = f"{scheme}://{host}:{port}/obix"
+        # The server-root path the oBIX service is mounted at.
+        self._obix_prefix = "/obix"
         self._auth = HTTPBasicAuth(username, password)
         self._session = requests.Session()
         self._session.auth = self._auth
@@ -275,6 +277,26 @@ class ObixClient:
             logger.debug("Could not detect services from lobby: %s", e)
 
     # -- Low-level HTTP ------------------------------------------------
+
+    def _obix_href(self, path: str) -> str:
+        """Stored path to the href the oBIX server names it by.
+
+        Points are stored relative to the oBIX root ("/config/..."), because
+        every GET is base_url + path and base_url already ends in /obix. A
+        Watch URI is resolved against the server root instead, so it needs the
+        prefix — without it Niagara rejects every subscription with BadUriErr,
+        which is what made the Watch look unsupported here.
+        """
+        if path.startswith(self._obix_prefix):
+            return path
+        return self._obix_prefix + path
+
+    def _stored_path(self, href: str) -> str:
+        """The inverse: an href from a Watch response back to a stored path."""
+        for prefix in (f"{self._base_url}", self._obix_prefix):
+            if href.startswith(prefix):
+                return href[len(prefix):] or "/"
+        return href
 
     def _get(self, path: str) -> ET.Element:
         url = f"{self._base_url}{path}"
@@ -346,7 +368,9 @@ class ObixClient:
         results = {}
         for i in range(0, len(paths), WATCH_POINTS_PER_BATCH):
             batch = paths[i:i + WATCH_POINTS_PER_BATCH]
-            uri_elements = "".join(f'<uri val="{p}"/>' for p in batch)
+            uri_elements = "".join(
+                f'<uri val="{self._obix_href(p)}"/>' for p in batch
+            )
             body = f'<obj is="obix:WatchIn"><list name="hrefs">{uri_elements}</list></obj>'
 
             try:
@@ -452,7 +476,11 @@ class ObixClient:
         if val is None:
             return None
 
-        return {"path": href, "value": val, "status": elem.get("status", "ok")}
+        return {
+            "path": self._stored_path(href),
+            "value": val,
+            "status": elem.get("status", "ok"),
+        }
 
     # -- Batch reads ---------------------------------------------------
 
@@ -792,7 +820,9 @@ class ObixClient:
     def _watch_remove(self, paths: list[str]) -> None:
         if not self._watch_uri or not paths:
             return
-        uri_elements = "".join(f'<uri val="{p}"/>' for p in paths)
+        uri_elements = "".join(
+            f'<uri val="{self._obix_href(p)}"/>' for p in paths
+        )
         body = f'<obj is="obix:WatchIn"><list name="hrefs">{uri_elements}</list></obj>'
         try:
             self._post_url(f"{self._watch_uri}remove/", body)

@@ -142,3 +142,39 @@ def test_an_explicit_writable_attribute_still_wins():
     from obix_client import _is_writable
     elem = ET.fromstring(f'<real xmlns="{OBIX_NS}" val="1" writable="true"/>')
     assert _is_writable("/obix/def/control:NumericPoint", elem) is True
+
+
+# -- Watch URIs ----------------------------------------------------------
+#
+# Points are stored relative to the oBIX root because every GET is
+# base_url + path, and base_url already ends in /obix. A Watch URI resolves
+# against the server root instead, so it needs that prefix. Without it
+# Niagara answered every subscription with BadUriErr, which made the Watch
+# look unsupported on this station and forced 2,226 individual GETs.
+
+STORED = "/config/Drivers/NiagaraNetwork/J2/points/Site/MSSB_L6/TotalActivePower/"
+
+
+def test_subscription_uri_is_obix_absolute(client):
+    assert client._obix_href(STORED) == "/obix" + STORED
+
+
+def test_prefix_is_not_applied_twice(client):
+    assert client._obix_href("/obix" + STORED) == "/obix" + STORED
+
+
+@pytest.mark.parametrize("href", [
+    "/obix" + STORED,
+    "https://192.0.2.1:443/obix" + STORED,
+    STORED,
+])
+def test_response_href_maps_back_to_the_stored_path(client, href):
+    assert client._stored_path(href) == STORED
+
+
+def test_watch_element_is_keyed_by_the_stored_path(client):
+    elem = ET.fromstring(
+        f'<real xmlns="{OBIX_NS}" href="/obix{STORED}" val="274517.0"/>')
+    parsed = client._parse_watch_element(elem)
+    assert parsed["path"] == STORED
+    assert parsed["value"] == "274517.0"
