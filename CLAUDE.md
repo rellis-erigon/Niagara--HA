@@ -1,75 +1,153 @@
 # Niagara BMS — Home Assistant Integration
 
-## Architecture: 2-Part System
+Connects a Tridium Niagara 4 station to Home Assistant over oBIX. Two parts,
+versioned together and always released as a matched pair.
+
+## Architecture
 
 ### Add-on (`niagara-ha/`)
-The add-on is a Docker container running on HA with s6-overlay. It handles **everything**:
-- oBIX connection to Tridium Niagara 4 station
-- Point discovery and polling (watch mode or legacy polling)
-- Sidebar management UI via ingress (Flask web server on port 8099)
-- Device folder management (grouping points into HA devices)
-- Enabling/disabling points
-- Auto-enable rules and profiles
-- MQTT publishing (optional/legacy)
 
-**Key files:**
-- `niagara-ha/src/main.py` — Main loop: connects to Niagara via oBIX, discovers points, polls values, writes to `values.json`
-- `niagara-ha/src/web.py` — Flask web UI + REST API. Serves sidebar panel and integration API endpoints
-- `niagara-ha/src/obix_client.py` — oBIX protocol client (HTTP/HTTPS, XML parsing, watch subscriptions)
-- `niagara-ha/src/point_manager.py` — Point selection persistence (YAML), device folder logic, auto-enable rules
-- `niagara-ha/src/mqtt_publisher.py` — Optional MQTT publishing (legacy mode)
-- `niagara-ha/static/index.html` — Sidebar panel UI (vanilla JS)
-- `niagara-ha/config.yaml` — HA add-on metadata, options schema
-- `niagara-ha/Dockerfile` — Container build (Python 3.11, Alpine, s6-overlay)
+A Docker container on HA with s6-overlay. It owns everything stateful: the
+Niagara connection, point discovery, the management UI, and all persistence.
 
-**Integration API endpoints (served by web.py):**
-- `GET /api/integration/points` — Full point list with metadata (type, unit, group, value, writable, enum_range). Only returns enabled points. Used by HACS integration for entity creation.
-- `GET /api/integration/values` — Lightweight path:value pairs for all enabled points. Returns null for unpolled points. Used by HACS integration for polling.
+| File | Role |
+| --- | --- |
+| `src/main.py` | Main loop: connect, discover, poll, write `values.json` |
+| `src/obix_client.py` | oBIX protocol — HTTP, XML, Watch subscriptions, discovery |
+| `src/point_manager.py` | `points.yaml` persistence, device folders, auto-enable rules |
+| `src/device_templates.py` | Template schema, slot binding, device types, card rendering |
+| `src/validation.py` | Slot validation, observations, severity |
+| `src/web.py` | Flask UI + REST API (ingress, port 8099) |
+| `src/mqtt_publisher.py` | Legacy MQTT publishing, optional |
+| `templates/*.yaml` | Built-in device templates |
+| `static/index.html` | Sidebar panel — Points and Devices views |
 
-**Data files (persisted in `/config/niagara-ha/`):**
-- `points.yaml` — All discovered points with enabled/disabled state, group assignments, metadata
-- `values.json` — Current point values (updated each poll cycle by main.py)
-- `device_folders.yaml` — User-selected folders that become HA devices
-- `auto_enable_rules.yaml` — Glob patterns for auto-enabling newly discovered points
+### Integration (`custom_components/niagara/`)
 
-### HACS Integration (`custom_components/niagara/`)
-Lightweight client that polls the add-on's REST API and creates native HA entities. **No direct Niagara connection, no management UI.**
+A thin client over the add-on's REST API. No Niagara protocol code, no UI.
 
-**Key files:**
-- `custom_components/niagara/coordinator.py` — `DataUpdateCoordinator` that polls add-on API via persistent aiohttp session. Re-fetches full point list every 10th cycle.
-- `custom_components/niagara/entity.py` — Base entity class. All entities disabled by default (`_attr_entity_registry_enabled_default = False`). Device grouping based on `point.group` from add-on.
-- `custom_components/niagara/sensor.py` — Numeric, enum, and string sensors. Has unit mapping, device class inference from unit/name patterns, unit validation (`VALID_UNITS_FOR_CLASS`).
-- `custom_components/niagara/binary_sensor.py` — Boolean points. Device class inferred from name patterns (alarm, fan, pump, etc).
-- `custom_components/niagara/config_flow.py` — Single-step config: addon_url, device_name, scan_interval, area_depth
-- `custom_components/niagara/const.py` — Constants. `DEFAULT_ADDON_URL = "http://a]_niagara-ha:8099"`
+| File | Role |
+| --- | --- |
+| `coordinator.py` | Polls the add-on; purges entities whose point is gone |
+| `entity.py` | Base entity: naming, device info, availability |
+| `sensor.py` / `binary_sensor.py` | Entity platforms and class inference |
+| `config_flow.py` | Setup and options; discovers the add-on via Supervisor |
+| `services.py` | `niagara.generate_card` |
 
-## Key Design Decisions
+### API between them
 
-1. **All entities start disabled** — Niagara stations can have 10,000+ points. Users enable what they need via the add-on sidebar or HA entity registry.
+Read-only. The add-on never calls Home Assistant.
 
-2. **Device folders** — User selects folders in the add-on's tree view as "devices". All points under a folder get the same `group` value, creating one HA device with multiple entities.
+| Endpoint | Purpose |
+| --- | --- |
+| `GET /api/integration/points` | Enabled points with type, unit, group, slot metadata |
+| `GET /api/integration/values` | `{path: {value, status, age}}` per enabled point |
+| `GET /api/health` | Liveness: counts, faulted values, value ages |
+| `GET /api/devices/card` | A device's card with slots resolved to point paths |
 
-3. **Path parsing** — Niagara paths contain boilerplate segments (`config`, `Drivers`, `NiagaraNetwork`, `ObixNetwork`, `points`, `out`, `exports`, `obix`). These are stripped by `SKIP_SEGMENTS` / `parse_path_segments()`. Both add-on and integration use the same set.
+### Data files (`/config/niagara-ha/`)
 
-4. **Niagara name encoding** — Niagara uses `$XX` hex escapes (e.g., `$2d` = `-`, `$2e` = `.`). `decode_niagara_name()` converts these to readable characters.
+`points.yaml` (every discovered point and its enabled state), `values.json`
+(`{path: {value, status, ts}}`), `device_folders.yaml`, `device_types.yaml`
+(template, slot bindings, draft/published), `observations.json` (running
+maximum and decrease counts for monotonic slots), `templates/*.yaml` (user
+templates, shadowing built-ins of the same id).
 
-5. **Unit normalization** — oBIX returns units like `obix:units/kilowatt_hours`. `_normalize_unit()` in `obix_client.py` strips the prefix and maps to HA-compatible units. `sensor.py` validates unit/device_class compatibility.
+## Things that are not obvious
 
-## Current Versions
-- Add-on: **1.1.0** (`niagara-ha/config.yaml`)
-- HACS Integration: **2.2.0** (`custom_components/niagara/manifest.json`)
+**Watch URIs need the `/obix` prefix.** Points are stored relative to the
+oBIX root (`/config/...`) because every GET is `base_url + path` and
+`base_url` already ends in `/obix`. A Watch URI resolves against the *server*
+root, so it must be `/obix/config/...`. Without the prefix Niagara answers
+every subscription with `BadUriErr`, which reads as "this station has no
+Watch service". It does. See `_obix_href` / `_stored_path`.
 
-## Known Issues / TODO
+**Subscription is what keeps proxy points fresh.** NiagaraNetwork proxy
+points are marked `{stale}` while nothing is subscribed, and a plain GET
+returns the last cached value with that flag. This is why a BMS graphics page
+shows live data — opening it subscribes. Polling instead of watching made
+1,095 healthy points look dead.
 
-- **Add-on URL default** may need validation: `DEFAULT_ADDON_URL = "http://a]_niagara-ha:8099"` — the `]` looks like a typo, should likely be `http://a0d7b954-niagara-ha:8099` or whatever the actual HA add-on hostname is. Users override this in config flow.
-- **MQTT is legacy** — still in config.yaml options but optional. Add-on works without it.
-- **No writable entity support yet** — points marked `writable: true` are read-only in HA. Future: add `number`, `select`, `switch` platforms for writable points.
-- **Integration doesn't dynamically add/remove entities** — re-fetches point list every 10th poll but doesn't create new entities or remove old ones mid-session. Requires HA reload.
+**Status lives in the display string, not the status attribute.** Niagara
+writes `22.7 °C {ok}` or `0.00 °C {stale}`; the oBIX `status` attribute is
+empty. See `_status_from_display`.
 
-## Development Notes
+**Writability comes from the contract.** `control:NumericWritable` against
+`control:NumericPoint`. No point on the reference station sets an oBIX
+`writable` attribute, so reading only that marks everything writable.
 
-- Branch: `claude/loving-mayer-gxw5e7` (synced with `main`)
-- Add-on runs on HA as a local add-on (repo added to HA add-on store)
-- HACS integration installed via HACS custom repository
-- User's Niagara station has thousands of points — performance matters
-- `point_manager.py` uses a fast line-by-line YAML parser (`_fast_load_points_yaml`) instead of `yaml.safe_load` for the potentially 100K+ line points.yaml
+**An `<err>` in a Watch values list is not a value.** It carries no `val`.
+Counting them made a completely failed Watch look healthy.
+
+**`read_point` must keep the path it was asked for.** `_parse_point` derives
+a path from the element's href, falling back to `parent_path + name`, which
+doubles the last segment. The polling loop writes its results back over the
+active point list, so one bad path poisons that point permanently.
+
+**History extensions are not points.** Niagara hangs them off a point as
+child folders whose contents are logging configuration. A folder carrying
+`historyConfig` or `historyName` is one; skipping them cut discovery from
+20,426 to 18,672 and a meter from 85 points to 19.
+
+**`points.yaml` is written by hand, not by PyYAML.** It is rewritten on every
+enable/disable and `yaml.dump` on 20,000 entries takes seconds. See
+`fast_dump_points` — 0.095s — and `_fast_load_points_yaml` for the reader.
+Both write through a temp file and rename.
+
+**`_parse_kv` must coerce booleans.** It only special-cased `enabled`, so
+`writable` came back as the string `"false"`, which is truthy.
+
+## Design decisions
+
+1. **A device is a folder of points**, chosen by the user in the tree.
+2. **A template declares what a device type exposes**, as named slots with
+   expected units, device class and plausible range. Binding proposes which
+   point fills each slot; matching decides what is *suggested*, never what is
+   *permitted*, so any point in the device can fill any slot.
+3. **Validation gates publishing.** Only a required slot can block a device —
+   losing a whole meter because an optional frequency point reads 0 Hz is
+   worse than publishing it with that reading flagged.
+4. **The publish gate is opt-in** (`strict_publishing`, default off).
+   Defaulting it on would remove every existing entity from a running install
+   until each device was published one at a time.
+5. **Entities start disabled** in principle, because a station can have
+   20,000 points. In practice sensors register enabled and binary sensors
+   disabled — an unexplained discrepancy, see below.
+6. **Path parsing** strips boilerplate segments (`config`, `Drivers`,
+   `NiagaraNetwork`, `points`, `out`, `exports`, `obix`) via `SKIP_SEGMENTS`,
+   shared by both halves.
+7. **Niagara `$XX` name escapes** are decoded everywhere a name is shown.
+
+## Known issues
+
+- **Entities do not appear without a reload.** Removal works — the
+  coordinator purges entities whose point is gone — but newly enabled points
+  need a reload. This is the outstanding half of R6.
+- **Writable points are not exposed.** On the reference station the only
+  writable points are meter totaliser registers and history configuration;
+  the commands worth having (`StartStopCommand`, `TempAdjust`,
+  `AirConModeCommand`) are exported as read-only contracts. R5 is blocked on
+  the Niagara side re-exporting them as Writable.
+- **The API is unauthenticated** on `0.0.0.0:8099`, and mutating routes
+  include destructive ones. R8.
+- **Flask's development server** is used in production. R8.
+- **Sensors register enabled, binary sensors disabled**, though both inherit
+  the same base class with `_attr_entity_registry_enabled_default = False`
+  and neither overrides it. Unexplained.
+- **The device identifier embeds `addon_url`**, so changing it would orphan
+  every device. Not fixed because fixing it would itself orphan them once.
+- **Changing a unit breaks existing statistics.** HA suppresses long-term
+  statistics when a sensor's unit changes; the fix is
+  `recorder/update_statistics_metadata`, which Developer Tools → Statistics
+  exposes.
+
+## Development
+
+- Branch: `main`. CI runs both test suites and fails when the add-on and
+  integration versions disagree.
+- Tests: `pytest niagara-ha/tests` (no HA needed) and `pytest tests`
+  (needs `homeassistant`).
+- The reference station has ~18,700 points across two Jaces, 192 guest rooms,
+  22 distribution boards and 7 switchboards. Performance matters.
+- A config entry reload does **not** re-import Python. Integration code
+  changes need a full `ha core restart`.
