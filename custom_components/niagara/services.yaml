@@ -37,3 +37,11 @@ run_diagnostics:
     Return the add-on's full diagnostics report — stale points, suspicious
     bindings, meters that cannot reach the energy dashboard. The same checks
     the add-on's Diagnostics view shows, in a form an automation can act on.
+
+rescan:
+  name: Re-scan points
+  description: >-
+    Rediscover points from the Niagara station. Points added in Niagara do
+    not appear here until something goes looking; this asks the add-on to
+    look now rather than waiting for a reconnect. Rediscovery starts within
+    one poll interval.

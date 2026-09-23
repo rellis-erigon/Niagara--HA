@@ -31,6 +31,7 @@ from validation import (
     validate_device,
 )
 import diagnostics
+import rescan
 from point_manager import (
     POINTS_DIR,
     POINTS_FILE,
@@ -1397,6 +1398,31 @@ def _integration_version() -> str | None:
         return json.loads(INTEGRATION_MANIFEST.read_text()).get("version")
     except (OSError, json.JSONDecodeError):
         return None
+
+
+@app.route("/api/rescan", methods=["POST"])
+def request_rescan():
+    """Ask the poll loop to rediscover points from the station.
+
+    Points added in Niagara do not appear here until something goes looking.
+    Until now that meant waiting for a reconnect or restarting the add-on,
+    neither of which is a reasonable answer to "I just added a meter".
+    """
+    data = request.get_json(silent=True) or {}
+    reason = (data.get("reason") or "requested from the web UI").strip()[:200]
+    at = rescan.request_rescan(reason)
+    if not at:
+        return jsonify({"error": "could not write the rescan request"}), 500
+    return jsonify({
+        "ok": True, "requested_at": at,
+        "note": "Rediscovery starts within one poll interval.",
+    })
+
+
+@app.route("/api/rescan")
+def rescan_status():
+    at = rescan.pending()
+    return jsonify({"pending": bool(at), "requested_at": at or None})
 
 
 @app.route("/api/diagnostics")

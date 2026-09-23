@@ -629,6 +629,7 @@ tr:hover td { background: var(--row-hover); }
       <div style="display:flex;align-items:center;gap:8px">
         <span style="font-size:0.75rem;color:var(--muted)" id="tree-count"></span>
         <button class="btn btn-sm btn-primary" id="btn-apply-devices" title="Recalculate device groupings and update HA entities">Apply Changes</button>
+      <button class="btn btn-sm" id="btn-rescan" title="Rediscover points from the station. Use after adding points in Niagara.">Re-scan</button>
       </div>
     </div>
     <div class="breadcrumb" id="breadcrumb"></div>
@@ -1422,6 +1423,27 @@ async function loadDeviceFolders() {
 let templates = [];
 let devices = [];
 let deviceFilter = { search: '', type: '' };
+
+$('#btn-rescan').addEventListener('click', async () => {
+  const btn = $('#btn-rescan');
+  btn.disabled = true;
+  const original = btn.textContent;
+  btn.textContent = 'Requested';
+  try {
+    await api('/api/rescan', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reason: 'requested from the web UI' }),
+    });
+    // The poll loop owns the oBIX connection, so the rescan happens there
+    // rather than here; it starts within one poll interval.
+    toast('Rescan requested — points refresh within a poll interval');
+  } catch (e) {
+    toast('Could not request a rescan');
+  } finally {
+    setTimeout(() => { btn.disabled = false; btn.textContent = original; }, 4000);
+  }
+});
 
 document.querySelectorAll('.viewnav .btn').forEach(btn => {
   btn.addEventListener('click', () => {

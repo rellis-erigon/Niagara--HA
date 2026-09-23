@@ -33,6 +33,7 @@ SERVICE_GENERATE_CARD = "generate_card"
 SERVICE_FIX_STATISTICS = "fix_statistics_units"
 SERVICE_RUN_DIAGNOSTICS = "run_diagnostics"
 SERVICE_ADD_TO_ENERGY = "add_meters_to_energy"
+SERVICE_RESCAN = "rescan"
 ATTR_DEVICE = "device"
 
 GENERATE_CARD_SCHEMA = vol.Schema({vol.Required(ATTR_DEVICE): str})
@@ -138,8 +139,31 @@ async def _async_register_extra_services(hass: HomeAssistant) -> None:
         schema=vol.Schema({vol.Optional("dry_run", default=False): bool}),
         supports_response=SupportsResponse.ONLY,
     )
+    async def handle_rescan(call: ServiceCall) -> ServiceResponse:
+        entries = hass.data.get(DOMAIN, {})
+        if not entries:
+            raise HomeAssistantError("Niagara BMS is not set up")
+        coordinator = next(iter(entries.values()))
+
+        session = async_get_clientsession(hass)
+        try:
+            async with session.post(
+                f"{coordinator.addon_url}/api/rescan",
+                json={"reason": "requested from Home Assistant"},
+                timeout=aiohttp.ClientTimeout(total=30),
+            ) as response:
+                response.raise_for_status()
+                return await response.json()
+        except (aiohttp.ClientError, TimeoutError) as err:
+            raise HomeAssistantError(f"Could not reach the add-on: {err}") from err
+
     hass.services.async_register(
         DOMAIN, SERVICE_RUN_DIAGNOSTICS, handle_run_diagnostics,
+        schema=vol.Schema({}),
+        supports_response=SupportsResponse.ONLY,
+    )
+    hass.services.async_register(
+        DOMAIN, SERVICE_RESCAN, handle_rescan,
         schema=vol.Schema({}),
         supports_response=SupportsResponse.ONLY,
     )
@@ -229,5 +253,6 @@ async def async_setup_services(hass: HomeAssistant) -> None:
 def async_unload_services(hass: HomeAssistant) -> None:
     for service in (
         SERVICE_GENERATE_CARD, SERVICE_FIX_STATISTICS, SERVICE_RUN_DIAGNOSTICS,
+        SERVICE_RESCAN,
     ):
         hass.services.async_remove(DOMAIN, service)

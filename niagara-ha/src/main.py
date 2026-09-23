@@ -14,6 +14,7 @@ import time
 from pathlib import Path
 
 from obix_client import ObixClient, ObixError
+from rescan import take_request as take_rescan_request
 from validation import (
     load_observations,
     monotonic_paths,
@@ -149,6 +150,13 @@ def main() -> None:
         logger.info("Loaded %d cached point values from previous session", len(last_values))
 
     while not _shutdown:
+        # A rescan asked for from the web UI. Dropping the connection is
+        # what makes the loop below rediscover, which is the same path a
+        # reconnect takes, so there is only one discovery routine.
+        if take_rescan_request():
+            logger.info("Rescan requested — rediscovering points")
+            obix.connected = False
+
         if not obix.connected:
             logger.info("Connecting to Niagara oBIX...")
             if obix.test_connection():
