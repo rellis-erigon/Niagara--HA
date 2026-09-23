@@ -317,7 +317,13 @@ def check_energy_eligibility(
             if not path:
                 continue
             point = selections.get(path, {})
+            # Mirror what the entity will actually carry. When Niagara
+            # reports no unit the integration falls back to the slot's first
+            # declared unit, so judging on the point alone flagged meters
+            # that were already perfectly eligible.
             unit = (point.get("custom_unit") or point.get("unit") or "").strip()
+            if not unit and slot.units:
+                unit = slot.units[0]
             allowed = expectations.get(slot.key) or (
                 set(slot.units) if slot.units else ENERGY_UNITS
             )

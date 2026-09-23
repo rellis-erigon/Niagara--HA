@@ -268,3 +268,26 @@ def test_group_labels_are_decoded_for_reading():
     devices = {"Site/DB$2dL3": {"template": "meter", "bindings": {"energy": "/a/"}}}
     finding = d.check_resetting_totals(devices, {"meter": template()}, selections)
     assert finding.items[0]["group"] == "Site / DB-L3"
+
+
+def test_a_meter_with_no_unit_falls_back_to_the_slot_unit():
+    """The entity does this, so the check must too.
+
+    Judging eligibility on the point alone reported 21 meters as locked out
+    of the energy dashboard when every one of them was already on it
+    carrying kWh from its slot.
+    """
+    selections = {"/a/": point("MeterTotal", unit="")}
+    devices = {"G": {"template": "meter", "state": "published",
+                     "bindings": {"energy": "/a/"}}}
+    assert d.check_energy_eligibility(
+        devices, {"meter": template(units=("kWh",))}, selections) is None
+
+
+def test_a_slot_whose_own_unit_is_wrong_is_still_caught():
+    selections = {"/a/": point("MeterTotal", unit="")}
+    devices = {"G": {"template": "meter", "state": "published",
+                     "bindings": {"energy": "/a/"}}}
+    finding = d.check_energy_eligibility(
+        devices, {"meter": template(units=("kW",))}, selections)
+    assert finding.items[0]["unit"] == "kW"
