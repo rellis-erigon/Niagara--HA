@@ -35,8 +35,8 @@ class NiagaraEntity(CoordinatorEntity[NiagaraCoordinator]):
             decode_niagara_name(p) for p in group.split("/") if p
         ]
         # Name a device by the tail of its path. The full path plus the
-        # integration name ran to about 60 characters — "Mercure BMS —
-        # MercureBMS / Electrical / DB-B3-2-Loadingdock-Light" — which every
+        # integration name ran to about 60 characters — roughly "Site BMS —
+        # Station / Electrical / DB-1-Loadingdock-Light" — which every
         # dashboard truncated, and it repeats on every entity underneath.
         depth = min(coordinator.device_name_depth, len(group_parts))
         device_label = " / ".join(group_parts[-depth:]) or coordinator.device_name

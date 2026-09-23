@@ -1,6 +1,6 @@
 """Tests for slot validation.
 
-Written against the case that motivated it: 70 hotel rooms reporting exactly
+Written against the case that motivated it: dozens of rooms reporting exactly
 0.0 °C with status ok, because their BACnet proxy had stopped updating. The
 add-on was genuinely re-reading them every cycle, so staleness detection was
 blind — only a plausibility rule catches a confidently served dead number.
@@ -52,7 +52,7 @@ def test_out_of_range_is_blocked():
 
 
 def test_below_minimum_is_blocked():
-    """A hotel room at 0.0 °C, the case this exists for."""
+    """A room at 0.0 °C, the case this exists for."""
     severity, _ = v.validate_slot(
         slot(required=True, units=["°C"], validation={"min": 5, "max": 40}),
         point(), value("0.0"), None, NOW)

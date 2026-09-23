@@ -102,7 +102,7 @@ WATCH_REJECT_THRESHOLD = 0.5
 # Niagara reports a point's status inside its display string as a brace
 # group — "22.7 °C {ok}", "0.00 °C {stale}" — and leaves the oBIX status
 # attribute empty. Reading only that attribute made every point look healthy,
-# including 70 hotel rooms frozen at 0.0 °C because their BACnet proxy had
+# including dozens of rooms frozen at 0.0 °C because their BACnet proxy had
 # stopped updating.
 _DISPLAY_STATUS_RE = re.compile(r"\{([^}]*)\}")
 

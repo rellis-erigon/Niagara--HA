@@ -943,7 +943,7 @@ def _folders_with_points() -> dict[str, int]:
 def device_folder_candidates():
     """Branches whose children look like a set of identical devices.
 
-    A hotel's 192 guest rooms, or a carpark's exhaust fans, are all siblings
+    A building's guest rooms, or a carpark's exhaust fans, are all siblings
     under one branch. Marking them one at a time is unreasonable, so this
     finds branches worth adding wholesale.
     """

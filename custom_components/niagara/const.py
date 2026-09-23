@@ -20,7 +20,7 @@ DEFAULT_POLL_INTERVAL = 30
 DEFAULT_DEVICE_NAME = "Niagara BMS"
 DEFAULT_AREA_DEPTH = 1
 
-# How many trailing path segments name a device. 1 gives "DB-B3.2-Light";
+# How many trailing path segments name a device. 1 gives "DB-1-Light";
 # the previous behaviour was the integration name plus three segments, which
 # produced names too long to read in any dashboard.
 DEFAULT_DEVICE_NAME_DEPTH = 1

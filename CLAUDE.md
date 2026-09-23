@@ -147,7 +147,8 @@ Both write through a temp file and rename.
   integration versions disagree.
 - Tests: `pytest niagara-ha/tests` (no HA needed) and `pytest tests`
   (needs `homeassistant`).
-- The reference station has ~18,700 points across two Jaces, 192 guest rooms,
-  22 distribution boards and 7 switchboards. Performance matters.
+- The station this was developed against carries tens of thousands of
+  points across two Jaces, with hundreds of near-identical rooms and
+  dozens of distribution boards. Performance matters at that scale.
 - A config entry reload does **not** re-import Python. Integration code
   changes need a full `ha core restart`.
