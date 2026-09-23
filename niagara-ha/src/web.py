@@ -30,6 +30,7 @@ from validation import (
     load_observations,
     validate_device,
 )
+import diagnostics
 from point_manager import (
     POINTS_DIR,
     POINTS_FILE,
@@ -1370,6 +1371,80 @@ def autotype_devices():
     if assigned:
         save_device_types(devices)
     return jsonify({"ok": True, "assigned": assigned, "skipped": len(skipped)})
+
+
+INTEGRATION_MANIFEST = Path("/config/custom_components/niagara/manifest.json")
+ADDON_CONFIG = Path("/app/config.yaml")
+
+
+def _addon_version() -> str:
+    """This add-on's version, from the build arg or the manifest it shipped with."""
+    from_build = os.environ.get("NIAGARA_HA_VERSION")
+    if from_build:
+        return from_build
+    try:
+        for line in ADDON_CONFIG.read_text().splitlines():
+            if line.startswith("version:"):
+                return line.split(":", 1)[1].strip().strip('"\'')
+    except OSError:
+        pass
+    return ""
+
+
+def _integration_version() -> str | None:
+    """The installed integration's version, or None if it is not installed."""
+    try:
+        return json.loads(INTEGRATION_MANIFEST.read_text()).get("version")
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+@app.route("/api/diagnostics")
+def api_diagnostics():
+    """Everything that is quietly wrong, in one place.
+
+    These are the checks that previously only got run because somebody went
+    looking — a meter absent from the energy picker, a total bound to a
+    register that resets nightly. Nothing here is an error in the sense that
+    anything stopped; that is exactly why it needs surfacing.
+    """
+    return jsonify(diagnostics.run_all(
+        selections=_load_selections(),
+        values=_load_values(),
+        devices=load_device_types(),
+        templates=load_templates(),
+        observations=load_observations(),
+        addon_version=_addon_version(),
+        integration_version=_integration_version(),
+        acks=diagnostics.load_acknowledgements(),
+    ))
+
+
+@app.route("/api/diagnostics/ack", methods=["POST"])
+def acknowledge_finding():
+    """Accept a finding, or withdraw that acceptance.
+
+    Some findings are deliberate — points switched off on purpose, a meter
+    nobody intends to put on the energy dashboard. An acknowledgement
+    records how many items the finding had at the time, so if the problem
+    grows it comes back rather than staying hidden forever.
+    """
+    data = request.get_json() or {}
+    finding_id = (data.get("id") or "").strip()
+    if not finding_id:
+        return jsonify({"error": "id required"}), 400
+
+    acks = diagnostics.load_acknowledgements()
+    if data.get("acknowledge", True):
+        acks[finding_id] = {
+            "count": int(data.get("count", 0)),
+            "note": (data.get("note") or "").strip()[:200],
+            "at": time.time(),
+        }
+    else:
+        acks.pop(finding_id, None)
+    diagnostics.save_acknowledgements(acks)
+    return jsonify({"ok": True, "acknowledged": finding_id in acks})
 
 
 @app.route("/api/health")

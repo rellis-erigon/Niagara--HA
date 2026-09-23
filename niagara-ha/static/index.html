@@ -572,6 +572,39 @@ tr:hover td { background: var(--row-hover); }
   border-radius: 6px; background: var(--card); color: var(--text); font-size: 0.82rem;
 }
 .modal-wide { max-width: 720px; }
+.diag-card {
+  background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+  padding: 14px 16px; margin-bottom: 12px; border-left: 4px solid var(--muted);
+}
+.diag-card.error { border-left-color: var(--danger); }
+.diag-card.warning { border-left-color: #d97706; }
+.diag-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.diag-title { font-weight: 650; font-size: 0.98rem; }
+.diag-sev {
+  font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.06em;
+  padding: 2px 7px; border-radius: 999px; font-weight: 700;
+}
+.diag-sev.error { background: #fee2e2; color: #991b1b; }
+.diag-sev.warning { background: #fef3c7; color: #92400e; }
+.diag-detail { color: var(--muted); font-size: 0.86rem; margin: 6px 0 0; }
+.diag-action { font-size: 0.86rem; margin: 8px 0 0; }
+.diag-action b { font-weight: 650; }
+.diag-toggle {
+  background: none; border: none; color: var(--primary); cursor: pointer;
+  font-size: 0.82rem; padding: 6px 0 0; font-family: inherit;
+}
+.diag-items {
+  margin: 8px 0 0; max-height: 280px; overflow: auto;
+  border-top: 1px solid var(--border); padding-top: 8px;
+}
+.diag-item {
+  display: flex; gap: 12px; font-size: 0.8rem; padding: 3px 0;
+  font-family: ui-monospace, Menlo, monospace;
+}
+.diag-item .grow { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.diag-more { color: var(--muted); font-size: 0.8rem; padding-top: 6px; }
+.diag-ok { padding: 48px; text-align: center; color: var(--muted); }
+.diag-ok strong { display: block; font-size: 1.1rem; color: var(--success); margin-bottom: 6px; }
 .empty { padding: 40px; text-align: center; color: var(--muted); }
 </style>
 </head>
@@ -586,6 +619,7 @@ tr:hover td { background: var(--row-hover); }
 <div class="viewnav">
   <button class="btn active" data-view="points">Points</button>
   <button class="btn" data-view="devices">Devices</button>
+  <button class="btn" data-view="diagnostics">Diagnostics <span id="diag-badge"></span></button>
 </div>
 
 <div class="layout" id="view-points">
@@ -683,6 +717,14 @@ tr:hover td { background: var(--row-hover); }
       </tbody>
     </table>
   </div>
+</div>
+
+<div id="view-diagnostics" style="display:none">
+  <div class="toolbar">
+    <span style="font-size:0.85rem;color:var(--muted)" id="diag-summary">Checking...</span>
+    <button class="btn btn-sm" id="diag-refresh" style="margin-left:auto">Re-check</button>
+  </div>
+  <div id="diag-list"></div>
 </div>
 
 <div class="toast" id="toast"></div>
@@ -1385,10 +1427,12 @@ document.querySelectorAll('.viewnav .btn').forEach(btn => {
   btn.addEventListener('click', () => {
     document.querySelectorAll('.viewnav .btn').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
-    const devicesView = btn.dataset.view === 'devices';
-    $('#view-points').style.display = devicesView ? 'none' : '';
-    $('#view-devices').style.display = devicesView ? '' : 'none';
-    if (devicesView && !devices.length) loadDevices();
+    const view = btn.dataset.view;
+    $('#view-points').style.display = view === 'points' ? '' : 'none';
+    $('#view-devices').style.display = view === 'devices' ? '' : 'none';
+    $('#view-diagnostics').style.display = view === 'diagnostics' ? '' : 'none';
+    if (view === 'devices' && !devices.length) loadDevices();
+    if (view === 'diagnostics') loadDiagnostics();
   });
 });
 
@@ -1422,6 +1466,148 @@ async function loadDevices() {
   }
   renderDevices();
 }
+
+// -- Diagnostics ---------------------------------------------------------
+//
+// These checks were previously things somebody had to go looking for: a
+// meter missing from the energy picker, a total bound to a register that
+// resets nightly. Nothing has stopped working, which is exactly why it
+// needs putting in front of someone.
+
+let diagnostics = null;
+
+function diagItemLine(finding, item) {
+  const bits = [];
+  if (item.name) bits.push(`<span class="grow">${esc(item.name)}</span>`);
+  else if (item.group) bits.push(`<span class="grow">${esc(item.group)}</span>`);
+  else if (item.path) bits.push(`<span class="grow">${esc(item.path)}</span>`);
+
+  if (item.slot) bits.push(`<span>slot: ${esc(item.slot)}</span>`);
+  if (item.unit) bits.push(`<span>${esc(item.unit)}</span>`);
+  if (item.expected) bits.push(`<span>expected ${esc(item.expected.join(', '))}</span>`);
+  if (item.status) bits.push(`<span>${esc(item.status)}</span>`);
+  if (item.decreases) bits.push(`<span>${item.decreases}&times;</span>`);
+  if (item.age != null) bits.push(`<span>${Math.round(item.age / 60)}m ago</span>`);
+  else if ('age' in item) bits.push('<span>no value</span>');
+  if (item.published) bits.push('<span>published</span>');
+  return `<div class="diag-item">${bits.join('')}</div>`;
+}
+
+function renderDiagnostics() {
+  const list = $('#diag-list');
+  if (!diagnostics) { list.innerHTML = '<div class="loading">Checking...</div>'; return; }
+
+  const findings = diagnostics.findings || [];
+  const badge = $('#diag-badge');
+  if (diagnostics.errors) {
+    badge.textContent = ` ${diagnostics.errors}`;
+    badge.style.color = 'var(--danger)';
+  } else if (diagnostics.warnings) {
+    badge.textContent = ` ${diagnostics.warnings}`;
+    badge.style.color = '#d97706';
+  } else {
+    badge.textContent = '';
+  }
+
+  $('#diag-summary').textContent = findings.length
+    ? `${diagnostics.errors} error${diagnostics.errors === 1 ? '' : 's'}, `
+      + `${diagnostics.warnings} warning${diagnostics.warnings === 1 ? '' : 's'} `
+      + `across ${diagnostics.checked} checks`
+    : `All ${diagnostics.checked} checks passed`;
+
+  if (!findings.length) {
+    list.innerHTML = '<div class="diag-ok"><strong>Nothing to report</strong>'
+      + 'No stale points, no suspicious bindings, no meters locked out of the '
+      + 'energy dashboard.</div>';
+    return;
+  }
+
+  list.innerHTML = findings.map((f, i) => `
+    <div class="diag-card ${esc(f.severity)}">
+      <div class="diag-head">
+        <span class="diag-sev ${esc(f.severity)}">${esc(f.severity)}</span>
+        <span class="diag-title">${esc(f.title)}</span>
+      </div>
+      <p class="diag-detail">${esc(f.detail)}</p>
+      ${f.action ? `<p class="diag-action"><b>What to do:</b> ${esc(f.action)}</p>` : ''}
+      ${f.count ? `<button class="diag-toggle" data-diag="${i}">Show ${f.count} affected &rsaquo;</button>
+      <button class="diag-toggle" data-ack="${esc(f.id)}" data-count="${f.count}"
+              style="margin-left:14px" title="Accept this as intended. It comes back if it grows.">Accept</button>
+      <div class="diag-items" id="diag-items-${i}" style="display:none">
+        ${f.items.map(item => diagItemLine(f, item)).join('')}
+        ${f.truncated ? `<div class="diag-more">and ${f.truncated} more</div>` : ''}
+      </div>` : ''}
+    </div>`).join('');
+
+  const accepted = diagnostics.acknowledged || [];
+  if (accepted.length) {
+    list.insertAdjacentHTML('beforeend', `
+      <div class="diag-card" style="opacity:.75">
+        <div class="diag-head"><span class="diag-title">Accepted as intended</span></div>
+        <p class="diag-detail">These were reviewed and accepted. Each comes back
+        on its own if it grows beyond what was accepted.</p>
+        ${accepted.map(f => `<div class="diag-item">
+          <span class="grow">${esc(f.title)}</span>
+          ${f.note ? `<span>${esc(f.note)}</span>` : ''}
+          <button class="diag-toggle" data-unack="${esc(f.id)}">Restore</button>
+        </div>`).join('')}
+      </div>`);
+  }
+
+  list.querySelectorAll('[data-ack]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const note = prompt('Why is this expected? (optional)') ?? '';
+      await acknowledge(btn.dataset.ack, true, Number(btn.dataset.count), note);
+    });
+  });
+  list.querySelectorAll('[data-unack]').forEach(btn => {
+    btn.addEventListener('click', () => acknowledge(btn.dataset.unack, false));
+  });
+
+  list.querySelectorAll('.diag-toggle[data-diag]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const box = $('#diag-items-' + btn.dataset.diag);
+      const open = box.style.display !== 'none';
+      box.style.display = open ? 'none' : '';
+      btn.innerHTML = btn.innerHTML.replace(open ? '\u2039' : '\u203a',
+                                            open ? '\u203a' : '\u2039');
+    });
+  });
+}
+
+async function acknowledge(id, accept, count, note) {
+  try {
+    await api('/api/diagnostics/ack', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, acknowledge: accept, count, note }),
+    });
+    toast(accept ? 'Accepted' : 'Restored');
+    loadDiagnostics();
+  } catch (e) {
+    toast('Could not save that');
+  }
+}
+
+async function loadDiagnostics() {
+  $('#diag-list').innerHTML = '<div class="loading">Checking...</div>';
+  try {
+    diagnostics = await api('/api/diagnostics');
+  } catch (e) {
+    $('#diag-list').innerHTML = '<div class="empty">Could not run diagnostics</div>';
+    $('#diag-summary').textContent = '';
+    return;
+  }
+  renderDiagnostics();
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  const refresh = $('#diag-refresh');
+  if (refresh) refresh.addEventListener('click', loadDiagnostics);
+  // Run once in the background so the nav badge is meaningful before the
+  // view is ever opened.
+  loadDiagnostics();
+});
 
 function templateOptions(selected) {
   const none = `<option value=""${selected ? '' : ' selected'}>— none —</option>`;
