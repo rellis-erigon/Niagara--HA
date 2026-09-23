@@ -16,7 +16,7 @@ slots:
     # Deliberately solar-specific. Generic "*total*"/"metertotal" patterns
     # matched every switchboard meter on the station, because a kWh total
     # passes the unit filter whatever equipment produced it.
-    match: ["*generat*", "*yield*", "*pv*total*", "*pv*energy*", "*solar*total*", "*solar*energy*", "*inverter*total*", "dailyenergy", "*daily*energy*"]
+    match: ["totalaccumenergy", "*accum*energy*", "*total*accum*", "*generat*", "*yield*", "*pv*total*", "*pv*energy*", "*solar*total*", "*solar*energy*", "*inverter*total*"]
     validation:
       min: 0
       monotonic: true

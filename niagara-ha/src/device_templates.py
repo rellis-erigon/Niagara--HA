@@ -177,6 +177,25 @@ _UNIT_BONUS = 1000
 _EXACT_NAME_BONUS = 500
 
 
+# Meters expose period accumulators beside their lifetime total —
+# DailyUsage, TodaysTotal, ThisWeek. They reset, so they can never fill a
+# slot declaring monotonic: a main incomer bound to DailyUsage reads 1,726
+# kWh instead of 5,540,147 and quietly breaks the energy dashboard.
+#
+# This only constrains automatic binding. A user can still bind one by hand,
+# because a station may genuinely expose nothing else.
+_RESETTING_RE = re.compile(
+    r"daily|weekly|monthly|yearly|hourly|today|yesterday"
+    r"|this(week|month|year|day)|last(week|month|year)"
+    r"|current(week|month|year)",
+    re.I,
+)
+
+
+def is_resetting_register(name: str) -> bool:
+    return bool(_RESETTING_RE.search(decode_niagara_name(name or "")))
+
+
 def effective_unit(point: dict) -> str:
     """A point's unit, preferring a user override of what Niagara reported."""
     return (point.get("custom_unit") or point.get("unit") or "").strip()
@@ -189,6 +208,11 @@ def score_candidate(slot: Slot, point: dict) -> int | None:
         return None
 
     if slot.point_types and point.get("type") not in slot.point_types:
+        return None
+
+    if slot.validation.get("monotonic") and is_resetting_register(
+        point.get("name", "")
+    ):
         return None
 
     score: int | None = None

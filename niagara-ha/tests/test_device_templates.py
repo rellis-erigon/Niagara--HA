@@ -464,3 +464,58 @@ def test_a_wrong_override_disqualifies_a_point(templates):
     wrong = point("MeterTotal", "kWh")
     wrong["custom_unit"] = "°C"
     assert dt.score_candidate(slot, wrong) is None
+
+
+# -- Resetting registers -------------------------------------------------
+#
+# Meters expose period accumulators beside their lifetime total. The main
+# incomer on the reference station bound energy_total to DailyUsage and so
+# reported 1,726 kWh instead of 5,540,147, which silently broke the energy
+# dashboard: the reading looks plausible and only the magnitude is wrong.
+
+@pytest.mark.parametrize("name", [
+    "DailyUsage", "WeeklyUsage", "MonthlyUsage", "TodaysTotal", "Yesterday",
+    "ThisWeek", "ThisMonth", "LastMonth", "LastWeekTotal", "DailyEnergy",
+])
+def test_period_accumulators_are_detected(name):
+    assert dt.is_resetting_register(name) is True
+
+
+@pytest.mark.parametrize("name", [
+    "MeterTotal", "TotalActivePower", "TotalAccumEnergy", "Phase_1_V",
+    "RoomTemp", "$33Phase_Active_Power", "DCW_CubicMetre", "Power",
+])
+def test_lifetime_totals_are_not_flagged(name):
+    assert dt.is_resetting_register(name) is False
+
+
+def test_a_monotonic_slot_refuses_a_resetting_register(templates):
+    slot = next(s for s in templates["electricity_meter"].slots
+                if s.key == "energy_total")
+    assert slot.validation.get("monotonic")
+    assert dt.score_candidate(slot, point("DailyUsage", "kWh")) is None
+    assert dt.score_candidate(slot, point("MeterTotal", "kWh")) is not None
+
+
+def test_a_plain_slot_still_accepts_one(templates):
+    """Only cumulative slots care; a power reading may well be a daily figure."""
+    slot = next(s for s in templates["electricity_meter"].slots
+                if s.key == "power_active")
+    assert not slot.validation.get("monotonic")
+    assert dt.score_candidate(slot, point("DailyPower", "kW")) is not None
+
+
+def test_the_main_incomer_binds_to_its_lifetime_total(templates):
+    """Both are kWh and both match; only one is cumulative."""
+    meter = [point("DailyUsage", "kWh"), point("MonthlyUsage", "kWh"),
+             point("TotalActivePower", "kWh"), point("Power", "kW")]
+    bindings = dt.bind_template(templates["electricity_meter"], meter)
+    assert bindings["energy_total"].endswith("/TotalActivePower/")
+
+
+def test_solar_binds_to_its_accumulated_total(templates):
+    """TotalAccumEnergy, not DailyEnergy, which resets each day."""
+    solar = [point("DailyEnergy", "kWh"), point("DailyUsage", "kWh"),
+             point("TotalAccumEnergy", "kWh"), point("ActivePower", "kW")]
+    bindings = dt.bind_template(templates["solar_inverter"], solar)
+    assert bindings["energy_generated"].endswith("/TotalAccumEnergy/")
