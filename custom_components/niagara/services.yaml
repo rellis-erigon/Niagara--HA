@@ -14,3 +14,26 @@ generate_card:
       example: Jace1/BMS/HVAC/AC/Rooms/$3331
       selector:
         text:
+
+fix_statistics_units:
+  name: Fix statistics units
+  description: >-
+    Rewrite long-term statistics metadata to match the unit each entity now
+    reports. When a point's unit changes, Home Assistant stops recording for
+    it and logs a conflict — the meter simply goes flat on the energy
+    dashboard with nothing said about why.
+  fields:
+    dry_run:
+      name: Dry run
+      description: Report what would change without changing anything.
+      required: false
+      default: false
+      selector:
+        boolean:
+
+run_diagnostics:
+  name: Run diagnostics
+  description: >-
+    Return the add-on's full diagnostics report — stale points, suspicious
+    bindings, meters that cannot reach the energy dashboard. The same checks
+    the add-on's Diagnostics view shows, in a form an automation can act on.

@@ -31,5 +31,35 @@
         }
       }
     }
+  },
+  "issues": {
+    "version_drift": {
+      "title": "Niagara add-on and integration versions differ",
+      "description": "{title}\n\n{detail}\n\n**What to do:** {action}"
+    },
+    "decreasing_totals": {
+      "title": "{count} running totals have gone backwards",
+      "description": "{detail}\n\n**What to do:** {action}\n\nThe add-on's Diagnostics view lists which ones and how often."
+    },
+    "resetting_totals": {
+      "title": "{count} running totals are bound to a resetting register",
+      "description": "{detail}\n\n**What to do:** {action}"
+    },
+    "energy_ineligible": {
+      "title": "{count} meters cannot go on the energy dashboard",
+      "description": "{detail}\n\n**What to do:** {action}"
+    },
+    "statistics_unit_conflict": {
+      "title": "{count} entities have statistics recorded under an old unit",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "Rewrite the recorded statistics units",
+            "description": "{count} entities report a unit that differs from the one their long-term statistics were recorded under. Home Assistant stops recording when that happens, so these meters go flat on the energy dashboard with nothing said about why.\n\nThis rewrites the statistics metadata to the unit each entity now reports. History is kept; only the unit recorded against it changes.",
+            "submit": "Rewrite the units"
+          }
+        }
+      }
+    }
   }
 }

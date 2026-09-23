@@ -208,6 +208,10 @@ class NiagaraCoordinator(DataUpdateCoordinator[dict[str, NiagaraPoint]]):
                 self.points = new_points
                 self.device_folders = data["device_folders"]
                 self._purge_orphaned_entities()
+                # Point list refreshes are infrequent, and a device only
+                # becomes published between two of them, so this is the
+                # natural moment to reconcile the slower housekeeping.
+                await self._async_housekeeping()
 
             values = await self._fetch_values()
             for path, entry in values.items():
@@ -227,6 +231,72 @@ class NiagaraCoordinator(DataUpdateCoordinator[dict[str, NiagaraPoint]]):
             return self.points
         except Exception as err:
             raise UpdateFailed(f"Error polling add-on: {err}") from err
+
+    async def _async_housekeeping(self) -> None:
+        """Refresh repair issues and register newly published meters.
+
+        Never allowed to fail a refresh: none of it is needed for entities
+        to work, and losing every reading because the energy dashboard was
+        unhappy would be a poor trade.
+        """
+        try:
+            await self._async_sync_repairs()
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.debug("Could not refresh repair issues: %s", err)
+
+        try:
+            await self._async_register_energy_meters()
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.debug("Could not update the energy dashboard: %s", err)
+
+    async def _async_sync_repairs(self) -> None:
+        from .repairs import async_set_statistics_issue, async_sync_issues
+        from .statistics import async_find_unit_conflicts
+
+        session = self._get_session()
+        async with session.get(
+            f"{self.addon_url}/api/diagnostics",
+            timeout=aiohttp.ClientTimeout(total=60),
+        ) as response:
+            response.raise_for_status()
+            report = await response.json()
+        async_sync_issues(self.hass, report)
+
+        conflicts = await async_find_unit_conflicts(self.hass)
+        async_set_statistics_issue(self.hass, len(conflicts))
+
+    async def _async_register_energy_meters(self) -> None:
+        """Put published meters on the energy dashboard.
+
+        Publishing a device is the act of saying it is real, so it is also
+        the point at which a meter should appear where people look for it.
+        """
+        from .energy import GAS_SLOTS, GRID_SLOTS, SOLAR_SLOTS, WATER_SLOTS
+        from .energy import async_add_published_meters
+
+        known = GRID_SLOTS | SOLAR_SLOTS | WATER_SLOTS | GAS_SLOTS
+        registry = er.async_get(self.hass)
+
+        meters = []
+        for path, point in self.points.items():
+            if point.slot not in known:
+                continue
+            if point.slot_state_class != "total_increasing":
+                continue
+            entity_id = registry.async_get_entity_id(
+                "sensor", DOMAIN, f"niagara_{stable_id(path)}"
+            )
+            if not entity_id:
+                continue
+            meters.append({
+                "entity_id": entity_id,
+                "slot": point.slot,
+                "name": point.slot_name or point.name,
+            })
+
+        changes = await async_add_published_meters(self.hass, meters)
+        if changes:
+            _LOGGER.info("Energy dashboard updated: %s", "; ".join(changes))
 
     async def _fetch_points(self) -> dict[str, Any]:
         """Fetch full point list from the add-on."""

@@ -30,6 +30,9 @@ from .coordinator import stable_id
 _LOGGER = logging.getLogger(__name__)
 
 SERVICE_GENERATE_CARD = "generate_card"
+SERVICE_FIX_STATISTICS = "fix_statistics_units"
+SERVICE_RUN_DIAGNOSTICS = "run_diagnostics"
+SERVICE_ADD_TO_ENERGY = "add_meters_to_energy"
 ATTR_DEVICE = "device"
 
 GENERATE_CARD_SCHEMA = vol.Schema({vol.Required(ATTR_DEVICE): str})
@@ -100,10 +103,53 @@ def _prune_unresolved(node: Any, known: set[str]) -> Any:
     return node
 
 
+async def _async_register_extra_services(hass: HomeAssistant) -> None:
+    """Services that act on Home Assistant rather than on the add-on."""
+
+    async def handle_fix_statistics(call: ServiceCall) -> ServiceResponse:
+        from .statistics import async_find_unit_conflicts, async_fix_statistics_units
+
+        if call.data.get("dry_run"):
+            conflicts = await async_find_unit_conflicts(hass)
+            return {"would_fix": len(conflicts), "conflicts": conflicts}
+
+        fixed = await async_fix_statistics_units(hass)
+        return {"fixed": len(fixed), "entities": fixed}
+
+    async def handle_run_diagnostics(call: ServiceCall) -> ServiceResponse:
+        entries = hass.data.get(DOMAIN, {})
+        if not entries:
+            raise HomeAssistantError("Niagara BMS is not set up")
+        coordinator = next(iter(entries.values()))
+
+        session = async_get_clientsession(hass)
+        try:
+            async with session.get(
+                f"{coordinator.addon_url}/api/diagnostics",
+                timeout=aiohttp.ClientTimeout(total=60),
+            ) as response:
+                response.raise_for_status()
+                return await response.json()
+        except (aiohttp.ClientError, TimeoutError) as err:
+            raise HomeAssistantError(f"Could not reach the add-on: {err}") from err
+
+    hass.services.async_register(
+        DOMAIN, SERVICE_FIX_STATISTICS, handle_fix_statistics,
+        schema=vol.Schema({vol.Optional("dry_run", default=False): bool}),
+        supports_response=SupportsResponse.ONLY,
+    )
+    hass.services.async_register(
+        DOMAIN, SERVICE_RUN_DIAGNOSTICS, handle_run_diagnostics,
+        schema=vol.Schema({}),
+        supports_response=SupportsResponse.ONLY,
+    )
+
+
 async def async_setup_services(hass: HomeAssistant) -> None:
     """Register integration services once."""
     if hass.services.has_service(DOMAIN, SERVICE_GENERATE_CARD):
         return
+    await _async_register_extra_services(hass)
 
     async def handle_generate_card(call: ServiceCall) -> ServiceResponse:
         device = call.data[ATTR_DEVICE]
@@ -181,4 +227,7 @@ async def async_setup_services(hass: HomeAssistant) -> None:
 
 
 def async_unload_services(hass: HomeAssistant) -> None:
-    hass.services.async_remove(DOMAIN, SERVICE_GENERATE_CARD)
+    for service in (
+        SERVICE_GENERATE_CARD, SERVICE_FIX_STATISTICS, SERVICE_RUN_DIAGNOSTICS,
+    ):
+        hass.services.async_remove(DOMAIN, service)
