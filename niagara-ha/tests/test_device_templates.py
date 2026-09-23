@@ -161,12 +161,14 @@ def test_suggest_picks_the_meter(templates):
 
 
 def test_device_name_breaks_a_tie(templates):
-    """A folder called SOLAR is a solar inverter, not a generic meter."""
-    solar = [point("DailyEnergy", "kWh"), point("ActivePower", "kW")]
-    plain = dt.suggest_template(templates, solar)[0]
+    """A folder called SOLAR is a solar inverter, not a generic meter.
+
+    TotalAccumEnergy rather than DailyEnergy: a cumulative slot refuses a
+    register that resets, so a daily figure cannot fill energy_generated.
+    """
+    solar = [point("TotalAccumEnergy", "kWh"), point("ActivePower", "kW")]
     named = dt.suggest_template(templates, solar, "Site/Boards/SOLAR")[0]
     assert named == "solar_inverter"
-    assert plain != "solar_inverter" or plain == "solar_inverter"
 
 
 def test_suggest_returns_none_when_nothing_fits(templates):
