@@ -3,6 +3,15 @@
 The add-on and the Home Assistant integration are released as a matched
 pair and share a version number. CI fails the build if they drift.
 
+## 3.10.1 — 2026-09-24
+
+- **Fix**: A point's children now belong to the equipment, not to the point.
+  Niagara lets a point hold children — `MeterTotal` is a reading in its own
+  right and also the parent of `LastMonth`, `ThisWeekTotal` and the rest —
+  and those children were forming devices of their own. On this station that
+  meant 22 separate devices all called "MeterTotal", none attached to the
+  distribution board they measure. 133 points move to their board.
+
 ## 3.10.0 — 2026-09-24
 
 - **Feature**: Force a re-scan of points from the panel or via

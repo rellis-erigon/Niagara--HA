@@ -521,3 +521,61 @@ def test_solar_binds_to_its_accumulated_total(templates):
              point("TotalAccumEnergy", "kWh"), point("ActivePower", "kW")]
     bindings = dt.bind_template(templates["solar_inverter"], solar)
     assert bindings["energy_generated"].endswith("/TotalAccumEnergy/")
+
+
+# -- points that are also folders ----------------------------------------
+
+def test_a_points_children_belong_to_the_equipment_not_the_point():
+    """MeterTotal is a reading and a folder holding LastMonth, ThisWeek...
+
+    Without this, every board's period totals formed a device called
+    "MeterTotal" — 109 of them on one station, all identically named and
+    none attached to the board they measure.
+    """
+    import sys
+    from pathlib import Path as _P
+    sys.path.insert(0, str(_P(__file__).parent.parent / "src"))
+    from point_manager import get_group_from_path, point_paths_as_folders
+
+    board = "/config/Drivers/NiagaraNetwork/J1/points/Site/Electrical/DB1"
+    paths = [f"{board}/MeterTotal/", f"{board}/MeterTotal/LastMonth/",
+             f"{board}/Active_Power_P1/"]
+    point_paths = point_paths_as_folders(paths)
+
+    for path in paths:
+        assert get_group_from_path(path, point_paths=point_paths).endswith("DB1")
+
+
+def test_a_normal_point_is_unaffected():
+    import sys
+    from pathlib import Path as _P
+    sys.path.insert(0, str(_P(__file__).parent.parent / "src"))
+    from point_manager import get_group_from_path, point_paths_as_folders
+
+    paths = ["/config/Drivers/NiagaraNetwork/J1/points/Site/AHU1/SupplyTemp/"]
+    group = get_group_from_path(paths[0], point_paths=point_paths_as_folders(paths))
+    assert group.endswith("AHU1")
+
+
+def test_grouping_without_the_point_set_behaves_as_before():
+    """The argument is optional; old call sites must not change meaning."""
+    import sys
+    from pathlib import Path as _P
+    sys.path.insert(0, str(_P(__file__).parent.parent / "src"))
+    from point_manager import get_group_from_path
+
+    path = "/config/Drivers/NiagaraNetwork/J1/points/Site/DB1/MeterTotal/LastMonth/"
+    assert get_group_from_path(path).endswith("MeterTotal")
+
+
+def test_nesting_more_than_one_deep_still_finds_the_equipment():
+    import sys
+    from pathlib import Path as _P
+    sys.path.insert(0, str(_P(__file__).parent.parent / "src"))
+    from point_manager import get_group_from_path, point_paths_as_folders
+
+    board = "/config/Drivers/NiagaraNetwork/J1/points/Site/DB1"
+    paths = [f"{board}/MeterTotal/", f"{board}/MeterTotal/LastMonth/",
+             f"{board}/MeterTotal/LastMonth/Peak/"]
+    point_paths = point_paths_as_folders(paths)
+    assert get_group_from_path(paths[2], point_paths=point_paths).endswith("DB1")

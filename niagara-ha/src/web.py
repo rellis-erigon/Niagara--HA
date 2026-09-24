@@ -38,6 +38,7 @@ from point_manager import (
     PROFILES,
     _parent_path,
     get_group_from_path,
+    point_paths_as_folders,
     get_tree_children,
     load_auto_enable_rules,
     load_device_folders,
@@ -358,6 +359,7 @@ def toggle_device_folder():
     save_device_folders(folders)
 
     selections = load_point_selections()
+    point_paths = point_paths_as_folders(selections)
     enabled_count = 0
     regrouped = 0
     for entry in selections.values():
@@ -368,7 +370,8 @@ def toggle_device_folder():
             if action == "added" and not entry.get("enabled", False):
                 entry["enabled"] = True
                 enabled_count += 1
-            new_group = get_group_from_path(path, device_folders=folders)
+            new_group = get_group_from_path(
+                path, device_folders=folders, point_paths=point_paths)
             if entry.get("group") != new_group:
                 entry["group"] = new_group
                 regrouped += 1
@@ -385,10 +388,12 @@ def toggle_device_folder():
 def apply_device_folders():
     folders = load_device_folders()
     selections = load_point_selections()
+    point_paths = point_paths_as_folders(selections)
     count = 0
     for entry in selections.values():
         path = entry.get("path", "")
-        new_group = get_group_from_path(path, device_folders=folders)
+        new_group = get_group_from_path(
+            path, device_folders=folders, point_paths=point_paths)
         if entry.get("group") != new_group:
             entry["group"] = new_group
             count += 1

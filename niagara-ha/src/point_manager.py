@@ -95,11 +95,36 @@ def _match_device_folder(point_parent: str, device_folders: list[str]) -> str:
     return best
 
 
-def get_group(point: NiagaraPoint, device_depth: int = 0, device_folders: list[str] | None = None) -> str:
+def point_paths_as_folders(paths) -> set[str]:
+    """Paths that are a point and a folder at the same time.
+
+    Niagara lets a point hold children: `MeterTotal` is a reading in its own
+    right and also the parent of `LastMonth`, `ThisWeekTotal` and the rest.
+    Those children are not a device — they belong to whatever device their
+    parent point belongs to, which is the distribution board.
+    """
+    return {"/".join(parse_path_segments(path)) for path in paths}
+
+
+def _device_parent(parts: list[str], point_paths: set[str] | None) -> str:
+    """The folder that should own this point, skipping points-as-folders.
+
+    Without this, every board's period totals form their own device called
+    "MeterTotal" — 109 of them on this station, all with the same name and
+    none attached to the board they measure.
+    """
+    depth = len(parts) - 1
+    if point_paths:
+        while depth > 1 and "/".join(parts[:depth]) in point_paths:
+            depth -= 1
+    return "/".join(parts[:depth])
+
+
+def get_group(point: NiagaraPoint, device_depth: int = 0, device_folders: list[str] | None = None, point_paths: set[str] | None = None) -> str:
     parts = parse_path_segments(point.path)
     if len(parts) < 2:
         return "Ungrouped"
-    point_parent = "/".join(parts[:-1])
+    point_parent = _device_parent(parts, point_paths)
     if device_folders:
         matched = _match_device_folder(point_parent, device_folders)
         if matched:
@@ -109,11 +134,11 @@ def get_group(point: NiagaraPoint, device_depth: int = 0, device_folders: list[s
     return point_parent
 
 
-def get_group_from_path(path: str, device_depth: int = 0, device_folders: list[str] | None = None) -> str:
+def get_group_from_path(path: str, device_depth: int = 0, device_folders: list[str] | None = None, point_paths: set[str] | None = None) -> str:
     parts = parse_path_segments(path)
     if len(parts) < 2:
         return "Ungrouped"
-    point_parent = "/".join(parts[:-1])
+    point_parent = _device_parent(parts, point_paths)
     if device_folders:
         matched = _match_device_folder(point_parent, device_folders)
         if matched:
@@ -411,8 +436,11 @@ def save_point_selections(
 
     auto_enabled_count = 0
     merged: dict[str, dict] = {}
+    # Which folders are themselves points, so their children attach to the
+    # equipment rather than forming a device named after the reading.
+    point_paths = point_paths_as_folders(pt.path for pt in discovered)
     for pt in discovered:
-        group = get_group(pt, device_depth, device_folders)
+        group = get_group(pt, device_depth, device_folders, point_paths)
         if pt.path in existing:
             entry = existing[pt.path].copy()
             entry["name"] = pt.name
