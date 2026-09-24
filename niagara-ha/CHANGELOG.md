@@ -3,6 +3,14 @@
 The add-on and the Home Assistant integration are released as a matched
 pair and share a version number. CI fails the build if they drift.
 
+## 3.10.2 — 2026-09-24
+
+- **Fix**: Clear devices left with no entities even when nothing was
+  removed. The cleanup only ran after entities were deleted, but regrouping
+  empties a device without deleting anything — so moving the meter totals
+  onto their boards left nineteen devices called "MeterTotal" holding
+  nothing, each opening onto an empty page.
+
 ## 3.10.1 — 2026-09-24
 
 - **Fix**: A point's children now belong to the equipment, not to the point.

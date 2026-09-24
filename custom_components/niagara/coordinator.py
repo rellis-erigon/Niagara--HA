@@ -161,7 +161,12 @@ class NiagaraCoordinator(DataUpdateCoordinator[dict[str, NiagaraPoint]]):
             _LOGGER.info(
                 "Removed %d entities whose points no longer exist", len(stale),
             )
-            self._purge_empty_devices(registry)
+
+        # Unconditionally, not only when something was removed: regrouping
+        # empties a device without deleting a single entity. Moving the
+        # meter totals onto their boards left nineteen devices called
+        # "MeterTotal" holding nothing, and this never ran to clear them.
+        self._purge_empty_devices(registry)
         return len(stale)
 
     def _purge_empty_devices(self, registry: er.EntityRegistry) -> None:
