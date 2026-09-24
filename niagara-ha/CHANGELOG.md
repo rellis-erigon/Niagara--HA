@@ -1,5 +1,176 @@
 # Changelog
 
+The add-on and the Home Assistant integration are released as a matched
+pair and share a version number. CI fails the build if they drift.
+
+## 3.10.0 — 2026-09-24
+
+- **Feature**: Force a re-scan of points from the panel or via
+  `niagara.rescan`. Points added in Niagara previously did not appear until
+  a reconnect or an add-on restart, which is no answer to "I just added a
+  meter". The request travels through the filesystem because the Flask UI
+  and the poll loop are separate processes, and is consumed before it is
+  acted on, so a failed rescan cannot fire forever.
+
+## 3.9.1 — 2026-09-24
+
+- **Fix**: Stop reporting eligible meters as locked out of the energy
+  dashboard. The check judged a meter by the unit Niagara reports for its
+  point; when that is empty the entity falls back to the slot's declared
+  unit. Twenty-one meters already carrying kWh were reported as ineligible.
+
+## 3.9.0 — 2026-09-24
+
+- **Feature**: Diagnostics view in the add-on panel. Eight checks for the
+  things that fail quietly — points that stopped reporting, totals bound to
+  a register that resets nightly, unit overrides that contradict the point
+  name, meters that cannot reach the energy dashboard, version drift between
+  the two halves. Findings can be accepted, which records the count at the
+  time so a problem that grows comes back.
+- **Feature**: Repair issues in Home Assistant for the findings where
+  something untrue is being recorded or displayed. They clear themselves
+  when the underlying problem goes.
+- **Feature**: `niagara.fix_statistics_units` rewrites long-term statistics
+  metadata to match the unit an entity now reports. When a unit changes the
+  recorder stops recording and the meter goes flat on the energy dashboard
+  with nothing said about why. `dry_run: true` previews it.
+- **Feature**: `niagara.run_diagnostics` returns the full report for
+  automations.
+- **Feature**: Published meters are added to the energy dashboard
+  automatically. Submeters go in as individual devices rather than grid
+  import, because a building has many boards and one supply. Only ever adds;
+  a source removed on purpose stays removed.
+
+## 3.8.0 — 2026-09-23
+
+- **Fix**: Never auto-bind a resetting register to a cumulative slot. A slot
+  expecting a lifetime total reads every reset as the meter running
+  backwards, and long-run statistics do not recover cleanly from that.
+
+## 3.7.0 — 2026-09-22
+
+- **Feature**: A point's unit of measurement can be overridden, for when
+  Niagara reports the wrong one or none at all.
+
+## 3.6.0 — 2026-09-22
+
+- **Fix**: Subscribe to the oBIX Watch with absolute hrefs. Without the
+  `/obix` prefix nothing was ever subscribed and Niagara served cached
+  values flagged `{stale}` — which looked exactly like widespread plant
+  failure and was diagnosed as such twice.
+
+## 3.5.0 — 2026-09-22
+
+- **Feature**: Name devices by the tail of their path rather than the whole
+  thing. Full paths ran to about sixty characters and every dashboard
+  truncated them.
+
+## 3.4.0 — 2026-09-22
+
+- **Fix**: Detect writability from the point's contract rather than a
+  `writable` attribute Niagara does not set.
+
+## 3.3.0 — 2026-09-22
+
+- **Fix**: Remove entities whose point no longer exists.
+
+## 3.2.1 — 2026-09-22
+
+- **Fix**: Take a slot's declared unit when the point reports none.
+
+## 3.2.0 — 2026-09-22
+
+- **Fix**: Fast atomic point writes, decoded names, and history sub-points
+  kept out of the slot picker.
+
+## 3.1.0 — 2026-09-22
+
+- **Feature**: Re-apply a template to devices already typed with it.
+
+## 3.0.2 — 2026-09-22
+
+- **Fix**: `TempAdjust` binds to the temperature adjust slot, not setpoint.
+
+## 3.0.1 — 2026-09-22
+
+- **Fix**: Separate setpoint adjust from setpoint, and stop an optional slot
+  blocking a whole device.
+
+## 3.0.0 — 2026-09-22
+
+- **Feature**: Publish gate and slot-driven entity metadata. A device must
+  be typed, validated and published before it reaches Home Assistant.
+
+## 2.9.0 — 2026-09-21
+
+- **Feature**: Import and export templates, and link them to Lovelace cards.
+
+## 2.8.0 — 2026-09-21
+
+- **Feature**: Validate slot values, read the real point status, and add a
+  three-phase UPS template.
+
+## 2.7.0 — 2026-09-21
+
+- **Feature**: Free point selection, device-level enabling, custom templates.
+
+## 2.6.0 — 2026-09-21
+
+- **Feature**: Add sibling folders as devices in bulk, and enable slots
+  wholesale.
+
+## 2.5.3 — 2026-09-21
+
+- **Fix**: Bind abbreviated HVAC point names (`Sts`, `Spd`).
+
+## 2.5.2 — 2026-09-21
+
+- **Fix**: Show every selected device folder, not only ones with enabled
+  points.
+
+## 2.5.1 — 2026-09-21
+
+- **Feature**: Devices view for assigning types and binding slots.
+
+## 2.5.0 — 2026-09-21
+
+- **Feature**: Device type templates and point-to-slot binding.
+
+## 2.4.1 — 2026-09-21
+
+- **Fix**: Stop assigning device classes that contradict the point.
+
+## 2.4.0 — 2026-09-21
+
+- **Feature**: Timestamp and prune cached values so staleness is visible.
+
+## 2.3.2 — 2026-09-21
+
+- **Fix**: Discover the add-on URL from Supervisor instead of a default that
+  was wrong.
+
+## 2.3.1 — 2026-09-21
+
+- **Fix**: Keep the requested path when refreshing a point.
+
+## 2.3.0 — 2026-09-21
+
+- **Change**: Add-on and integration versions unified.
+
+## 1.1.0 — 2026-09-21
+
+- Maintenance release.
+
+## 1.0.0 — 2026-09-20
+
+- **Change**: Restructured into two parts — a Home Assistant add-on that
+  owns the oBIX connection and the management UI, and a thin integration
+  that creates entities.
+
+---
+
+Entries below predate the two-part split, when this was a single add-on.
+
 ## 0.6.9
 
 - **Feature**: HA Energy dashboard — water meters (`device_class: water`, `state_class: total_increasing`), gas meters (`device_class: gas`), and battery sensors (`device_class: battery`) now auto-detected from point names and paths
