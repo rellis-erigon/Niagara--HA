@@ -1,0 +1,159 @@
+id: fip
+name: Fire Indicator Panel
+description: >-
+  Fire Indicator Panel monitored by the BMS — panel status, fire pumps and
+  smoke control fans. Monitoring only. The panel is the system of record for
+  fire; nothing exposed here should ever be treated as control, and an
+  entity going unavailable says nothing about whether the building is safe.
+icon: mdi:fire-alert
+
+device_match:
+  ["*fip", "*fip/*", "*fip*", "*fire*indicator*", "*fire*panel*",
+   "*fire*alarm*panel*"]
+
+slots:
+  # -- Panel ------------------------------------------------------------
+  #
+  # A FIP board usually publishes both a healthy contact and a fault
+  # contact. Either alone is enough to know the panel is being watched.
+  - key: panel_normal
+    name: Panel Normal
+    required: true
+    point_types: [boolean]
+    match: ["fip normal", "*fip*normal*", "*panel*normal*", "*system*normal*",
+            "*healthy*"]
+
+  - key: panel_fault
+    name: Panel Fault
+    device_class: problem
+    point_types: [boolean]
+    match: ["fip fault", "*fip*fault*", "*panel*fault*", "*system*fault*",
+            "*trouble*", "*defect*"]
+
+  - key: alarm
+    name: Fire Alarm
+    # "safety" rather than "smoke": a panel summary says the panel is in
+    # alarm, not what kind of detector caused it.
+    device_class: safety
+    point_types: [boolean]
+    match: ["*fire*alarm*", "*in*alarm*", "*evacuate*", "*evac*"]
+
+  - key: isolate
+    name: Isolated
+    device_class: problem
+    point_types: [boolean]
+    match: ["*isolat*", "*inhibit*", "*bypass*", "*test*mode*"]
+
+  - key: brigade_call
+    name: Brigade Called
+    device_class: safety
+    point_types: [boolean]
+    # Not "*ase*": it matches "B-ase-ment", and bound a lobby call point
+    # on the first attempt. Alarm Signalling Equipment is spelled out.
+    match: ["*brigade*", "*alarm*signal*", "*signalling*equip*",
+            "*fire*service*", "ase"]
+
+  - key: call_point
+    name: Manual Call Point
+    device_class: safety
+    point_types: [boolean]
+    match: ["*mcp*", "*call*point*", "*break*glass*"]
+
+  - key: mains_fail
+    name: Mains Fail
+    device_class: problem
+    point_types: [boolean]
+    match: ["*mains*fail*", "*ac*fail*", "*power*fail*", "*supply*fail*"]
+
+  - key: battery_fault
+    name: Battery Fault
+    device_class: problem
+    point_types: [boolean]
+    match: ["*battery*fault*", "*battery*fail*", "*batt*fault*",
+            "*charger*fault*"]
+
+  # -- Fire pumps --------------------------------------------------------
+  - key: pump1_run
+    name: Fire Pump 1 Running
+    device_class: running
+    point_types: [boolean]
+    match: ["diesel pump-1 run", "*diesel*pump*1*run*", "*fire*pump*1*run*",
+            "*pump*1*run*", "*jockey*run*"]
+
+  - key: pump1_fault
+    name: Fire Pump 1 Fault
+    device_class: problem
+    point_types: [boolean]
+    match: ["diesel pump-1 fault", "*diesel*pump*1*fault*",
+            "*fire*pump*1*fault*", "*pump*1*fault*"]
+
+  - key: pump2_run
+    name: Fire Pump 2 Running
+    device_class: running
+    point_types: [boolean]
+    match: ["diesel pump-2 run", "*diesel*pump*2*run*", "*fire*pump*2*run*",
+            "*pump*2*run*"]
+
+  - key: pump2_fault
+    name: Fire Pump 2 Fault
+    device_class: problem
+    point_types: [boolean]
+    match: ["diesel pump-2 fault", "*diesel*pump*2*fault*",
+            "*fire*pump*2*fault*", "*pump*2*fault*"]
+
+  # -- Sprinkler ---------------------------------------------------------
+  #
+  # A real panel publishes dozens of valve and flow-switch points, one per
+  # zone. A fixed-slot template cannot enumerate those; these bind the
+  # first of each kind so the device is meaningful, and the rest are worth
+  # enabling as ordinary points.
+  - key: sprinkler_flow
+    name: Sprinkler Flow Switch
+    device_class: safety
+    point_types: [boolean]
+    match: ["*f/sw*", "*flow*switch*", "*sprinkler*flow*"]
+
+  - key: sprinkler_valve
+    name: Sprinkler Valve
+    device_class: problem
+    point_types: [boolean]
+    match: ["*c/v*", "*control*valve*", "*valve*monitor*", "*vmd*"]
+
+  - key: sprinkler_pressure_switch
+    name: Sprinkler Pressure Switch
+    device_class: safety
+    point_types: [boolean]
+    match: ["*p/sw*", "*pressure*switch*"]
+
+card:
+  type: entities
+  title: "{{device_name}}"
+  entities:
+    - entity: "{{slot.panel_normal}}"
+      name: Panel Normal
+    - entity: "{{slot.panel_fault}}"
+      name: Panel Fault
+    - entity: "{{slot.alarm}}"
+      name: Fire Alarm
+    - entity: "{{slot.brigade_call}}"
+      name: Brigade Called
+    - entity: "{{slot.call_point}}"
+      name: Manual Call Point
+    - entity: "{{slot.isolate}}"
+      name: Isolated
+    - entity: "{{slot.pump1_run}}"
+      name: Fire Pump 1
+    - entity: "{{slot.pump1_fault}}"
+      name: Fire Pump 1 Fault
+    - entity: "{{slot.pump2_run}}"
+      name: Fire Pump 2
+    - entity: "{{slot.pump2_fault}}"
+      name: Fire Pump 2 Fault
+    - entity: "{{slot.sprinkler_flow}}"
+      name: Sprinkler Flow
+    - entity: "{{slot.sprinkler_valve}}"
+      name: Sprinkler Valve
+    - entity: "{{slot.mains_fail}}"
+      name: Mains Fail
+    - entity: "{{slot.battery_fault}}"
+      name: Battery Fault

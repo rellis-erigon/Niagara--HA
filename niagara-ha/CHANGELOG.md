@@ -3,6 +3,18 @@
 The add-on and the Home Assistant integration are released as a matched
 pair and share a version number. CI fails the build if they drift.
 
+## 3.11.0 — 2026-09-24
+
+- **Feature**: Two templates. **Pump System (3 Pump)** for a triplex set —
+  common pressure and setpoint, plus speed, frequency, current and power per
+  pump, and run/fault contacts for sets built that way. Only the system
+  pressure is required, because whether a site has run contacts or inverter
+  telemetry is not knowable from here.
+- **Feature**: **Fire Indicator Panel** — panel normal and fault, fire
+  pumps, sprinkler flow, valve and pressure switches, manual call points.
+  Monitoring only; a fire panel is its own system of record and nothing
+  here should be treated as control.
+
 ## 3.10.2 — 2026-09-24
 
 - **Fix**: Clear devices left with no entities even when nothing was

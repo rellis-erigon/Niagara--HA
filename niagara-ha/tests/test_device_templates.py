@@ -579,3 +579,106 @@ def test_nesting_more_than_one_deep_still_finds_the_equipment():
              f"{board}/MeterTotal/LastMonth/Peak/"]
     point_paths = point_paths_as_folders(paths)
     assert get_group_from_path(paths[2], point_paths=point_paths).endswith("DB1")
+
+
+# -- three-pump system and fire panel ------------------------------------
+
+def _load_builtin():
+    import sys
+    from pathlib import Path as _P
+    sys.path.insert(0, str(_P(__file__).parent.parent / "src"))
+    import device_templates as _dt
+    _dt.BUILTIN_TEMPLATE_DIR = _P(__file__).parent.parent / "templates"
+    _dt.USER_TEMPLATE_DIR = _P("/nonexistent")
+    return _dt, _dt.load_templates()
+
+
+def _point(name, ptype="numeric", unit=""):
+    return {"path": f"/p/{name}/", "name": name, "type": ptype, "unit": unit}
+
+
+# Real point names from an inverter-driven triplex set.
+PUMP_SET = [
+    _point("Current Pressure", unit="bar"),
+    _point("Set Pressure", unit="bar"),
+    _point("PumpStatus-Running"),
+    _point("PumpStatus-Ready"),
+    _point("System Fault History"),
+] + [
+    _point(f"Pump {n} Inverter Output {suffix}", unit=unit)
+    for n in (1, 2, 3)
+    for suffix, unit in (("%", "%"), ("A", "A"), ("Hz", "Hz"), ("kW", "kW"))
+]
+
+# Real point names from a fire indicator panel board.
+FIP_POINTS = [
+    _point("FIP Normal", "boolean"),
+    _point("FIP Fault", "boolean"),
+    _point("Basement 1 Lobby MCP", "boolean"),
+    _point("Diesel Pump-1 Run", "boolean"),
+    _point("Diesel Pump-1 Fault", "boolean"),
+    _point("Diesel Pump-2 Run", "boolean"),
+    _point("Diesel Pump-2 Fault", "boolean"),
+    _point("Sprinkler F/SW L3", "boolean"),
+    _point("Sprinkler B1 C/V", "boolean"),
+    _point("Sprinkler B1 P/SW", "boolean"),
+]
+
+
+def test_the_pump_system_binds_an_inverter_driven_set():
+    dt, templates = _load_builtin()
+    bindings = dt.bind_template(templates["pump_system_3"], PUMP_SET)
+    named = {k: v for k, v in bindings.items() if v}
+    assert "system_pressure" in named
+    assert "pressure_setpoint" in named
+    for pump in (1, 2, 3):
+        assert named.get(f"pump{pump}_speed"), f"pump {pump} speed unbound"
+        assert named.get(f"pump{pump}_current"), f"pump {pump} current unbound"
+
+
+def test_the_pump_system_requires_only_a_pressure():
+    """Which of run-contacts or inverter telemetry a site has is not knowable."""
+    dt, templates = _load_builtin()
+    required = [s.key for s in templates["pump_system_3"].required_slots]
+    assert required == ["system_pressure"]
+
+
+def test_the_pump_system_does_not_claim_an_ordinary_pump():
+    dt, templates = _load_builtin()
+    points = [_point("Sts", "boolean"), _point("Spd", unit="%")]
+    suggested, _ = dt.suggest_template(templates, points, "Site/HVAC/Pump1")
+    assert suggested != "pump_system_3"
+
+
+def test_the_fire_panel_binds_a_real_board():
+    dt, templates = _load_builtin()
+    bindings = dt.bind_template(templates["fip"], FIP_POINTS)
+    assert bindings["panel_normal"].endswith("FIP Normal/")
+    assert bindings["panel_fault"].endswith("FIP Fault/")
+    assert bindings["pump1_run"].endswith("Diesel Pump-1 Run/")
+    assert bindings["sprinkler_flow"].endswith("Sprinkler F/SW L3/")
+
+
+def test_a_call_point_is_not_mistaken_for_the_brigade_signal():
+    """"*ase*" matched "B-ase-ment" and bound a lobby call point as the
+    brigade signal on the first attempt."""
+    dt, templates = _load_builtin()
+    bindings = dt.bind_template(templates["fip"], FIP_POINTS)
+    assert not bindings.get("brigade_call")
+    assert bindings["call_point"].endswith("Basement 1 Lobby MCP/")
+
+
+def test_the_fire_panel_is_suggested_for_a_fip_folder():
+    dt, templates = _load_builtin()
+    suggested, _ = dt.suggest_template(templates, FIP_POINTS, "Site/MISC/FIP")
+    assert suggested == "fip"
+
+
+def test_every_builtin_template_still_loads_and_is_unique():
+    dt, templates = _load_builtin()
+    assert len(templates) == 14
+    ids = [t.id for t in templates.values()]
+    assert len(ids) == len(set(ids))
+    for template in templates.values():
+        keys = [s.key for s in template.slots]
+        assert len(keys) == len(set(keys)), f"{template.id} has duplicate slots"

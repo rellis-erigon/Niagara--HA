@@ -1,0 +1,254 @@
+id: pump_system_3
+name: Pump System (3 Pump)
+description: >-
+  Triplex pump set — three inverter-driven pumps with common pressure
+  control. Use this for a pump group controlled as one thing; a single pump
+  is better served by the Pump template.
+icon: mdi:pump
+
+# Deliberately not a bare "*pump*": that is the Pump template's territory,
+# and a three-pump template that swallows every single pump on a station
+# leaves nothing sensible bound.
+device_match:
+  ["*pumps", "*pumps/*", "*pump*set*", "*pumpset*", "*pump*system*",
+   "*pump*group*", "*triplex*", "*booster*set*", "*booster*pump*"]
+
+slots:
+  # -- Common control ----------------------------------------------------
+  #
+  # Pressure is what actually defines a set like this: the pumps stage on
+  # and off to hold it. It is the one slot worth insisting on.
+  - key: system_pressure
+    name: System Pressure
+    required: true
+    device_class: pressure
+    state_class: measurement
+    units: [bar, kPa, Pa, psi, mbar, m]
+    point_types: [numeric, integer]
+    match: ["current pressure", "*current*press*", "*system*press*",
+            "*common*press*", "*header*press*", "*discharge*press*", "*press*"]
+
+  - key: pressure_setpoint
+    name: Pressure Setpoint
+    state_class: measurement
+    units: [bar, kPa, Pa, psi, mbar, m]
+    point_types: [numeric, integer]
+    match: ["set pressure", "*set*press*", "*press*setp*", "*press*sp",
+            "*setpoint*press*", "*press*target*"]
+
+  - key: pumps_running
+    name: Pumps Running
+    state_class: measurement
+    point_types: [numeric, integer, boolean]
+    match: ["pumpstatus-running", "*status*running*", "*pumps*running*",
+            "*running*count*", "*duty*running*"]
+
+  - key: pumps_ready
+    name: Pumps Ready
+    point_types: [numeric, integer, boolean]
+    match: ["pumpstatus-ready", "*status*ready*", "*pumps*ready*", "*ready*"]
+
+  - key: common_fault
+    name: Common Fault
+    point_types: [boolean, numeric, integer]
+    match: ["system fault history", "*system*fault*", "*common*fault*",
+            "*common*alarm*", "*group*fault*", "*general*fault*", "*fault*"]
+
+  - key: flow
+    name: Flow
+    state_class: measurement
+    units: ["L/s", "L/min", "m³/h", "m3/h"]
+    point_types: [numeric, integer]
+    match: ["*flow*rate*", "*flow*"]
+    validation: {min: 0}
+
+  - key: low_level
+    name: Low Level
+    device_class: problem
+    point_types: [boolean]
+    match: ["*low*level*", "*tank*low*", "*level*low*", "*dry*run*"]
+
+  # -- Pump 1 ------------------------------------------------------------
+  #
+  # Both shapes are offered per pump: a run/fault contact on a simpler set,
+  # and inverter telemetry where the pumps are speed-controlled. Neither is
+  # required, because which of the two a site has is not knowable here.
+  - key: pump1_run
+    name: Pump 1 Running
+    device_class: running
+    point_types: [boolean]
+    match: ["*pump*1*run*", "*pump1*run*", "*p1*run*", "*pump*1*sts",
+            "*pump1*sts", "*pump*1*status*"]
+
+  - key: pump1_speed
+    name: Pump 1 Speed
+    state_class: measurement
+    units: ["%"]
+    point_types: [numeric, integer]
+    match: ["pump 1 inverter output %", "*pump*1*output*%*", "*pump*1*speed*",
+            "*pump1*speed*", "*p1*speed*", "*pump*1*spd*"]
+    validation: {min: 0, max: 100}
+
+  - key: pump1_frequency
+    name: Pump 1 Frequency
+    device_class: frequency
+    state_class: measurement
+    units: [Hz]
+    point_types: [numeric, integer]
+    match: ["pump 1 inverter output hz", "*pump*1*hz*", "*pump*1*freq*"]
+    validation: {min: 0}
+
+  - key: pump1_current
+    name: Pump 1 Current
+    device_class: current
+    state_class: measurement
+    units: [A]
+    point_types: [numeric, integer]
+    match: ["pump 1 inverter output a", "*pump*1*output*a", "*pump*1*current*",
+            "*pump*1*amp*"]
+    validation: {min: 0}
+
+  - key: pump1_power
+    name: Pump 1 Power
+    device_class: power
+    state_class: measurement
+    units: [kW, W]
+    point_types: [numeric, integer]
+    match: ["pump 1 inverter output kw", "*pump*1*kw*", "*pump*1*power*"]
+    validation: {min: 0}
+
+  - key: pump1_fault
+    name: Pump 1 Fault
+    device_class: problem
+    point_types: [boolean]
+    match: ["*pump*1*fault*", "*pump1*fault*", "*p1*fault*", "*pump*1*trip*",
+            "*pump*1*fail*"]
+
+  # -- Pump 2 ------------------------------------------------------------
+  - key: pump2_run
+    name: Pump 2 Running
+    device_class: running
+    point_types: [boolean]
+    match: ["*pump*2*run*", "*pump2*run*", "*p2*run*", "*pump*2*sts",
+            "*pump2*sts", "*pump*2*status*"]
+
+  - key: pump2_speed
+    name: Pump 2 Speed
+    state_class: measurement
+    units: ["%"]
+    point_types: [numeric, integer]
+    match: ["pump 2 inverter output %", "*pump*2*output*%*", "*pump*2*speed*",
+            "*pump2*speed*", "*p2*speed*", "*pump*2*spd*"]
+    validation: {min: 0, max: 100}
+
+  - key: pump2_frequency
+    name: Pump 2 Frequency
+    device_class: frequency
+    state_class: measurement
+    units: [Hz]
+    point_types: [numeric, integer]
+    match: ["pump 2 inverter output hz", "*pump*2*hz*", "*pump*2*freq*"]
+    validation: {min: 0}
+
+  - key: pump2_current
+    name: Pump 2 Current
+    device_class: current
+    state_class: measurement
+    units: [A]
+    point_types: [numeric, integer]
+    match: ["pump 2 inverter output a", "*pump*2*output*a", "*pump*2*current*",
+            "*pump*2*amp*"]
+    validation: {min: 0}
+
+  - key: pump2_power
+    name: Pump 2 Power
+    device_class: power
+    state_class: measurement
+    units: [kW, W]
+    point_types: [numeric, integer]
+    match: ["pump 2 inverter output kw", "*pump*2*kw*", "*pump*2*power*"]
+    validation: {min: 0}
+
+  - key: pump2_fault
+    name: Pump 2 Fault
+    device_class: problem
+    point_types: [boolean]
+    match: ["*pump*2*fault*", "*pump2*fault*", "*p2*fault*", "*pump*2*trip*",
+            "*pump*2*fail*"]
+
+  # -- Pump 3 ------------------------------------------------------------
+  - key: pump3_run
+    name: Pump 3 Running
+    device_class: running
+    point_types: [boolean]
+    match: ["*pump*3*run*", "*pump3*run*", "*p3*run*", "*pump*3*sts",
+            "*pump3*sts", "*pump*3*status*"]
+
+  - key: pump3_speed
+    name: Pump 3 Speed
+    state_class: measurement
+    units: ["%"]
+    point_types: [numeric, integer]
+    match: ["pump 3 inverter output %", "*pump*3*output*%*", "*pump*3*speed*",
+            "*pump3*speed*", "*p3*speed*", "*pump*3*spd*"]
+    validation: {min: 0, max: 100}
+
+  - key: pump3_frequency
+    name: Pump 3 Frequency
+    device_class: frequency
+    state_class: measurement
+    units: [Hz]
+    point_types: [numeric, integer]
+    match: ["pump 3 inverter output hz", "*pump*3*hz*", "*pump*3*freq*"]
+    validation: {min: 0}
+
+  - key: pump3_current
+    name: Pump 3 Current
+    device_class: current
+    state_class: measurement
+    units: [A]
+    point_types: [numeric, integer]
+    match: ["pump 3 inverter output a", "*pump*3*output*a", "*pump*3*current*",
+            "*pump*3*amp*"]
+    validation: {min: 0}
+
+  - key: pump3_power
+    name: Pump 3 Power
+    device_class: power
+    state_class: measurement
+    units: [kW, W]
+    point_types: [numeric, integer]
+    match: ["pump 3 inverter output kw", "*pump*3*kw*", "*pump*3*power*"]
+    validation: {min: 0}
+
+  - key: pump3_fault
+    name: Pump 3 Fault
+    device_class: problem
+    point_types: [boolean]
+    match: ["*pump*3*fault*", "*pump3*fault*", "*p3*fault*", "*pump*3*trip*",
+            "*pump*3*fail*"]
+
+card:
+  type: entities
+  title: "{{device_name}}"
+  entities:
+    - entity: "{{slot.system_pressure}}"
+      name: Pressure
+    - entity: "{{slot.pressure_setpoint}}"
+      name: Setpoint
+    - entity: "{{slot.pumps_running}}"
+      name: Pumps Running
+    - entity: "{{slot.common_fault}}"
+      name: Fault
+    - entity: "{{slot.pump1_speed}}"
+      name: Pump 1 Speed
+    - entity: "{{slot.pump1_current}}"
+      name: Pump 1 Current
+    - entity: "{{slot.pump2_speed}}"
+      name: Pump 2 Speed
+    - entity: "{{slot.pump2_current}}"
+      name: Pump 2 Current
+    - entity: "{{slot.pump3_speed}}"
+      name: Pump 3 Speed
+    - entity: "{{slot.pump3_current}}"
+      name: Pump 3 Current
