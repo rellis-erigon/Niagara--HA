@@ -25,7 +25,9 @@ from device_templates import (
     score_candidate,
     suggest_template,
 )
-from faceplates import apply_faceplate, card_types_in, faceplates_for_card
+from faceplates import (
+    apply_faceplate, card_types_in, faceplates_for_card, roles_in,
+)
 from validation import (
     BLOCKED,
     load_observations,
@@ -1258,9 +1260,20 @@ def list_faceplates():
     if template is None or not template.card:
         return jsonify({"group": group, "selected": "", "faceplates": []})
 
+    # Filtering by card type alone offers a water register for an
+    # electricity meter: both are drawn by bms-meter-card, but they share
+    # no roles, so the register would come up blank. Offer only faces this
+    # template can actually fill, best fit first.
     choices: list[dict] = []
     for card_type in card_types_in(template.card):
-        choices.extend(faceplates_for_card(card_type))
+        bound = roles_in(template.card, card_type)
+        scored = []
+        for face in faceplates_for_card(card_type):
+            overlap = len(bound & set(face.get("roles") or []))
+            if overlap:
+                scored.append((overlap, face))
+        scored.sort(key=lambda pair: (-pair[0], pair[1]["name"]))
+        choices.extend(face for _, face in scored)
     return jsonify({
         "group": group,
         "selected": assigned.get("faceplate", ""),

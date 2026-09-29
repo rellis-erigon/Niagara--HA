@@ -44,3 +44,26 @@ def test_unknown_faceplate_leaves_the_default_alone():
     """A bad setting must not cost the user a working card."""
     card = {"type": "custom:bms-meter-card", "faceplate": "din-3phase-analyser"}
     assert fp.apply_faceplate(card, "no-such-face") == card
+
+
+def test_roles_are_read_from_the_card_that_uses_them():
+    card = {"type": "vertical-stack", "cards": [
+        {"type": "custom:bms-meter-card",
+         "entities": {"energy_total": "x", "volts_l1": "y"}},
+        {"type": "entities", "entities": [{"entity": "z"}]},
+    ]}
+    assert fp.roles_in(card, "custom:bms-meter-card") == {"energy_total", "volts_l1"}
+
+
+def test_a_faceplate_sharing_no_role_is_not_a_candidate():
+    """A water register and a three-phase analyser are both drawn by the
+    meter card, but a register on a switchboard would come up blank."""
+    card = {"type": "custom:bms-meter-card",
+            "entities": {"energy_total": "x", "volts_l1": "y"}}
+    bound = fp.roles_in(card, "custom:bms-meter-card")
+    usable = {
+        f["id"] for f in fp.faceplates_for_card("custom:bms-meter-card")
+        if bound & set(f.get("roles") or [])
+    }
+    assert "din-3phase-analyser" in usable
+    assert "multijet-water-register" not in usable

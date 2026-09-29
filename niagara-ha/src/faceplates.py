@@ -48,6 +48,26 @@ def faceplates_for_card(card_type: str) -> list[dict]:
     return [f for f in load_faceplates() if f.get("card") == wanted]
 
 
+def roles_in(card: Any, card_type: str) -> set[str]:
+    """The roles a rendered card binds for one custom card type."""
+    found: set[str] = set()
+
+    def walk(node: Any) -> None:
+        if isinstance(node, dict):
+            if node.get("type") == card_type:
+                entities = node.get("entities")
+                if isinstance(entities, dict):
+                    found.update(entities)
+            for value in node.values():
+                walk(value)
+        elif isinstance(node, list):
+            for item in node:
+                walk(item)
+
+    walk(card)
+    return found
+
+
 def card_types_in(card: Any) -> list[str]:
     """Every custom card type used anywhere in a rendered card tree."""
     found: list[str] = []
