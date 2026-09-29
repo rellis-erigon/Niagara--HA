@@ -2,6 +2,61 @@
   "generated": "2026-09-29",
   "faceplates": [
     {
+      "id": "av-room-controller",
+      "name": "AV Room Controller",
+      "card": "room-controller-card",
+      "description": "A room at a glance: source, display power, volume and mute, with mic, fault and online indicators. Bind whichever joins carry them.",
+      "emulates": null,
+      "pages": [],
+      "roles": [
+        "display_power",
+        "fault",
+        "mic_live",
+        "mute",
+        "online",
+        "source",
+        "volume"
+      ]
+    },
+    {
+      "id": "circulation-pump-set",
+      "name": "Circulation Pump Set",
+      "card": "plant-equipment-card",
+      "description": "Circulator set, one to four pumps, hot or chilled service. The service recolours the pipework rather than needing a second drawing.",
+      "emulates": "Hot or chilled water circulation pump set",
+      "pages": [],
+      "roles": [
+        "common_fault",
+        "flow_temp",
+        "pump1_current",
+        "pump1_fault",
+        "pump1_run",
+        "pump2_current",
+        "pump2_fault",
+        "pump2_run",
+        "return_temp"
+      ],
+      "options": [
+        {
+          "key": "pumps",
+          "label": "Pumps",
+          "type": "number",
+          "min": 1,
+          "max": 4,
+          "default": 2
+        },
+        {
+          "key": "service",
+          "label": "Service (0 hot, 1 cold)",
+          "type": "number",
+          "min": 0,
+          "max": 1,
+          "default": 0
+        }
+      ],
+      "roles_vary_with_options": true
+    },
+    {
       "id": "circutor-cvm-e3-mini",
       "name": "Circutor CVM-E3-MINI",
       "card": "bms-meter-card",
@@ -25,6 +80,19 @@
         "volts_l1",
         "volts_l2",
         "volts_l3"
+      ]
+    },
+    {
+      "id": "compound-meter",
+      "name": "Compound Water Meter",
+      "card": "bms-meter-card",
+      "description": "Two registers on one body — main turbine and low-flow bypass — kept apart, because a bypass climbing alone is how a leak shows.",
+      "emulates": "Compound water meter with main and bypass registers",
+      "pages": [],
+      "roles": [
+        "bypass_total",
+        "flow_rate",
+        "volume_total"
       ]
     },
     {
@@ -86,6 +154,18 @@
       ]
     },
     {
+      "id": "dial-water-meter",
+      "name": "Dial Water Meter",
+      "card": "bms-meter-card",
+      "description": "Domestic dial face: an odometer window for whole cubic metres and a single sweep hand for the lowest decade.",
+      "emulates": "Single-jet dial-face water meter",
+      "pages": [],
+      "roles": [
+        "flow_rate",
+        "volume_total"
+      ]
+    },
+    {
       "id": "din-3phase-analyser",
       "name": "DIN-rail 3-phase analyser",
       "card": "bms-meter-card",
@@ -109,6 +189,20 @@
       ]
     },
     {
+      "id": "exhaust-fan",
+      "name": "Exhaust Fan",
+      "card": "plant-equipment-card",
+      "description": "Exhaust fan discharging to atmosphere, air drawn upward.",
+      "emulates": "Axial exhaust fan",
+      "pages": [],
+      "roles": [
+        "fault",
+        "flow",
+        "run",
+        "speed"
+      ]
+    },
+    {
       "id": "generic-3phase",
       "name": "Generic 3-phase meter",
       "card": "bms-meter-card",
@@ -125,6 +219,81 @@
       ]
     },
     {
+      "id": "generic-fip",
+      "name": "Fire Indicator Panel (schematic)",
+      "card": "fire-panel-card",
+      "description": "Zone and status mimic of a fire panel as the BMS sees it. Schematic on purpose — it must never be mistaken for the panel itself.",
+      "emulates": "Generic fire indicator panel (not a specific make)",
+      "pages": [],
+      "roles": [
+        "brigade_signal",
+        "fault",
+        "fire_alarm",
+        "isolate",
+        "power",
+        "zone1_alarm",
+        "zone2_alarm",
+        "zone3_alarm",
+        "zone4_alarm",
+        "zone5_alarm",
+        "zone6_alarm",
+        "zone7_alarm",
+        "zone8_alarm"
+      ],
+      "options": [
+        {
+          "key": "zones",
+          "label": "Zones",
+          "type": "number",
+          "min": 0,
+          "max": 24,
+          "default": 8
+        }
+      ],
+      "roles_vary_with_options": true
+    },
+    {
+      "id": "hot-water-unit",
+      "name": "Hot Water Unit",
+      "card": "plant-equipment-card",
+      "description": "Calorifier set with flow and return drawn separately — the pair of temperatures is the diagnosis. One unit or a duty/standby pair.",
+      "emulates": "Calorifier / plate hot water unit",
+      "pages": [],
+      "roles": [
+        "common_fault",
+        "flow_temp",
+        "return_temp",
+        "setpoint",
+        "unit1_fault",
+        "unit1_run",
+        "unit1_tank_temp"
+      ],
+      "options": [
+        {
+          "key": "units",
+          "label": "Units",
+          "type": "number",
+          "min": 1,
+          "max": 2,
+          "default": 1
+        }
+      ],
+      "roles_vary_with_options": true
+    },
+    {
+      "id": "lcd-water-meter",
+      "name": "LCD Water Meter",
+      "card": "bms-meter-card",
+      "description": "Electronic register: cumulative total, instantaneous flow and a battery bar, on a grey-green LCD.",
+      "emulates": "Battery-powered electronic water meter",
+      "pages": [],
+      "roles": [
+        "battery",
+        "flow_rate",
+        "volume_total"
+      ]
+    },
+    {
       "id": "multijet-water-register",
       "name": "Multi-jet water register",
       "card": "bms-meter-card",
@@ -134,6 +303,35 @@
       "roles": [
         "volume_total"
       ]
+    },
+    {
+      "id": "qsys-zone-rack",
+      "name": "Q-SYS Zone Rack",
+      "card": "audio-zone-card",
+      "description": "One strip per audio zone: level bar in dB, mute with an indicator, and trim keys. Widens to the number of zones you set.",
+      "emulates": "Q-SYS zone outputs",
+      "pages": [],
+      "roles": [
+        "zone1_mute",
+        "zone1_volume",
+        "zone2_mute",
+        "zone2_volume",
+        "zone3_mute",
+        "zone3_volume",
+        "zone4_mute",
+        "zone4_volume"
+      ],
+      "options": [
+        {
+          "key": "zones",
+          "label": "Zones",
+          "type": "number",
+          "min": 1,
+          "max": 16,
+          "default": 4
+        }
+      ],
+      "roles_vary_with_options": true
     },
     {
       "id": "schneider-pm2200",
@@ -162,6 +360,66 @@
         "volts_l1",
         "volts_l2",
         "volts_l3"
+      ]
+    },
+    {
+      "id": "smart-water-meter",
+      "name": "Smart Water Meter",
+      "card": "bms-meter-card",
+      "description": "Electronic register with the flags these meters raise: leak, reverse flow and battery. Clear annunciators show nothing, not dashes.",
+      "emulates": "Smart water meter with leak and reverse-flow detection",
+      "pages": [],
+      "roles": [
+        "alarm",
+        "battery",
+        "flow_rate",
+        "reverse_flow",
+        "volume_total"
+      ]
+    },
+    {
+      "id": "supply-fan-left",
+      "name": "Supply Fan — in from left",
+      "card": "plant-equipment-card",
+      "description": "Supply fan with the duct entering from the left. Arrows follow the air, so the mimic cannot be read backwards.",
+      "emulates": "Centrifugal supply fan",
+      "pages": [],
+      "roles": [
+        "fault",
+        "filter_dp",
+        "flow",
+        "run",
+        "speed"
+      ]
+    },
+    {
+      "id": "supply-fan-right",
+      "name": "Supply Fan — in from right",
+      "card": "plant-equipment-card",
+      "description": "Supply fan with the duct entering from the right. Arrows follow the air, so the mimic cannot be read backwards.",
+      "emulates": "Centrifugal supply fan",
+      "pages": [],
+      "roles": [
+        "fault",
+        "filter_dp",
+        "flow",
+        "run",
+        "speed"
+      ]
+    },
+    {
+      "id": "supply-fan-top",
+      "name": "Supply Fan — in from top",
+      "card": "plant-equipment-card",
+      "description": "Supply fan with the duct entering from the top. Arrows follow the air, so the mimic cannot be read backwards.",
+      "emulates": "Centrifugal supply fan",
+      "pages": [],
+      "roles": [
+        "fault",
+        "filter_dp",
+        "flow",
+        "run",
+        "speed"
       ]
     },
     {
@@ -199,6 +457,18 @@
         }
       ],
       "roles_vary_with_options": true
+    },
+    {
+      "id": "woltmann-register",
+      "name": "Woltmann Bulk Register",
+      "card": "bms-meter-card",
+      "description": "Straight-reading bulk register: black cells for whole cubic metres, red for the decimals, with a sweep hand on the lowest decade.",
+      "emulates": "Woltmann-type bulk water meter register",
+      "pages": [],
+      "roles": [
+        "flow_rate",
+        "volume_total"
+      ]
     }
   ]
 }

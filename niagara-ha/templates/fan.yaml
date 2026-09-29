@@ -32,15 +32,20 @@ slots:
     point_types: [boolean]
     match: ["*command*", "*cmd*", "*start*stop*"]
 
+# Inlet direction cannot be discovered from points, so the generic
+# top-entry drawing is the default. Change the faceplate per device in
+# the add-on where the duct actually comes in from the side.
 card:
-  type: entities
-  title: "{{device_name}}"
-  entities:
-    - entity: "{{slot.run_status}}"
-      name: Running
-    - entity: "{{slot.speed}}"
-      name: Speed
-    - entity: "{{slot.command}}"
-      name: Command
-    - entity: "{{slot.fault}}"
-      name: Fault
+  type: vertical-stack
+  cards:
+    - type: custom:plant-equipment-card
+      faceplate: supply-fan-top
+      title: "{{device_name}}"
+      entities:
+        run: "{{slot.run_status}}"
+        fault: "{{slot.fault}}"
+        speed: "{{slot.speed}}"
+    - type: entities
+      entities:
+        - entity: "{{slot.command}}"
+          name: Command

@@ -409,6 +409,8 @@ def test_builtin_templates_carry_cards():
     ("electricity_meter", "custom:bms-meter-card"),
     ("water_meter", "custom:bms-meter-card"),
     ("pump_system_3", "custom:pump-system-card"),
+    ("fan", "custom:plant-equipment-card"),
+    ("fip", "custom:fire-panel-card"),
 ])
 def test_faceplate_templates_lead_with_the_custom_card(template_id, card_type):
     """The graphic comes first; the plain list below it is the remainder."""
@@ -743,3 +745,25 @@ def test_every_builtin_template_still_loads_and_is_unique():
     for template in templates.values():
         keys = [s.key for s in template.slots]
         assert len(keys) == len(set(keys)), f"{template.id} has duplicate slots"
+
+
+def test_the_fire_panel_card_is_never_actionable():
+    """The FIP template must not put a control on a life-safety mimic.
+
+    The card itself refuses actions, but a template could still stack a
+    button or a switch beside it, and that is the thing someone reaches
+    for in an incident."""
+    card = dt.load_templates()["fip"].card
+    forbidden = {"button", "custom:button-card", "light", "switch"}
+
+    def walk(node):
+        if isinstance(node, dict):
+            assert node.get("type") not in forbidden, node.get("type")
+            assert "tap_action" not in node, "a tap action on the fire card"
+            for value in node.values():
+                walk(value)
+        elif isinstance(node, list):
+            for item in node:
+                walk(item)
+
+    walk(card)

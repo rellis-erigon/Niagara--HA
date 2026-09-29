@@ -125,35 +125,41 @@ slots:
     point_types: [boolean]
     match: ["*p/sw*", "*pressure*switch*"]
 
+# Monitoring only. The card refuses to be anything else — no region is
+# clickable and it carries a permanent band saying it is not the panel.
 card:
-  type: entities
-  title: "{{device_name}}"
-  entities:
-    - entity: "{{slot.panel_normal}}"
-      name: Panel Normal
-    - entity: "{{slot.panel_fault}}"
-      name: Panel Fault
-    - entity: "{{slot.alarm}}"
-      name: Fire Alarm
-    - entity: "{{slot.brigade_call}}"
-      name: Brigade Called
-    - entity: "{{slot.call_point}}"
-      name: Manual Call Point
-    - entity: "{{slot.isolate}}"
-      name: Isolated
-    - entity: "{{slot.pump1_run}}"
-      name: Fire Pump 1
-    - entity: "{{slot.pump1_fault}}"
-      name: Fire Pump 1 Fault
-    - entity: "{{slot.pump2_run}}"
-      name: Fire Pump 2
-    - entity: "{{slot.pump2_fault}}"
-      name: Fire Pump 2 Fault
-    - entity: "{{slot.sprinkler_flow}}"
-      name: Sprinkler Flow
-    - entity: "{{slot.sprinkler_valve}}"
-      name: Sprinkler Valve
-    - entity: "{{slot.mains_fail}}"
-      name: Mains Fail
-    - entity: "{{slot.battery_fault}}"
-      name: Battery Fault
+  type: vertical-stack
+  cards:
+    - type: custom:fire-panel-card
+      faceplate: generic-fip
+      title: "{{device_name}}"
+      options:
+        zones: 0
+      entities:
+        fire_alarm: "{{slot.alarm}}"
+        fault: "{{slot.panel_fault}}"
+        isolate: "{{slot.isolate}}"
+        brigade_signal: "{{slot.brigade_call}}"
+        power: "{{slot.panel_normal}}"
+    - type: entities
+      entities:
+        - entity: "{{slot.call_point}}"
+          name: Manual Call Point
+        - entity: "{{slot.mains_fail}}"
+          name: Mains Fail
+        - entity: "{{slot.battery_fault}}"
+          name: Battery Fault
+        - entity: "{{slot.pump1_run}}"
+          name: Pump 1 Running
+        - entity: "{{slot.pump1_fault}}"
+          name: Pump 1 Fault
+        - entity: "{{slot.pump2_run}}"
+          name: Pump 2 Running
+        - entity: "{{slot.pump2_fault}}"
+          name: Pump 2 Fault
+        - entity: "{{slot.sprinkler_flow}}"
+          name: Sprinkler Flow
+        - entity: "{{slot.sprinkler_valve}}"
+          name: Sprinkler Valve
+        - entity: "{{slot.sprinkler_pressure_switch}}"
+          name: Sprinkler Pressure Switch
