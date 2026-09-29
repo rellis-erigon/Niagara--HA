@@ -228,27 +228,49 @@ slots:
     match: ["*pump*3*fault*", "*pump3*fault*", "*p3*fault*", "*pump*3*trip*",
             "*pump*3*fail*"]
 
+# The mimic first, then only the points the faceplate does not already
+# draw. Rows whose slot is unbound are dropped when the card is generated,
+# so a two-pump skid assigned this template still produces a clean card.
 card:
-  type: entities
-  title: "{{device_name}}"
-  entities:
-    - entity: "{{slot.system_pressure}}"
-      name: Pressure
-    - entity: "{{slot.pressure_setpoint}}"
-      name: Setpoint
-    - entity: "{{slot.pumps_running}}"
-      name: Pumps Running
-    - entity: "{{slot.common_fault}}"
-      name: Fault
-    - entity: "{{slot.pump1_speed}}"
-      name: Pump 1 Speed
-    - entity: "{{slot.pump1_current}}"
-      name: Pump 1 Current
-    - entity: "{{slot.pump2_speed}}"
-      name: Pump 2 Speed
-    - entity: "{{slot.pump2_current}}"
-      name: Pump 2 Current
-    - entity: "{{slot.pump3_speed}}"
-      name: Pump 3 Speed
-    - entity: "{{slot.pump3_current}}"
-      name: Pump 3 Current
+  type: vertical-stack
+  cards:
+    - type: custom:pump-system-card
+      faceplate: vertical-pumpset
+      title: "{{device_name}}"
+      options:
+        pumps: 3
+      entities:
+        system_pressure: "{{slot.system_pressure}}"
+        pressure_setpoint: "{{slot.pressure_setpoint}}"
+        common_fault: "{{slot.common_fault}}"
+        pump1_run: "{{slot.pump1_run}}"
+        # Output frequency rather than the inverter-output percentage: the
+        # percentage register is unmapped or unscaled on many drives, and
+        # the faceplate labels whichever unit it is handed.
+        pump1_speed: "{{slot.pump1_frequency}}"
+        pump1_current: "{{slot.pump1_current}}"
+        pump1_fault: "{{slot.pump1_fault}}"
+        pump2_run: "{{slot.pump2_run}}"
+        pump2_speed: "{{slot.pump2_frequency}}"
+        pump2_current: "{{slot.pump2_current}}"
+        pump2_fault: "{{slot.pump2_fault}}"
+        pump3_run: "{{slot.pump3_run}}"
+        pump3_speed: "{{slot.pump3_frequency}}"
+        pump3_current: "{{slot.pump3_current}}"
+        pump3_fault: "{{slot.pump3_fault}}"
+    - type: entities
+      entities:
+        - entity: "{{slot.pumps_running}}"
+          name: Pumps Running
+        - entity: "{{slot.pumps_ready}}"
+          name: Pumps Ready
+        - entity: "{{slot.flow}}"
+          name: Flow
+        - entity: "{{slot.low_level}}"
+          name: Low Level
+        - entity: "{{slot.pump1_power}}"
+          name: Pump 1 Power
+        - entity: "{{slot.pump2_power}}"
+          name: Pump 2 Power
+        - entity: "{{slot.pump3_power}}"
+          name: Pump 3 Power

@@ -25,6 +25,7 @@ from device_templates import (
     score_candidate,
     suggest_template,
 )
+from faceplates import apply_faceplate, card_types_in, faceplates_for_card
 from validation import (
     BLOCKED,
     load_observations,
@@ -918,10 +919,14 @@ def assign_device_type():
 
     devices = load_device_types()
     previous = devices.get(group, {})
+    faceplate = data.get("faceplate")
+    if faceplate is None:
+        faceplate = previous.get("faceplate", "")
     devices[group] = {
         "template": template_id,
         "bindings": {k: v for k, v in bindings.items() if v},
         "state": data.get("state") or previous.get("state") or STATE_DRAFT,
+        "faceplate": str(faceplate or "").strip(),
     }
     save_device_types(devices)
 
@@ -1221,13 +1226,45 @@ def device_card():
     bindings = {k: v for k, v in assigned.get("bindings", {}).items() if v}
     name = decode_niagara_name(group.rstrip("/").split("/")[-1])
     card = render_card(template, {**bindings, "device_name": name})
+    chosen = assigned.get("faceplate", "")
+    if chosen and card:
+        card = apply_faceplate(card, chosen)
 
     return jsonify({
         "group": group,
         "device_name": name,
         "template": template.id,
+        "faceplate": chosen,
         "card": card,
         "bindings": bindings,
+    })
+
+
+@app.route("/api/faceplates")
+def list_faceplates():
+    """The faces available for a device, and which one it is wearing.
+
+    Filtered by the custom cards the device's own template actually
+    renders, so the picker never offers a meter face for a pump.
+    """
+    group = request.args.get("group", "")
+    if not group:
+        return jsonify({"error": "group required"}), 400
+
+    assigned = load_device_types().get(group)
+    if not assigned:
+        return jsonify({"error": "device has no type assigned"}), 404
+    template = load_templates().get(assigned["template"])
+    if template is None or not template.card:
+        return jsonify({"group": group, "selected": "", "faceplates": []})
+
+    choices: list[dict] = []
+    for card_type in card_types_in(template.card):
+        choices.extend(faceplates_for_card(card_type))
+    return jsonify({
+        "group": group,
+        "selected": assigned.get("faceplate", ""),
+        "faceplates": choices,
     })
 
 

@@ -35,12 +35,16 @@ slots:
     validation: {min: 0, max: 100}
 
 card:
-  type: entities
-  title: "{{device_name}}"
-  entities:
-    - entity: "{{slot.volume_total}}"
-      name: Total Volume
-    - entity: "{{slot.flow_rate}}"
-      name: Flow Rate
-    - entity: "{{slot.tank_level}}"
-      name: Tank Level
+  type: vertical-stack
+  cards:
+    - type: custom:bms-meter-card
+      faceplate: multijet-water-register
+      title: "{{device_name}}"
+      entities:
+        volume_total: "{{slot.volume_total}}"
+    - type: entities
+      entities:
+        - entity: "{{slot.flow_rate}}"
+          name: Flow Rate
+        - entity: "{{slot.tank_level}}"
+          name: Tank Level

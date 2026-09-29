@@ -339,6 +339,10 @@ def load_device_types() -> dict[str, dict]:
             "bindings": {k: v for k, v in bindings.items() if v},
             "state": entry.get("state") if entry.get("state") in VALID_STATES
             else STATE_DRAFT,
+            # Which faceplate the generated card wears. A template matches
+            # equipment of every make, so the face belongs to the device
+            # rather than to the type. Empty means the template's default.
+            "faceplate": str(entry.get("faceplate") or "").strip(),
         }
     return out
 
@@ -356,6 +360,8 @@ def save_device_types(devices: dict[str, dict]) -> None:
                 "template": entry["template"],
                 "bindings": entry.get("bindings", {}),
                 "state": entry.get("state", STATE_DRAFT),
+                **({"faceplate": entry["faceplate"]}
+                   if entry.get("faceplate") else {}),
             }
             for group, entry in sorted(devices.items())
         },
@@ -534,10 +540,15 @@ def resolve_card(card: Any, mapping: dict[str, str | None]) -> Any:
         out: dict[str, Any] = {}
         for key, item in card.items():
             resolved = resolve_card(item, mapping)
+            # A faceplate card carries `entities` as a role -> entity map, so
+            # "unresolved" can also mean "every role dropped", leaving an
+            # empty map. That renders as a blank faceplate, which looks like
+            # working hardware reporting nothing. Drop it instead.
+            if key in ("entity", "entities") and not resolved:
+                return {"__drop__": True}
+            if key == "cards" and not resolved:
+                return {"__drop__": True}
             if resolved is None:
-                # A row whose entity is unresolved is not a row at all.
-                if key in ("entity", "entities"):
-                    return {"__drop__": True}
                 continue
             out[key] = resolved
         return out

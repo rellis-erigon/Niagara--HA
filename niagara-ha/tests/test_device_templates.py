@@ -194,9 +194,27 @@ def test_round_trip(types_file):
         "template": "electricity_meter",
         "bindings": {"energy_total": "/config/points/MeterTotal/"},
         "state": dt.STATE_DRAFT,
+        "faceplate": "",
     }}
     dt.save_device_types(devices)
     assert dt.load_device_types() == devices
+
+
+def test_faceplate_round_trips(types_file):
+    devices = {"Site/DB1": {
+        "template": "electricity_meter",
+        "bindings": {},
+        "state": dt.STATE_DRAFT,
+        "faceplate": "schneider-pm2200",
+    }}
+    dt.save_device_types(devices)
+    assert dt.load_device_types()["Site/DB1"]["faceplate"] == "schneider-pm2200"
+
+
+def test_faceplate_defaults_to_empty(types_file):
+    types_file.write_text(
+        "devices:\n  Site/DB1:\n    template: pump\n")
+    assert dt.load_device_types()["Site/DB1"]["faceplate"] == ""
 
 
 def test_missing_file_is_empty(types_file):
@@ -385,7 +403,50 @@ def test_card_must_be_an_object():
 def test_builtin_templates_carry_cards():
     templates = dt.load_templates()
     assert templates["fcu"].card.get("type") == "entities"
-    assert templates["electricity_meter"].card.get("type") == "entities"
+
+
+@pytest.mark.parametrize("template_id,card_type", [
+    ("electricity_meter", "custom:bms-meter-card"),
+    ("water_meter", "custom:bms-meter-card"),
+    ("pump_system_3", "custom:pump-system-card"),
+])
+def test_faceplate_templates_lead_with_the_custom_card(template_id, card_type):
+    """The graphic comes first; the plain list below it is the remainder."""
+    card = dt.load_templates()[template_id].card
+    assert card["type"] == "vertical-stack"
+    first = card["cards"][0]
+    assert first["type"] == card_type
+    assert first.get("faceplate")
+    # The role map is a mapping, not a list of rows: that is what tells the
+    # card which reading belongs in which region.
+    assert isinstance(first["entities"], dict)
+
+
+def test_card_with_no_resolvable_roles_is_dropped():
+    """An empty role map draws a blank faceplate, which reads as working
+    hardware with nothing to say. It must not be generated at all."""
+    card = {
+        "type": "vertical-stack",
+        "cards": [{
+            "type": "custom:bms-meter-card",
+            "faceplate": "din-3phase-analyser",
+            "entities": {"energy_total": "{{slot.energy_total}}"},
+        }],
+    }
+    assert dt.resolve_card(card, {"energy_total": None}) == {"__drop__": True}
+
+
+def test_card_keeps_the_roles_that_do_resolve():
+    card = {
+        "type": "custom:bms-meter-card",
+        "entities": {
+            "energy_total": "{{slot.energy_total}}",
+            "power_total": "{{slot.power_active}}",
+        },
+    }
+    out = dt.resolve_card(
+        card, {"energy_total": "/points/kwh/", "power_active": None})
+    assert out["entities"] == {"energy_total": "/points/kwh/"}
 
 
 # -- Import / export -----------------------------------------------------

@@ -2348,6 +2348,15 @@ async function openDeviceConfig(group) {
     return;
   }
 
+  // The faces this device's template can wear. A failure here must not
+  // stop someone binding slots, so it degrades to no picker at all.
+  let faces = { faceplates: [], selected: '' };
+  try {
+    faces = await api('/api/faceplates?group=' + encodeURIComponent(group));
+  } catch (e) {
+    faces = { faceplates: [], selected: '' };
+  }
+
   const allPoints = detail.points || [];
   const optionFor = (p, selected) =>
     `<option value="${esc(p.path)}"${p.path === selected ? ' selected' : ''}>`
@@ -2405,6 +2414,21 @@ async function openDeviceConfig(group) {
                 contradict what the template expects.` : ''}
         </p>
         <table class="slot-table">${slotRows}</table>
+        ${(faces.faceplates || []).length ? `
+          <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border)">
+            <label class="slot-key" for="faceplate-select">Faceplate</label>
+            <div class="slot-meta" style="margin-bottom:6px">
+              The graphic the generated card wears. Pick the one that matches
+              the hardware actually installed.
+            </div>
+            <select class="slot-select" id="faceplate-select">
+              <option value="">Template default</option>
+              ${faces.faceplates.map(f =>
+                `<option value="${esc(f.id)}"${f.id === faces.selected ? ' selected' : ''}>`
+                + `${esc(f.name)}${f.emulates ? ' — ' + esc(f.emulates) : ''}</option>`
+              ).join('')}
+            </select>
+          </div>` : ''}
         <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:18px">
           <button class="btn" onclick="closeModal()">Cancel</button>
           <button class="btn btn-primary" id="slots-save">Save Bindings</button>
@@ -2425,7 +2449,10 @@ async function openDeviceConfig(group) {
       const res = await api('/api/devices/assign', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ group, template: detail.template, bindings }),
+        body: JSON.stringify({
+          group, template: detail.template, bindings,
+          faceplate: ($('#faceplate-select') || {}).value || '',
+        }),
       });
       for (const [paths, enabled] of [[enablePaths, true], [disablePaths, false]]) {
         if (!paths.length) continue;

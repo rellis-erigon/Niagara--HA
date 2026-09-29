@@ -14,4 +14,6 @@ RUN pip3 install --no-cache-dir --break-system-packages -r /tmp/requirements.txt
 COPY src /app/src
 COPY static /app/static
 COPY templates /app/templates
+# The faceplate catalogue the device card picker offers.
+COPY faceplates.json /app/faceplates.json
 COPY rootfs /

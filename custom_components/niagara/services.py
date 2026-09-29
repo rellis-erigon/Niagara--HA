@@ -70,7 +70,12 @@ def _substitute(node: Any, mapping: dict[str, str]) -> Any:
         out: dict[str, Any] = {}
         for key, item in node.items():
             resolved = _substitute(item, mapping)
-            if key in ("entity", "entities") and resolved is None:
+            # An `entities` role map that lost every role is an empty map,
+            # not None, and a faceplate with nothing bound draws a blank
+            # panel rather than an error. Treat empty as unresolved.
+            if key in ("entity", "entities") and not resolved:
+                return None
+            if key == "cards" and not resolved:
                 return None
             if resolved is None:
                 continue
@@ -95,7 +100,12 @@ def _prune_unresolved(node: Any, known: set[str]) -> Any:
         out: dict[str, Any] = {}
         for key, item in node.items():
             pruned = _prune_unresolved(item, known)
-            if key in ("entity", "entities") and pruned is None:
+            # An `entities` role map that lost every role is an empty map,
+            # not None, and a faceplate with nothing bound draws a blank
+            # panel rather than an error. Treat empty as unresolved.
+            if key in ("entity", "entities") and not pruned:
+                return None
+            if key == "cards" and not pruned:
                 return None
             if pruned is None:
                 continue

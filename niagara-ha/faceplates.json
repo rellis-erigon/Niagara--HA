@@ -1,0 +1,204 @@
+{
+  "generated": "2026-09-29",
+  "faceplates": [
+    {
+      "id": "circutor-cvm-e3-mini",
+      "name": "Circutor CVM-E3-MINI",
+      "card": "bms-meter-card",
+      "description": "Panel-mount three-phase analyser: negative LCD with three stacked values, magnitude and unit to the right, four-key bezel.",
+      "emulates": "Circutor CVM-E3-MINI-WiEth",
+      "pages": [
+        "power",
+        "volts",
+        "amps",
+        "energy"
+      ],
+      "roles": [
+        "apparent_power",
+        "current_l1",
+        "current_l2",
+        "current_l3",
+        "energy_total",
+        "power_factor",
+        "power_total",
+        "reactive_power",
+        "volts_l1",
+        "volts_l2",
+        "volts_l3"
+      ]
+    },
+    {
+      "id": "daikin-brc1e63",
+      "name": "Daikin BRC1E63",
+      "card": "hvac-controller-card",
+      "description": "Wired navigation controller: landscape LCD with mode, clock, set point and room temperature, over four pill keys and a navigation pad.",
+      "emulates": "Daikin BRC1E63 / BRC1E53 navigation remote controller",
+      "pages": [],
+      "roles": [
+        "clock",
+        "fan_speed",
+        "hvac_action",
+        "hvac_mode",
+        "room_temp",
+        "setpoint"
+      ]
+    },
+    {
+      "id": "daikin-brc1h63k",
+      "name": "Daikin BRC1H63K (Madoka)",
+      "card": "hvac-controller-card",
+      "description": "Round wall controller with an illuminated status ring and a dark display. Mode, room temperature and three touch keys.",
+      "emulates": "Daikin BRC1H63K Madoka",
+      "pages": [],
+      "roles": [
+        "fan_speed",
+        "hvac_mode",
+        "room_temp",
+        "setpoint",
+        "swing"
+      ]
+    },
+    {
+      "id": "daikin-brc2e61",
+      "name": "Daikin BRC2E61",
+      "card": "hvac-controller-card",
+      "description": "Simplified wired controller: a small central display surrounded by large flat keys for power, temperature, fan and louvre.",
+      "emulates": "Daikin BRC2E61 simplified remote controller",
+      "pages": [],
+      "roles": [
+        "fan_speed",
+        "hvac_mode",
+        "room_temp",
+        "setpoint"
+      ]
+    },
+    {
+      "id": "daikin-brc315d7",
+      "name": "Daikin BRC315D7",
+      "card": "hvac-controller-card",
+      "description": "Schedule controller, cover closed: wide segmented display with timer rows, temperature and mode icons.",
+      "emulates": "Daikin BRC315D7 schedule remote controller",
+      "pages": [],
+      "roles": [
+        "hvac_mode",
+        "room_temp",
+        "setpoint"
+      ]
+    },
+    {
+      "id": "din-3phase-analyser",
+      "name": "DIN-rail 3-phase analyser",
+      "card": "bms-meter-card",
+      "description": "Portrait DIN-mounted analyser with a stacked per-phase display. Generic to the form factor, not modelled on a specific product.",
+      "emulates": null,
+      "pages": [
+        "volts",
+        "amps",
+        "power"
+      ],
+      "roles": [
+        "current_l1",
+        "current_l2",
+        "current_l3",
+        "energy_total",
+        "power_factor",
+        "power_total",
+        "volts_l1",
+        "volts_l2",
+        "volts_l3"
+      ]
+    },
+    {
+      "id": "generic-3phase",
+      "name": "Generic 3-phase meter",
+      "card": "bms-meter-card",
+      "description": "Single-page readout for boards where the physical meter is unknown.",
+      "emulates": null,
+      "pages": [],
+      "roles": [
+        "energy_total",
+        "power_factor",
+        "power_total",
+        "volts_l1",
+        "volts_l2",
+        "volts_l3"
+      ]
+    },
+    {
+      "id": "multijet-water-register",
+      "name": "Multi-jet water register",
+      "card": "bms-meter-card",
+      "description": "Mechanical register: seven-digit odometer over four sweep dials, all reading one cumulative total.",
+      "emulates": "Multi-jet mechanical water meter register",
+      "pages": [],
+      "roles": [
+        "volume_total"
+      ]
+    },
+    {
+      "id": "schneider-pm2200",
+      "name": "Schneider EasyLogic PM2200",
+      "card": "bms-meter-card",
+      "description": "Square panel-mount analyser: pale LCD with a title band, four labelled rows and a soft-key legend over four push keys.",
+      "emulates": "Schneider Electric EasyLogic PM2200",
+      "pages": [
+        "summary",
+        "amps",
+        "volts",
+        "power"
+      ],
+      "roles": [
+        "current_avg",
+        "current_l1",
+        "current_l2",
+        "current_l3",
+        "energy_total",
+        "power_factor",
+        "power_l1",
+        "power_l2",
+        "power_l3",
+        "power_total",
+        "volts_avg",
+        "volts_l1",
+        "volts_l2",
+        "volts_l3"
+      ]
+    },
+    {
+      "id": "vertical-pumpset",
+      "name": "Vertical multistage pump set",
+      "card": "pump-system-card",
+      "description": "Packaged booster skid: vertical multistage pumps on a common manifold with a bladder vessel and control panel. Choose how many pumps.",
+      "emulates": null,
+      "pages": [],
+      "roles": [
+        "common_fault",
+        "pressure_setpoint",
+        "pump1_current",
+        "pump1_fault",
+        "pump1_run",
+        "pump1_speed",
+        "pump2_current",
+        "pump2_fault",
+        "pump2_run",
+        "pump2_speed",
+        "pump3_current",
+        "pump3_fault",
+        "pump3_run",
+        "pump3_speed",
+        "system_pressure"
+      ],
+      "options": [
+        {
+          "key": "pumps",
+          "label": "Pumps",
+          "type": "number",
+          "min": 1,
+          "max": 10,
+          "default": 3
+        }
+      ],
+      "roles_vary_with_options": true
+    }
+  ]
+}
