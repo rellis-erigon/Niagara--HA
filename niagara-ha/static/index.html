@@ -747,7 +747,18 @@ let debounceTimer;
 async function api(path, opts) {
   const url = BASE + (path.startsWith('/') ? path : '/' + path);
   const res = await fetch(url, opts);
-  if (!res.ok) throw new Error(res.statusText);
+  if (!res.ok) {
+    // The API says why it refused; throwing the status text alone turned
+    // every failure into the caller's generic message and hid the reason.
+    let reason = res.statusText;
+    try {
+      const body = await res.json();
+      if (body && body.error) reason = body.error;
+    } catch (err) {
+      /* not JSON — the status text is the best there is */
+    }
+    throw new Error(reason);
+  }
   return res.json();
 }
 
@@ -2438,7 +2449,11 @@ async function openDeviceConfig(group) {
 
   $('#slots-save').addEventListener('click', async () => {
     const bindings = {};
-    document.querySelectorAll('.slot-select').forEach(sel => {
+    // Only controls that actually name a slot. `slot-select` is a styling
+    // class shared with other inputs in this dialog, and harvesting all of
+    // them posted the faceplate picker as a binding called "undefined",
+    // which the add-on rejected — so nothing saved at all.
+    document.querySelectorAll('.slot-select[data-slot]').forEach(sel => {
       bindings[sel.dataset.slot] = sel.value || null;
     });
     const enablePaths = [], disablePaths = [];
@@ -2468,7 +2483,7 @@ async function openDeviceConfig(group) {
         : 'Bindings saved');
       await loadDevices();
     } catch (e) {
-      toast('Could not save bindings');
+      toast(`Could not save bindings: ${e.message}`);
     }
   });
 }
