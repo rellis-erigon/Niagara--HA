@@ -10,13 +10,13 @@ slots:
     name: Run Status
     required: true
     device_class: running
-    point_types: [boolean]
+    point_types: [boolean, enum, integer, numeric]
     match: ["*run*status*", "*run*", "sts", "*_sts", "*on*off*", "*enable*"]
 
   - key: fault
     name: Fault
     device_class: problem
-    point_types: [boolean]
+    point_types: [boolean, enum, integer, numeric]
     match: ["*fault*", "*alarm*", "*trip*", "*fail*"]
 
   - key: speed
