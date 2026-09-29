@@ -65,7 +65,7 @@ slots:
   - key: low_level
     name: Low Level
     device_class: problem
-    point_types: [boolean]
+    point_types: [boolean, integer, numeric]
     match: ["*low*level*", "*tank*low*", "*level*low*", "*dry*run*"]
 
   # -- Pump 1 ------------------------------------------------------------
@@ -73,10 +73,14 @@ slots:
   # Both shapes are offered per pump: a run/fault contact on a simpler set,
   # and inverter telemetry where the pumps are speed-controlled. Neither is
   # required, because which of the two a site has is not knowable here.
+  # A contact in principle, but a BMS commonly exports run status as a
+  # numeric 0/1 rather than a boolean, so the type filter must allow both.
+  # Restricting these to boolean left every run slot on a live three-pump
+  # set unbound while the points sat right there.
   - key: pump1_run
     name: Pump 1 Running
     device_class: running
-    point_types: [boolean]
+    point_types: [boolean, integer, numeric]
     match: ["*pump*1*run*", "*pump1*run*", "*p1*run*", "*pump*1*sts",
             "*pump1*sts", "*pump*1*status*"]
 
@@ -120,7 +124,7 @@ slots:
   - key: pump1_fault
     name: Pump 1 Fault
     device_class: problem
-    point_types: [boolean]
+    point_types: [boolean, integer, numeric]
     match: ["*pump*1*fault*", "*pump1*fault*", "*p1*fault*", "*pump*1*trip*",
             "*pump*1*fail*"]
 
@@ -128,7 +132,7 @@ slots:
   - key: pump2_run
     name: Pump 2 Running
     device_class: running
-    point_types: [boolean]
+    point_types: [boolean, integer, numeric]
     match: ["*pump*2*run*", "*pump2*run*", "*p2*run*", "*pump*2*sts",
             "*pump2*sts", "*pump*2*status*"]
 
@@ -172,7 +176,7 @@ slots:
   - key: pump2_fault
     name: Pump 2 Fault
     device_class: problem
-    point_types: [boolean]
+    point_types: [boolean, integer, numeric]
     match: ["*pump*2*fault*", "*pump2*fault*", "*p2*fault*", "*pump*2*trip*",
             "*pump*2*fail*"]
 
@@ -180,7 +184,7 @@ slots:
   - key: pump3_run
     name: Pump 3 Running
     device_class: running
-    point_types: [boolean]
+    point_types: [boolean, integer, numeric]
     match: ["*pump*3*run*", "*pump3*run*", "*p3*run*", "*pump*3*sts",
             "*pump3*sts", "*pump*3*status*"]
 
@@ -224,7 +228,7 @@ slots:
   - key: pump3_fault
     name: Pump 3 Fault
     device_class: problem
-    point_types: [boolean]
+    point_types: [boolean, integer, numeric]
     match: ["*pump*3*fault*", "*pump3*fault*", "*p3*fault*", "*pump*3*trip*",
             "*pump*3*fail*"]
 
