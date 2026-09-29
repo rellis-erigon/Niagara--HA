@@ -21,6 +21,7 @@ from homeassistant.core import (
     SupportsResponse,
 )
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
@@ -30,6 +31,7 @@ from .coordinator import stable_id
 _LOGGER = logging.getLogger(__name__)
 
 SERVICE_GENERATE_CARD = "generate_card"
+SERVICE_GENERATE_CARDS = "generate_cards"
 SERVICE_FIX_STATISTICS = "fix_statistics_units"
 SERVICE_RUN_DIAGNOSTICS = "run_diagnostics"
 SERVICE_ADD_TO_ENERGY = "add_meters_to_energy"
@@ -256,6 +258,93 @@ async def async_setup_services(hass: HomeAssistant) -> None:
         SERVICE_GENERATE_CARD,
         handle_generate_card,
         schema=GENERATE_CARD_SCHEMA,
+        supports_response=SupportsResponse.ONLY,
+    )
+
+    async def handle_generate_cards(call: ServiceCall) -> ServiceResponse:
+        """Every published device's card, with the area it sits in.
+
+        This exists for the dashboard strategy, which lays cards out by
+        area and would otherwise need a call per switchboard.
+        """
+        entries = hass.data.get(DOMAIN, {})
+        if not entries:
+            raise HomeAssistantError("Niagara BMS is not set up")
+        coordinator = next(iter(entries.values()))
+
+        session = async_get_clientsession(hass)
+        try:
+            async with session.get(
+                f"{coordinator.addon_url}/api/devices/cards",
+                timeout=aiohttp.ClientTimeout(total=60),
+            ) as resp:
+                payload = await resp.json()
+                if resp.status != 200:
+                    raise HomeAssistantError(
+                        payload.get("error", f"Add-on returned {resp.status}")
+                    )
+        except aiohttp.ClientError as err:
+            raise HomeAssistantError(f"Cannot reach the add-on: {err}") from err
+
+        registry = er.async_get(hass)
+        devices = dr.async_get(hass)
+        wanted_area = (call.data.get("area") or "").strip().lower()
+
+        out: list[dict[str, Any]] = []
+        skipped: list[str] = []
+        for entry in payload.get("devices", []):
+            bindings = entry.get("bindings", {})
+            mapping = {}
+            for path in bindings.values():
+                entity_id = _entity_id_for_path(registry, path)
+                if entity_id:
+                    mapping[path] = entity_id
+
+            resolved = _substitute(entry["card"], mapping)
+            resolved = _prune_unresolved(resolved, set(bindings.values()))
+            if not resolved:
+                skipped.append(entry["device_name"])
+                continue
+
+            # The area comes from the device registry, which is where a
+            # person may have moved it by hand — not from the point path.
+            area_id = ""
+            for entity_id in mapping.values():
+                ent = registry.async_get(entity_id)
+                if ent is None:
+                    continue
+                if ent.area_id:
+                    area_id = ent.area_id
+                    break
+                if ent.device_id:
+                    device = devices.async_get(ent.device_id)
+                    if device and device.area_id:
+                        area_id = device.area_id
+                        break
+
+            if wanted_area and area_id.lower() != wanted_area:
+                continue
+            out.append({
+                "device": entry["device_name"],
+                "template": entry.get("template"),
+                "faceplate": entry.get("faceplate", ""),
+                "area_id": area_id,
+                "card": resolved,
+            })
+
+        return {
+            "count": len(out),
+            "cards": out,
+            # Named rather than dropped: a published device with no card
+            # is usually a device whose points are all still disabled.
+            "skipped": sorted(skipped),
+        }
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_GENERATE_CARDS,
+        handle_generate_cards,
+        schema=vol.Schema({vol.Optional("area"): str}),
         supports_response=SupportsResponse.ONLY,
     )
 

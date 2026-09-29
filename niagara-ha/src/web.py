@@ -1242,6 +1242,43 @@ def device_card():
     })
 
 
+@app.route("/api/devices/cards")
+def device_cards():
+    """Every published device that has a card, in one call.
+
+    A dashboard strategy builds a whole dashboard on every load. Asking
+    for one device at a time would mean a request per switchboard, and
+    there are dozens, so the bulk shape exists for that caller.
+    """
+    templates = load_templates()
+    out = []
+    for group, assigned in sorted(load_device_types().items()):
+        if assigned.get("state") != STATE_PUBLISHED:
+            continue
+        template = templates.get(assigned["template"])
+        if template is None or not template.card:
+            continue
+        bindings = {k: v for k, v in assigned.get("bindings", {}).items() if v}
+        if not bindings:
+            continue
+        name = decode_niagara_name(group.rstrip("/").split("/")[-1])
+        card = render_card(template, {**bindings, "device_name": name})
+        if not card:
+            continue
+        chosen = assigned.get("faceplate", "")
+        if chosen:
+            card = apply_faceplate(card, chosen)
+        out.append({
+            "group": group,
+            "device_name": name,
+            "template": template.id,
+            "faceplate": chosen,
+            "card": card,
+            "bindings": bindings,
+        })
+    return jsonify({"devices": out, "count": len(out)})
+
+
 @app.route("/api/faceplates")
 def list_faceplates():
     """The faces available for a device, and which one it is wearing.

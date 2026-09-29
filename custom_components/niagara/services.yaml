@@ -45,3 +45,16 @@ rescan:
     not appear here until something goes looking; this asks the add-on to
     look now rather than waiting for a reconnect. Rediscovery starts within
     one poll interval.
+
+generate_cards:
+  name: Generate all device cards
+  description: >-
+    Every published device's card in one call, each with the area it sits
+    in. Intended for the dashboard strategy, which lays cards out by area.
+  fields:
+    area:
+      name: Area
+      description: Limit to one area id. Omit for every area.
+      required: false
+      selector:
+        text:
