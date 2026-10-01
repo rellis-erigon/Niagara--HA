@@ -1,5 +1,5 @@
 {
-  "generated": "2026-09-29",
+  "generated": "2026-10-01",
   "faceplates": [
     {
       "id": "av-room-controller",
@@ -200,6 +200,22 @@
         "flow",
         "run",
         "speed"
+      ]
+    },
+    {
+      "id": "fcu-unit",
+      "name": "Fan Coil Unit",
+      "card": "hvac-controller-card",
+      "description": "Compact status tile for a BMS fan coil: room against setpoint, mode, fan and alarm. Built to tile, because sites have hundreds.",
+      "emulates": "Generic BMS fan coil unit",
+      "pages": [],
+      "roles": [
+        "fan_speed",
+        "fault",
+        "hvac_mode",
+        "room_temp",
+        "run",
+        "setpoint"
       ]
     },
     {
@@ -469,6 +485,51 @@
         "flow_rate",
         "volume_total"
       ]
+    },
+    {
+      "id": "zone-mixer",
+      "name": "Zone Mixer (console)",
+      "card": "audio-zone-card",
+      "description": "Channel strips side by side with vertical faders: source, optional EQ, pan, fader, mute and a scribble strip. Click a fader to move it.",
+      "emulates": "Audio mixing console channel strip",
+      "pages": [],
+      "roles": [
+        "zone1_balance",
+        "zone1_mute",
+        "zone1_source",
+        "zone1_volume",
+        "zone2_balance",
+        "zone2_mute",
+        "zone2_source",
+        "zone2_volume",
+        "zone3_balance",
+        "zone3_mute",
+        "zone3_source",
+        "zone3_volume",
+        "zone4_balance",
+        "zone4_mute",
+        "zone4_source",
+        "zone4_volume"
+      ],
+      "options": [
+        {
+          "key": "zones",
+          "label": "Channels",
+          "type": "number",
+          "min": 1,
+          "max": 12,
+          "default": 4
+        },
+        {
+          "key": "eq",
+          "label": "Three-band EQ (0 off, 1 on)",
+          "type": "number",
+          "min": 0,
+          "max": 1,
+          "default": 0
+        }
+      ],
+      "roles_vary_with_options": true
     }
   ]
 }

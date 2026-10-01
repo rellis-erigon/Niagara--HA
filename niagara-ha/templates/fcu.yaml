@@ -64,21 +64,25 @@ slots:
     point_types: [boolean]
     match: ["alarm", "*alarm*", "*fault*"]
 
+# The mimic first, then the points it does not draw. There are a couple
+# of hundred of these on a site, so the tile is deliberately compact and
+# the room temperature is the thing legible from a distance.
 card:
-  type: entities
-  title: "{{device_name}}"
-  entities:
-    - entity: "{{slot.room_temperature}}"
-      name: Room Temperature
-    - entity: "{{slot.setpoint}}"
-      name: Setpoint
-    - entity: "{{slot.temp_adjust}}"
-      name: Setpoint Adjust
-    - entity: "{{slot.mode}}"
-      name: Mode
-    - entity: "{{slot.fan_status}}"
-      name: Fan
-    - entity: "{{slot.run_status}}"
-      name: Running
-    - entity: "{{slot.alarm}}"
-      name: Alarm
+  type: vertical-stack
+  cards:
+    - type: custom:hvac-controller-card
+      faceplate: fcu-unit
+      title: "{{device_name}}"
+      entities:
+        room_temp: "{{slot.room_temperature}}"
+        setpoint: "{{slot.setpoint}}"
+        hvac_mode: "{{slot.mode}}"
+        fan_speed: "{{slot.fan_status}}"
+        run: "{{slot.run_status}}"
+        fault: "{{slot.alarm}}"
+    - type: entities
+      entities:
+        - entity: "{{slot.command}}"
+          name: Start/Stop Command
+        - entity: "{{slot.temp_adjust}}"
+          name: Setpoint Adjust

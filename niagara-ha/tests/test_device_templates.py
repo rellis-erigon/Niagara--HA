@@ -402,7 +402,7 @@ def test_card_must_be_an_object():
 
 def test_builtin_templates_carry_cards():
     templates = dt.load_templates()
-    assert templates["fcu"].card.get("type") == "entities"
+    assert templates["room_sensor"].card.get("type") == "entities"
 
 
 @pytest.mark.parametrize("template_id,card_type", [
@@ -410,6 +410,7 @@ def test_builtin_templates_carry_cards():
     ("water_meter", "custom:bms-meter-card"),
     ("pump_system_3", "custom:pump-system-card"),
     ("fan", "custom:plant-equipment-card"),
+    ("fcu", "custom:hvac-controller-card"),
     ("fip", "custom:fire-panel-card"),
 ])
 def test_faceplate_templates_lead_with_the_custom_card(template_id, card_type):
