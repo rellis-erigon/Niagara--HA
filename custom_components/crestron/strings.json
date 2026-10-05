@@ -1,0 +1,45 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Crestron Processor Connection",
+        "description": "Enter the connection details for your Crestron processor. These match your XPanel project settings.",
+        "data": {
+          "host": "Host",
+          "port": "Port",
+          "ipid": "IP ID",
+          "use_ssl": "Use SSL/TLS"
+        }
+      },
+      "zones": {
+        "title": "Zone Configuration",
+        "description": "Configure the audio zone layout. The defaults match the standard Mercure Xpanel project (16 zones, Subpage Reference List starting at the documented joins).",
+        "data": {
+          "device_name": "Device name",
+          "num_zones": "Number of zones",
+          "digital_start": "Digital join start",
+          "analog_start": "Analog join start",
+          "serial_start": "Serial join start",
+          "join_increment": "Join increment per zone"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Cannot connect to the Crestron processor. Check host, port, IP ID, and SSL settings."
+    },
+    "abort": {
+      "already_configured": "This processor is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Crestron AV Options",
+        "data": {
+          "device_name": "Device name",
+          "num_zones": "Number of zones"
+        }
+      }
+    }
+  }
+}
