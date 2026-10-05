@@ -125,6 +125,22 @@ DISPLAY_ENTITIES = "entities"
 VALID_DISPLAYS = (DISPLAY_BOTH, DISPLAY_CARD, DISPLAY_ENTITIES)
 
 
+def full_entities_card(template: Any, bindings: dict, name: str) -> dict:
+    """Every bound slot as a plain list, in the template's own order.
+
+    "Sensor list only" has to mean the device's sensors. A template's
+    own list holds just the points the faceplate does not draw, so on a
+    meter whose faceplate shows everything it is empty — and asking for
+    a list would have handed back the mimic.
+    """
+    rows = []
+    for slot in getattr(template, "slots", []):
+        path = bindings.get(slot.key)
+        if path:
+            rows.append({"entity": path, "name": slot.name})
+    return {"type": "entities", "title": name, "entities": rows}
+
+
 def apply_display(card: Any, mode: str) -> Any:
     """Keep the faceplate, the plain list, or both.
 

@@ -108,3 +108,24 @@ def test_asking_for_a_faceplate_that_is_not_there_keeps_the_card():
 
 def test_a_card_that_is_not_a_stack_is_left_alone():
     assert fp.apply_display({"type": "entities"}, "card") == {"type": "entities"}
+
+
+def test_entities_only_lists_every_bound_slot():
+    """A template's own list holds only what the faceplate omits, so on a
+    meter that draws everything it is empty. Asking for a sensor list has
+    to mean the device's sensors, not the leftovers."""
+    class Slot:
+        def __init__(self, key, name):
+            self.key, self.name = key, name
+
+    class Template:
+        slots = [Slot("energy_total", "Energy Total"),
+                 Slot("volts_l1", "Voltage L1"),
+                 Slot("frequency", "Frequency")]
+
+    card = fp.full_entities_card(
+        Template(), {"energy_total": "/p/kwh/", "volts_l1": "/p/v1/"}, "DB-1")
+    assert card["type"] == "entities"
+    assert card["title"] == "DB-1"
+    # Unbound slots are left out; the order follows the template.
+    assert [row["name"] for row in card["entities"]] == ["Energy Total", "Voltage L1"]

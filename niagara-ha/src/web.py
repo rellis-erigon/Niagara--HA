@@ -27,7 +27,7 @@ from device_templates import (
 )
 from faceplates import (
     VALID_DISPLAYS, apply_display, apply_faceplate, card_types_in,
-    faceplates_for_card, roles_in,
+    faceplates_for_card, full_entities_card, roles_in,
 )
 from validation import (
     BLOCKED,
@@ -1239,7 +1239,9 @@ def device_card():
     if chosen and card:
         card = apply_faceplate(card, chosen)
     display = assigned.get("display", "both")
-    if card:
+    if display == "entities":
+        card = full_entities_card(template, bindings, name)
+    elif card:
         card = apply_display(card, display)
 
     return jsonify({
@@ -1280,7 +1282,10 @@ def device_cards():
         if chosen:
             card = apply_faceplate(card, chosen)
         display = assigned.get("display", "both")
-        card = apply_display(card, display)
+        if display == "entities":
+            card = full_entities_card(template, bindings, name)
+        else:
+            card = apply_display(card, display)
         out.append({
             "group": group,
             "device_name": name,
