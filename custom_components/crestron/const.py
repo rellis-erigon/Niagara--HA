@@ -1,0 +1,25 @@
+"""Constants for the Crestron AV Control integration."""
+
+DOMAIN = "crestron"
+
+CONF_IPID = "ipid"
+CONF_USE_SSL = "use_ssl"
+CONF_NUM_ZONES = "num_zones"
+CONF_DIGITAL_START = "digital_start"
+CONF_ANALOG_START = "analog_start"
+CONF_SERIAL_START = "serial_start"
+CONF_JOIN_INCREMENT = "join_increment"
+CONF_DEVICE_NAME = "device_name"
+
+DEFAULT_PORT = 41794
+DEFAULT_SSL_PORT = 41796
+DEFAULT_IPID = 3
+DEFAULT_NUM_ZONES = 16
+DEFAULT_DIGITAL_START = 4011
+DEFAULT_ANALOG_START = 11
+DEFAULT_SERIAL_START = 11
+DEFAULT_JOIN_INCREMENT = 10
+DEFAULT_DEVICE_NAME = "Crestron AV"
+
+CIP_PORT_PLAIN = 41794
+CIP_PORT_SSL = 41796

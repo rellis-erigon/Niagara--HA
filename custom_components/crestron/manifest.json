@@ -1,0 +1,12 @@
+{
+  "domain": "crestron",
+  "name": "Crestron AV Control",
+  "version": "1.0.0",
+  "config_flow": true,
+  "iot_class": "local_push",
+  "requirements": [],
+  "codeowners": ["@rellis-erigon"],
+  "documentation": "https://github.com/rellis-erigon/Niagara--HA",
+  "issue_tracker": "https://github.com/rellis-erigon/Niagara--HA/issues",
+  "integration_type": "hub"
+}
