@@ -7,7 +7,14 @@
 
 > Connect your Tridium Niagara 4 Building Management System to Home Assistant — no BMS-side changes beyond enabling oBIX.
 
-A native Home Assistant custom integration that reads points from a Niagara station via the **oBIX REST interface** and creates HA entities directly — no MQTT broker required.
+Two ways to integrate, pick the one that fits your setup:
+
+| | **Native Integration (v2.0)** | **MQTT Add-on (v0.6.x)** |
+|---|---|---|
+| Setup | Config flow in HA UI | Add-on + Mosquitto broker |
+| Protocol | Direct oBIX REST | oBIX → MQTT → HA |
+| Point management | HA entity registry | Web UI with search, profiles, rules |
+| Best for | New installs, simpler setup | Large sites needing fine-grained control |
 
 ---
 
@@ -23,13 +30,11 @@ A native Home Assistant custom integration that reads points from a Niagara stat
                                      └──────────────────┘
 ```
 
-1. Add the integration via **Settings → Devices & Services → Add Integration**
-2. Enter your Niagara station connection details — the integration tests the connection live
-3. Points are discovered automatically from the oBIX tree
-4. Each Niagara folder becomes a separate HA device, with points as entities
-5. HA areas are auto-assigned from the Niagara folder hierarchy
-6. A polling coordinator keeps values updated (configurable interval, default 30s)
-7. Enable/disable individual entities from the HA UI — no config files to edit
+1. The integration connects to your Niagara station over HTTPS using Basic authentication
+2. It walks the oBIX point tree and discovers every readable point
+3. Points are mapped to HA entities (sensors and binary sensors) with auto-detected units, device classes, and icons
+4. Each Niagara folder becomes a separate HA device, with areas auto-assigned from the hierarchy
+5. An oBIX Watch polls for changes efficiently — one HTTP request per cycle instead of one per point
 
 ---
 
@@ -37,11 +42,12 @@ A native Home Assistant custom integration that reads points from a Niagara stat
 
 - **Native HA integration** — config flow setup, no MQTT broker or add-on required
 - **Auto-discovery** — walks the full Niagara oBIX point tree and finds every readable point
-- **oBIX Watch support** — polls for changes with a single HTTP request per cycle instead of one GET per point
+- **oBIX Watch support** — efficient change-only polling with a single HTTP request per cycle
+- **Smart entity mapping** — auto-detects units, device classes, state classes, and icons from point names and oBIX units
 - **Grouped devices** — points organized into HA devices by Niagara folder hierarchy
 - **Auto area assignment** — Niagara folders map to HA areas automatically
-- **Smart entity mapping** — auto-detects units, device classes, state classes, and icons from point names and units
-- **Energy dashboard ready** — energy (kWh), water (m³/L), and gas sensors get `total_increasing` state class
+- **BMS management panel** — built-in web panel for browsing points, managing device folders, and applying profiles
+- **Energy dashboard ready** — energy (kWh), water (m³/L), and gas sensors get `total_increasing` state class automatically
 - **Niagara name decoding** — `$2d`, `$2e` hex escapes decoded to readable names
 - **Options flow** — change poll interval, device grouping, and area mapping without reconfiguring
 - **HACS compatible** — install and update through the HA Community Store
@@ -58,7 +64,7 @@ A native Home Assistant custom integration that reads points from a Niagara stat
 | **Niagara 4 Station** | oBIX servlet enabled, user account created |
 | **Network** | HA must reach the Niagara station on its HTTPS port |
 
-### Install via HACS
+### Install via HACS (Recommended)
 
 1. Open **HACS** → three-dot menu → **Custom repositories**
 2. Add `rellis-erigon/Niagara--HA` as category **Integration**
@@ -76,22 +82,38 @@ A native Home Assistant custom integration that reads points from a Niagara stat
 2. Search for **Niagara** and select **Niagara BMS**
 3. Enter your connection details:
 
-   | Setting | Example |
-   |---|---|
-   | Host | `192.168.1.100` |
-   | Port | `443` |
-   | Username | `obix_reader` |
-   | Password | `••••••••` |
-   | Use HTTPS | `true` |
-   | Verify SSL | `false` |
+   | Setting | Example | Notes |
+   |---|---|---|
+   | Host | `192.168.1.100` | IP or hostname of Niagara station |
+   | Port | `443` | HTTPS port on the station |
+   | Username | `obix_reader` | oBIX user account (see [Niagara Setup](#niagara-side-setup)) |
+   | Password | `••••••••` | Password for the oBIX user |
+   | Use HTTPS | `true` | Almost always true for Niagara |
+   | Verify SSL | `false` | Set false for self-signed certs |
 
-4. The integration tests the connection and discovers points
-5. Configure device naming, poll interval, and area mapping
+4. The integration tests the connection and discovers points automatically
+5. Configure device naming, poll interval, and area mapping on the next screen
 6. Done — entities appear in HA immediately
 
 ---
 
-## Entity Mapping
+## Documentation
+
+| Guide | Description |
+|---|---|
+| [Niagara Setup Guide](docs/niagara-setup.md) | Step-by-step oBIX configuration on your Niagara station |
+| [Native Integration Guide](docs/integration-guide.md) | Full guide for the native HA integration (v2.0) |
+| [MQTT Add-on Guide](docs/addon-guide.md) | Full guide for the MQTT-based add-on (v0.6.x) |
+| [BMS Panel Guide](docs/panel-guide.md) | Using the built-in point management panel |
+| [Energy Dashboard Guide](docs/energy-dashboard.md) | Setting up energy, water, and gas monitoring |
+| [Entity Mapping Reference](docs/entity-mapping.md) | How Niagara points become HA entities |
+| [Troubleshooting](docs/troubleshooting.md) | Common issues and solutions |
+| [Migration Guide](docs/migration.md) | Migrating from the MQTT add-on to native integration |
+| [Add-on Changelog](niagara-ha/CHANGELOG.md) | Version history for the MQTT add-on |
+
+---
+
+## Entity Mapping (Quick Reference)
 
 | Niagara Point Type | HA Entity | Auto-detected |
 |---|---|---|
@@ -100,16 +122,7 @@ A native Home Assistant custom integration that reads points from a Niagara stat
 | EnumPoint | `sensor` | Options list from Niagara range, icon |
 | StringPoint | `sensor` | Icon |
 
-### Energy Dashboard
-
-Energy, water, and gas sensors are automatically configured for the HA Energy dashboard:
-
-| Type | Device Class | State Class | Units |
-|---|---|---|---|
-| Energy | `energy` | `total_increasing` | kWh, Wh, MWh, GJ, MJ |
-| Water | `water` | `total_increasing` | m³, L, gal, ft³ |
-| Gas | `gas` | `total_increasing` | m³, ft³, CCF |
-| Battery | `battery` | `measurement` | % |
+See [Entity Mapping Reference](docs/entity-mapping.md) for the full mapping tables.
 
 ---
 
@@ -119,67 +132,10 @@ After setup, adjust settings via **Settings → Devices & Services → Niagara B
 
 | Option | Default | Description |
 |---|---|---|
-| Poll interval | `30` | Seconds between point value updates |
+| Poll interval | `30` | Seconds between point value updates (5–3600) |
 | Device name | `Niagara BMS` | Prefix for HA device names |
-| Device grouping depth | `0` (auto) | Folder levels that define a device (0 = full path) |
+| Device grouping depth | `0` (auto) | Folder levels that define a device (0 = auto-detect) |
 | Area mapping depth | `1` | Which folder level maps to HA areas |
-
----
-
-## Niagara-Side Setup (One-Time)
-
-Four steps in Workbench to prepare your Niagara 4 station for oBIX communication.
-
-#### Step 1 — Enable HTTPS
-
-1. Open **Station → Services → WebService**
-2. Turn on **HTTPS** and set the port (default `443`)
-
-#### Step 2 — Install the oBIX Network Driver
-
-1. Navigate to **Station → Config → Drivers**
-2. Click **New** → set Type to `Obix Network`
-
-#### Step 3 — Add HTTPBasicScheme Authentication
-
-1. Navigate to **Station → Services → AuthenticationService → AuthenticationSchemes**
-2. From the Palette, add **baja → WebServicesSchemes → HTTPBasicScheme**
-
-#### Step 4 — Create an oBIX User Account
-
-1. Navigate to **Station → Services → UserService**
-2. Duplicate the Admin user, rename to `obixUser`
-3. Set a password and change **AuthenticationSchemeName** to `HTTPBasicScheme`
-
----
-
-## Migrating from the MQTT Add-on
-
-If you were using the previous MQTT-based add-on (v0.6.x):
-
-1. Install the native integration via HACS (see above)
-2. Add the integration in **Settings → Devices & Services**
-3. Verify your entities appear correctly
-4. Remove the old Niagara BMS add-on from **Settings → Add-ons**
-5. If you no longer need MQTT for other integrations, you can remove the Mosquitto add-on too
-
-Entity unique IDs have changed, so you'll need to update any automations or dashboard cards that reference specific entity IDs.
-
----
-
-## Troubleshooting
-
-**No entities appearing?**
-Check the HA log for connection errors. Verify the Niagara host is reachable and oBIX is enabled.
-
-**SSL errors?**
-Set "Verify SSL" to false — most Niagara stations use self-signed certificates.
-
-**Too many entities?**
-Use the point path filter during setup to scope discovery. Or disable unwanted entities in the HA UI.
-
-**Values not updating?**
-Lower the poll interval in the integration options. Check that the oBIX user has read permissions.
 
 ---
 
@@ -187,8 +143,9 @@ Lower the poll interval in the integration options. Check that the oBIX user has
 
 - **Protocol:** oBIX (Open Building Information Exchange) over REST/HTTPS
 - **Language:** Python 3
-- **HA Integration:** Native custom component with DataUpdateCoordinator
+- **HA Integration:** Native custom component with `DataUpdateCoordinator`
 - **Polling:** oBIX Watch (single request per cycle) with legacy fallback
+- **Add-on:** Docker container with MQTT Discovery publishing
 
 ---
 
