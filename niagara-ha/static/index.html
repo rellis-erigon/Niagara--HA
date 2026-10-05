@@ -2425,6 +2425,19 @@ async function openDeviceConfig(group) {
                 contradict what the template expects.` : ''}
         </p>
         <table class="slot-table">${slotRows}</table>
+        <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border)">
+          <label class="slot-key" for="display-select">Show as</label>
+          <div class="slot-meta" style="margin-bottom:6px">
+            A mimic is not always what you want in front of you — a plain
+            list is easier to scan, and it is the only sensible shape for a
+            device whose faceplate draws two of its nine points.
+          </div>
+          <select class="slot-select" id="display-select">
+            <option value="both">Card and sensor list</option>
+            <option value="card">Card only</option>
+            <option value="entities">Sensor list only</option>
+          </select>
+        </div>
         ${(faces.faceplates || []).length ? `
           <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border)">
             <label class="slot-key" for="faceplate-select">Faceplate</label>
@@ -2447,6 +2460,9 @@ async function openDeviceConfig(group) {
       </div>
     </div>`;
 
+  const displaySelect = $('#display-select');
+  if (displaySelect) displaySelect.value = detail.display || faces.display || 'both';
+
   $('#slots-save').addEventListener('click', async () => {
     const bindings = {};
     // Only controls that actually name a slot. `slot-select` is a styling
@@ -2467,6 +2483,7 @@ async function openDeviceConfig(group) {
         body: JSON.stringify({
           group, template: detail.template, bindings,
           faceplate: ($('#faceplate-select') || {}).value || '',
+          display: ($('#display-select') || {}).value || 'both',
         }),
       });
       for (const [paths, enabled] of [[enablePaths, true], [disablePaths, false]]) {

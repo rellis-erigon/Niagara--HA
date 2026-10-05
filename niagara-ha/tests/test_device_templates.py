@@ -195,6 +195,7 @@ def test_round_trip(types_file):
         "bindings": {"energy_total": "/config/points/MeterTotal/"},
         "state": dt.STATE_DRAFT,
         "faceplate": "",
+        "display": "both",
     }}
     dt.save_device_types(devices)
     assert dt.load_device_types() == devices
@@ -768,3 +769,18 @@ def test_the_fire_panel_card_is_never_actionable():
                 walk(item)
 
     walk(card)
+
+
+
+def test_display_round_trips(types_file):
+    devices = {"Site/DB1": {
+        "template": "electricity_meter", "bindings": {},
+        "state": dt.STATE_DRAFT, "faceplate": "", "display": "card",
+    }}
+    dt.save_device_types(devices)
+    assert dt.load_device_types()["Site/DB1"]["display"] == "card"
+
+
+def test_display_defaults_to_both(types_file):
+    types_file.write_text("devices:\n  Site/DB1:\n    template: pump\n")
+    assert dt.load_device_types()["Site/DB1"]["display"] == "both"

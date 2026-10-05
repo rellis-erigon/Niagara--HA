@@ -26,7 +26,8 @@ from device_templates import (
     suggest_template,
 )
 from faceplates import (
-    apply_faceplate, card_types_in, faceplates_for_card, roles_in,
+    VALID_DISPLAYS, apply_display, apply_faceplate, card_types_in,
+    faceplates_for_card, roles_in,
 )
 from validation import (
     BLOCKED,
@@ -872,6 +873,8 @@ def device_detail():
         "template": template.id,
         "template_name": template.name,
         "state": assigned["state"] if assigned else None,
+        "display": (assigned or {}).get("display", "both"),
+        "faceplate": (assigned or {}).get("faceplate", ""),
         "severity": report["severity"],
         "publishable": report["publishable"],
         "slots": slots,
@@ -924,11 +927,15 @@ def assign_device_type():
     faceplate = data.get("faceplate")
     if faceplate is None:
         faceplate = previous.get("faceplate", "")
+    display = data.get("display") or previous.get("display") or "both"
+    if display not in VALID_DISPLAYS:
+        return jsonify({"error": f"unknown display {display!r}"}), 400
     devices[group] = {
         "template": template_id,
         "bindings": {k: v for k, v in bindings.items() if v},
         "state": data.get("state") or previous.get("state") or STATE_DRAFT,
         "faceplate": str(faceplate or "").strip(),
+        "display": display,
     }
     save_device_types(devices)
 
@@ -1231,12 +1238,16 @@ def device_card():
     chosen = assigned.get("faceplate", "")
     if chosen and card:
         card = apply_faceplate(card, chosen)
+    display = assigned.get("display", "both")
+    if card:
+        card = apply_display(card, display)
 
     return jsonify({
         "group": group,
         "device_name": name,
         "template": template.id,
         "faceplate": chosen,
+        "display": display,
         "card": card,
         "bindings": bindings,
     })
@@ -1268,11 +1279,14 @@ def device_cards():
         chosen = assigned.get("faceplate", "")
         if chosen:
             card = apply_faceplate(card, chosen)
+        display = assigned.get("display", "both")
+        card = apply_display(card, display)
         out.append({
             "group": group,
             "device_name": name,
             "template": template.id,
             "faceplate": chosen,
+            "display": display,
             "card": card,
             "bindings": bindings,
         })

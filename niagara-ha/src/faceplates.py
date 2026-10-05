@@ -113,3 +113,41 @@ def apply_faceplate(card: Any, faceplate_id: str) -> Any:
         return node
 
     return walk(card)
+
+
+# How a device is drawn. A faceplate is the point of this project, but a
+# mimic is not always what someone wants in front of them: a plain list
+# is easier to scan, easier to read on a phone, and the only sensible
+# shape for a device whose faceplate shows two of its nine points.
+DISPLAY_BOTH = "both"
+DISPLAY_CARD = "card"
+DISPLAY_ENTITIES = "entities"
+VALID_DISPLAYS = (DISPLAY_BOTH, DISPLAY_CARD, DISPLAY_ENTITIES)
+
+
+def apply_display(card: Any, mode: str) -> Any:
+    """Keep the faceplate, the plain list, or both.
+
+    Templates render a vertical stack of the two. Dropping one leaves a
+    stack of one, which is a wrapper for nothing — so the survivor is
+    unwrapped and returned on its own.
+    """
+    if mode not in VALID_DISPLAYS or mode == DISPLAY_BOTH:
+        return card
+    if not isinstance(card, dict) or card.get("type") != "vertical-stack":
+        return card
+
+    inner = card.get("cards") or []
+    wanted = [
+        c for c in inner
+        if isinstance(c, dict)
+        and str(c.get("type", "")).startswith("custom:") == (mode == DISPLAY_CARD)
+    ]
+    if not wanted:
+        # Asking for a faceplate on a template that has none, or for a
+        # list where everything is drawn. Better the whole card than
+        # nothing at all.
+        return card
+    if len(wanted) == 1:
+        return wanted[0]
+    return {**card, "cards": wanted}

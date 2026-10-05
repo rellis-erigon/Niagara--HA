@@ -67,3 +67,44 @@ def test_a_faceplate_sharing_no_role_is_not_a_candidate():
     }
     assert "din-3phase-analyser" in usable
     assert "multijet-water-register" not in usable
+
+
+# -- how a device is drawn -----------------------------------------------
+
+STACK = {
+    "type": "vertical-stack",
+    "cards": [
+        {"type": "custom:bms-meter-card", "faceplate": "din-3phase-analyser"},
+        {"type": "entities", "entities": [{"entity": "sensor.x"}]},
+    ],
+}
+
+
+def test_both_leaves_the_stack_alone():
+    assert fp.apply_display(STACK, "both") == STACK
+
+
+def test_card_only_unwraps_to_the_faceplate():
+    out = fp.apply_display(STACK, "card")
+    assert out["type"] == "custom:bms-meter-card"
+
+
+def test_entities_only_unwraps_to_the_list():
+    out = fp.apply_display(STACK, "entities")
+    assert out["type"] == "entities"
+
+
+def test_an_unknown_mode_changes_nothing():
+    assert fp.apply_display(STACK, "nonsense") == STACK
+
+
+def test_asking_for_a_faceplate_that_is_not_there_keeps_the_card():
+    """Better the whole card than an empty one: a template with no
+    faceplate still has something worth showing."""
+    plain = {"type": "vertical-stack",
+             "cards": [{"type": "entities", "entities": []}]}
+    assert fp.apply_display(plain, "card") == plain
+
+
+def test_a_card_that_is_not_a_stack_is_left_alone():
+    assert fp.apply_display({"type": "entities"}, "card") == {"type": "entities"}

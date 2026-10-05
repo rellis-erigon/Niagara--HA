@@ -343,6 +343,8 @@ def load_device_types() -> dict[str, dict]:
             # equipment of every make, so the face belongs to the device
             # rather than to the type. Empty means the template's default.
             "faceplate": str(entry.get("faceplate") or "").strip(),
+            # How it is drawn: the mimic, the plain list, or both.
+            "display": str(entry.get("display") or "both").strip(),
         }
     return out
 
@@ -362,6 +364,8 @@ def save_device_types(devices: dict[str, dict]) -> None:
                 "state": entry.get("state", STATE_DRAFT),
                 **({"faceplate": entry["faceplate"]}
                    if entry.get("faceplate") else {}),
+                **({"display": entry["display"]}
+                   if entry.get("display") not in (None, "", "both") else {}),
             }
             for group, entry in sorted(devices.items())
         },
