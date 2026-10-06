@@ -33,6 +33,14 @@ A native Home Assistant custom integration that reads points from a Niagara stat
 
 ---
 
+## Two-way control
+
+The bridge reads and does not write. [PLAN-TWO-WAY.md](PLAN-TWO-WAY.md)
+sets out how that changes and in what order — including the finding that
+blocks all of it: on the station here, 897 HVAC command points export as
+read-only, while the 303 that are writable are meter totals and label
+strings. The first phase is a permissions change in Niagara, not code.
+
 ## Features
 
 - **Native HA integration** — config flow setup, no MQTT broker or add-on required
