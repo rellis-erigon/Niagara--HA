@@ -11,9 +11,10 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
+from .alarm_state import alarm_attributes
 from .const import DOMAIN
 from .coordinator import NiagaraCoordinator, NiagaraPoint
-from .entity import NiagaraEntity
+from .entity import NiagaraDeviceEntity, NiagaraEntity
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -51,7 +52,51 @@ async def async_setup_entry(
     for point in coordinator.points.values():
         if point.point_type == "boolean":
             entities.append(NiagaraBinarySensor(coordinator, point))
+
+    if coordinator.alarms_supported:
+        for device in coordinator.devices().values():
+            entities.append(NiagaraDeviceAlarm(coordinator, device))
+
     async_add_entities(entities)
+
+
+class NiagaraDeviceAlarm(NiagaraDeviceEntity, BinarySensorEntity):
+    """Whether the station's alarm console holds an alarm for this device.
+
+    Distinct from the per-point `problem` sensors, which come from a point
+    whose *name* matched `*alarm*`. This one comes from the alarm console:
+    it knows the alarm's priority, when it started and whether anyone has
+    acknowledged it, and it finds alarms on points nobody thought to enable.
+    """
+
+    DOMAIN_KEY = "device_alarm"
+    _attr_device_class = BinarySensorDeviceClass.PROBLEM
+    _attr_name = "Station alarm"
+    _attr_entity_registry_enabled_default = True
+
+    @property
+    def _records(self) -> list[dict]:
+        return self.coordinator.alarms_by_group().get(self._group, [])
+
+    @property
+    def is_on(self) -> bool:
+        return bool(self._records)
+
+    @property
+    def available(self) -> bool:
+        """Tracks the console, not the device's own points.
+
+        A device whose points have all faulted may well be exactly the one
+        the station is alarming about, so this must not go unavailable with
+        them — that would hide the alarm at the moment it matters.
+        """
+        return self.coordinator.last_update_success
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        attrs = {"niagara_group": self._group}
+        attrs.update(alarm_attributes(self._records))
+        return attrs
 
 
 class NiagaraBinarySensor(NiagaraEntity, BinarySensorEntity):

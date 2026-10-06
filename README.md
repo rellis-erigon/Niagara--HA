@@ -21,6 +21,7 @@ A native Home Assistant custom integration that reads points from a Niagara stat
 └──────────────────┘                 │  binary_sensor.*  │
                                      │  climate.*        │
                                      │  fan.*            │
+                                     │  event.* (alarms) │
                                      │  devices & areas  │
                                      └──────────────────┘
 ```
@@ -156,6 +157,39 @@ Notes:
   data, but every write raises an error rather than appearing to succeed.
   See [Two-way control](#two-way-control).
 - New devices get their entities on the next reload of the integration.
+
+### Alarms
+
+If the station exposes its alarm service over oBIX, the console reaches
+Home Assistant as well — and is worth preferring over the per-point
+`problem` sensors, which only ever came from a point whose *name* matched
+`*alarm*`:
+
+| Entity | What it is |
+|---|---|
+| `sensor.*_active_alarms` | Every alarm the station is currently reporting |
+| `sensor.*_unacknowledged_alarms` | Only the ones nobody has acknowledged |
+| `Station alarm` on each published device | Whether the console holds an alarm for that device |
+| `event.*_alarm` | Fires once per new alarm |
+
+Both counts carry the alarms as attributes, most urgent first (Niagara
+counts 1 as critical). The list is capped at 20 for the recorder's sake;
+the count is always exact.
+
+There are two counts rather than one because a site with thirty standing
+alarms everyone has seen is a different situation from one with a single
+new alarm, and one number cannot distinguish them.
+
+These entities only exist when the station actually exposes the alarm
+service. If they are missing, **`/api/alarms/probe`** in the add-on says
+why: an empty alarm list otherwise looks the same whether the driver is not
+exporting the alarm service, the oBIX user lacks permission to it, the
+console is genuinely clear, or the records arrived in a shape the parser did
+not recognise.
+
+To expose it in Workbench: the oBIX export must include the alarm service,
+and the oBIX user's permissions must grant read on it. A rescan forces the
+probe to run again.
 
 ### Energy Dashboard
 

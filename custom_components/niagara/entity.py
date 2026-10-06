@@ -207,3 +207,42 @@ class NiagaraDeviceEntity(CoordinatorEntity[NiagaraCoordinator]):
         for slot, point in sorted(self._device.slots.items()):
             attrs[f"path_{slot}"] = point.path
         return attrs
+
+
+def build_station_device_info(coordinator: NiagaraCoordinator) -> DeviceInfo:
+    """The device representing the station itself.
+
+    Everything until now hung off a folder, so there was nowhere to put
+    something that is true of the whole station — an alarm count belongs to
+    the station, not to any one air handler.
+    """
+    return DeviceInfo(
+        identifiers={(DOMAIN, f"niagara_station_{stable_id(coordinator.host)}")},
+        name=coordinator.device_name,
+        manufacturer="Tridium",
+        model="Niagara 4 station",
+        sw_version="oBIX",
+    )
+
+
+class NiagaraStationEntity(CoordinatorEntity[NiagaraCoordinator]):
+    """Base for an entity describing the station rather than a point."""
+
+    _attr_has_entity_name = True
+    _attr_entity_registry_enabled_default = True
+
+    # Distinguishes the station-level entities from each other.
+    KEY = "station"
+
+    def __init__(
+        self, coordinator: NiagaraCoordinator, key: str | None = None,
+    ) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = (
+            f"niagara_{key or self.KEY}_{stable_id(coordinator.host)}"
+        )
+        self._attr_device_info = build_station_device_info(coordinator)
+
+    @property
+    def available(self) -> bool:
+        return self.coordinator.last_update_success

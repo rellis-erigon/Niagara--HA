@@ -13,6 +13,7 @@ import sys
 import time
 from pathlib import Path
 
+import alarms as alarm_lib
 from obix_client import ObixClient, ObixError
 from rescan import take_request as take_rescan_request
 from validation import (
@@ -35,6 +36,12 @@ from point_manager import (
 
 OPTIONS_PATH = Path("/data/options.json")
 VALUES_FILE = POINTS_DIR / "values.json"
+# The alarm console, refreshed each poll, and a one-off report of what the
+# station exposes for alarming, refreshed on each connect. The web process
+# is separate from this one, so a file is how the two meet.
+ALARMS_FILE = POINTS_DIR / "alarms.json"
+ALARM_PROBE_FILE = POINTS_DIR / "alarms_probe.json"
+ALARM_LIMIT = 200
 RECONNECT_DELAY = 10
 MAX_RECONNECT_DELAY = 300
 
@@ -198,6 +205,8 @@ def main() -> None:
 
                 del selections
 
+                _write_alarm_probe(obix)
+
                 using_watch = obix.setup_watch(active_points, poll_interval)
                 if using_watch:
                     captured = 0
@@ -285,6 +294,7 @@ def main() -> None:
             "Poll: %d changed, %d failed, %d total", changed, failed, len(updated),
         )
         _write_values_cache(last_values)
+        _poll_alarms(obix, now)
 
         if mqtt_pub:
             if not obix.connected:
@@ -301,6 +311,73 @@ def main() -> None:
     if mqtt_pub:
         mqtt_pub.disconnect()
     obix.close()
+
+
+def _write_json(path: Path, payload: dict) -> None:
+    """Write a cache file atomically, so a reader never sees half of one."""
+    try:
+        POINTS_DIR.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(".tmp")
+        with open(tmp, "w") as f:
+            json.dump(payload, f)
+        tmp.replace(path)
+    except OSError as e:
+        logger.debug("Failed to write %s: %s", path.name, e)
+
+
+def _write_alarm_probe(obix: ObixClient) -> None:
+    """Record what the station exposes for alarming, once per connection.
+
+    Run here rather than per poll because it costs an extra request and its
+    answer only changes when the station's oBIX export or the oBIX user's
+    permissions change — both of which need a reconnect to take effect
+    anyway. A rescan drops the connection, so the UI already has a way to
+    refresh it.
+    """
+    try:
+        report = obix.probe_alarms()
+    except Exception as e:  # noqa: BLE001 - diagnostics must never stop the poll
+        logger.warning("Alarm probe failed: %s", e)
+        report = {"error": f"the probe itself failed: {e}"}
+    report["checked_at"] = time.time()
+    _write_json(ALARM_PROBE_FILE, report)
+
+    if report.get("error"):
+        logger.info("Alarms unavailable: %s", report["error"])
+    else:
+        logger.info(
+            "Alarm console reachable: %d record(s) on the first read",
+            report.get("record_count", 0),
+        )
+
+
+def _poll_alarms(obix: ObixClient, now: float) -> None:
+    """Refresh the cached alarm console.
+
+    Failure is reported in the file rather than raised. An unreachable alarm
+    service must not stop the point poll — the points are what most of the
+    dashboard is built from, and losing them because the alarm query timed
+    out would be a poor trade.
+    """
+    if not obix.alarm_subject:
+        return
+    try:
+        records = obix.query_alarms(ALARM_LIMIT)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("Alarm poll failed: %s", e)
+        _write_json(ALARMS_FILE, {"ts": now, "error": str(e), "records": []})
+        return
+
+    summary = alarm_lib.summarise(records)
+    _write_json(ALARMS_FILE, {
+        "ts": now,
+        "records": [r.to_dict() for r in records],
+        "summary": summary,
+        "truncated": len(records) >= ALARM_LIMIT,
+    })
+    logger.debug(
+        "Alarms: %d active, %d unacked", summary["active"], summary["unacked"],
+    )
 
 
 def _load_values_cache() -> dict[str, dict]:

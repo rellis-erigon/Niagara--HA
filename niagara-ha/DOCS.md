@@ -99,6 +99,27 @@ Use this username and password when configuring the add-on.
    fills, which is what lets the integration build a `climate` entity for
    an FCU or a `fan` entity for a VFD rather than a pile of sensors. Typing
    a device is therefore worth doing even when the sensors already work.
+7. If the station exposes its alarm service over oBIX, the console is polled
+   alongside the points and served on `/api/integration/alarms`.
+
+## Alarms
+
+The station's alarm console is read over oBIX, from the `obix:AlarmSubject`
+the lobby advertises. It gives Home Assistant the alarms themselves —
+priority, start time, acknowledgement and source — rather than the guess the
+per-point `problem` sensors make from point names.
+
+If no alarm entities appear in Home Assistant, **`/api/alarms/probe`** says
+why. An empty list otherwise looks identical whether:
+
+- the oBIX export does not include the alarm service,
+- the oBIX user's permissions do not grant read on it,
+- the console is genuinely clear, or
+- the records came back in a shape the parser did not recognise — in which
+  case the probe keeps the raw reply.
+
+The probe runs when the bridge connects, so a **rescan** is how you refresh
+it after changing the station's oBIX export or the user's permissions.
 
 ## Troubleshooting
 

@@ -127,6 +127,9 @@ class NiagaraCoordinator(DataUpdateCoordinator[dict[str, NiagaraPoint]]):
 
         self.points: dict[str, NiagaraPoint] = {}
         self.device_folders: list[str] = []
+        self.alarms: list[dict] = []
+        self.alarm_summary: dict = {}
+        self.alarms_supported = False
         self._session: aiohttp.ClientSession | None = None
         self._poll_count = 0
 
@@ -165,6 +168,7 @@ class NiagaraCoordinator(DataUpdateCoordinator[dict[str, NiagaraPoint]]):
         registry = er.async_get(self.hass)
         valid = {f"niagara_{stable_id(path)}" for path in self.points}
         valid |= self.device_entity_unique_ids()
+        valid |= self.alarm_entity_unique_ids()
         stale = [
             entity.entity_id
             for entity in list(registry.entities.values())
@@ -234,6 +238,8 @@ class NiagaraCoordinator(DataUpdateCoordinator[dict[str, NiagaraPoint]]):
                 # becomes published between two of them, so this is the
                 # natural moment to reconcile the slower housekeeping.
                 await self._async_housekeeping()
+
+            await self._async_fetch_alarms()
 
             values = await self._fetch_values()
             for path, entry in values.items():
@@ -319,6 +325,88 @@ class NiagaraCoordinator(DataUpdateCoordinator[dict[str, NiagaraPoint]]):
         changes = await async_add_published_meters(self.hass, meters)
         if changes:
             _LOGGER.info("Energy dashboard updated: %s", "; ".join(changes))
+
+    async def _async_fetch_alarms(self) -> None:
+        """Refresh the station's alarm console.
+
+        Never allowed to fail the refresh. The points are what most of a
+        dashboard is built from, and losing every reading because the alarm
+        service was slow would be a poor trade. An add-on predating the
+        endpoint returns 404, which reads the same as a station with no
+        alarm service: unsupported, so no alarm entities appear.
+        """
+        try:
+            session = self._get_session()
+            async with session.get(
+                f"{self.addon_url}/api/integration/alarms",
+                timeout=aiohttp.ClientTimeout(total=20),
+            ) as response:
+                if response.status == 404:
+                    self.alarms_supported = False
+                    return
+                response.raise_for_status()
+                payload = await response.json()
+        except (aiohttp.ClientError, TimeoutError, ValueError) as err:
+            _LOGGER.debug("Could not read the alarm console: %s", err)
+            return
+
+        self.alarms_supported = bool(payload.get("supported"))
+        self.alarms = payload.get("records") or []
+        self.alarm_summary = payload.get("summary") or {}
+
+    def _group_for_source(self, source: str) -> str | None:
+        """The device group an alarm's source point belongs to.
+
+        The source is matched exactly where the point is one we export. When
+        it is not — an alarm often sits on a point nobody enabled — the
+        point's folder is matched against the folders of points we do have,
+        which covers the common case of an alarm extension beside exported
+        siblings. An alarm that still cannot be placed stays station-level
+        rather than being attached to the wrong device.
+        """
+        if not source:
+            return None
+        point = self.points.get(source)
+        if point is not None:
+            return point.group
+
+        folder = _parent_path(source)
+        if not folder:
+            return None
+        for candidate in self.points.values():
+            if _parent_path(candidate.path) == folder:
+                return candidate.group
+        return None
+
+    def alarms_by_group(self) -> dict[str, list[dict]]:
+        """Active alarms keyed by the device group they belong to."""
+        grouped: dict[str, list[dict]] = {}
+        for record in self.alarms:
+            group = self._group_for_source(record.get("source", ""))
+            if group is None:
+                continue
+            grouped.setdefault(group, []).append(record)
+        return grouped
+
+    def alarm_entity_unique_ids(self) -> set[str]:
+        """Unique ids of the alarm entities, which are not keyed on a point.
+
+        Included in the purge's valid set for the same reason the climate and
+        fan ids are: without it they are stale by definition.
+        """
+        if not self.alarms_supported:
+            return set()
+        station = stable_id(self.host)
+        ids = {
+            f"niagara_alarms_active_{station}",
+            f"niagara_alarms_unacked_{station}",
+            f"niagara_alarm_event_{station}",
+        }
+        for device in self.devices().values():
+            ids.add(
+                f"niagara_device_alarm_{stable_id(self.host + '/' + device.group)}"
+            )
+        return ids
 
     async def _fetch_points(self) -> dict[str, Any]:
         """Fetch full point list from the add-on."""

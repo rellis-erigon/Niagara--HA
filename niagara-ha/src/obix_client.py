@@ -17,6 +17,8 @@ import requests
 import urllib3
 from requests.auth import HTTPBasicAuth
 
+import alarms
+
 logger = logging.getLogger(__name__)
 
 OBIX_NS = "http://obix.org/ns/schema/1.0"
@@ -236,6 +238,8 @@ class ObixClient:
         self._watch_points: set[str] = set()
         self._has_watch_service = False
         self._has_batch_service = False
+        self._alarm_subject: Optional[str] = None
+        self._alarm_query_op: Optional[str] = None
         self._consecutive_full_failures = 0
         self._watch_rejected = 0
 
@@ -269,9 +273,12 @@ class ObixClient:
                     self._has_watch_service = True
                 if name == "batch":
                     self._has_batch_service = True
+            self._alarm_subject = alarms.find_alarm_subject(root)
+            self._alarm_query_op = None
             logger.info(
-                "oBIX services: Watch=%s, Batch=%s",
+                "oBIX services: Watch=%s, Batch=%s, Alarms=%s",
                 self._has_watch_service, self._has_batch_service,
+                self._alarm_subject or "not advertised",
             )
         except (ObixError, requests.RequestException) as e:
             logger.debug("Could not detect services from lobby: %s", e)
@@ -323,6 +330,141 @@ class ObixClient:
         if root.tag == f"{{{OBIX_NS}}}err":
             raise ObixError(root.get("display", "Unknown oBIX error"))
         return root
+
+    # -- Alarms --------------------------------------------------------
+
+    @property
+    def alarm_subject(self) -> Optional[str]:
+        return self._alarm_subject
+
+    def _resolve_alarm_href(self, href: str) -> str:
+        """An absolute or relative alarm href as a path this client can GET."""
+        if href.startswith("http://") or href.startswith("https://"):
+            if href.startswith(self._base_url):
+                return href[len(self._base_url):] or "/"
+            return href
+        if href.startswith(self._obix_prefix):
+            return href[len(self._obix_prefix):] or "/"
+        if href.startswith("/"):
+            return href
+        return "/" + href
+
+    def _find_alarm_query_op(self) -> Optional[str]:
+        """The href of the alarm subject's query operation.
+
+        Cached: the subject object is fetched once per connection, not once
+        per poll. Dropping the connection clears it, which is also what a
+        rescan does, so a station that gains the alarm service while the
+        add-on is running is picked up on the next reconnect.
+        """
+        if self._alarm_query_op:
+            return self._alarm_query_op
+        if not self._alarm_subject:
+            return None
+        subject_path = self._resolve_alarm_href(self._alarm_subject)
+        try:
+            subject = self._get(subject_path)
+        except (ObixError, requests.RequestException, ET.ParseError) as e:
+            logger.warning("Could not read the alarm subject: %s", e)
+            return None
+        for child in subject:
+            if child.get("name") != "query":
+                continue
+            href = child.get("href")
+            if href:
+                self._alarm_query_op = self._resolve_alarm_href(href)
+                return self._alarm_query_op
+        logger.info(
+            "The alarm subject at %s advertises no query operation",
+            subject_path,
+        )
+        return None
+
+    def query_alarms(self, limit: int = 200) -> list["alarms.AlarmRecord"]:
+        """The station's current alarms, or an empty list if it has none.
+
+        Returns empty both when the station is clear and when it does not
+        expose alarming at all — probe_alarms() is what distinguishes the
+        two, because a caller polling this every interval should not have to.
+        """
+        op = self._find_alarm_query_op()
+        if not op:
+            return []
+        try:
+            root = self._post(op, alarms.build_filter(limit))
+        except (ObixError, requests.RequestException, ET.ParseError) as e:
+            logger.warning("Alarm query failed: %s", e)
+            return []
+        return alarms.parse_alarm_list(root, self._stored_path)
+
+    def probe_alarms(self) -> dict:
+        """What the station exposes for alarming, and why not when it does not.
+
+        Every step is reported separately. "No alarms" has at least four
+        causes — the driver is not exporting the alarm service, the oBIX user
+        lacks permission to it, the station genuinely has none, or the
+        records came back in a shape the parser did not recognise — and they
+        are indistinguishable from an empty list.
+        """
+        report: dict = {
+            "connected": self._connected,
+            "subject_advertised": self._alarm_subject,
+            "subject_readable": False,
+            "query_op": None,
+            "record_count": 0,
+            "sample": None,
+            "error": None,
+        }
+        if not self._connected:
+            report["error"] = "not connected to the station"
+            return report
+        if not self._alarm_subject:
+            report["error"] = (
+                "The oBIX lobby advertises no obix:AlarmSubject. In Workbench, "
+                "check the oBIX export on the station and that the oBIX user's "
+                "permissions include the alarm service."
+            )
+            return report
+
+        subject_path = self._resolve_alarm_href(self._alarm_subject)
+        try:
+            subject = self._get(subject_path)
+            report["subject_readable"] = True
+            report["subject_children"] = [
+                {"name": c.get("name"), "is": c.get("is"), "href": c.get("href")}
+                for c in subject
+            ]
+        except (ObixError, requests.RequestException, ET.ParseError) as e:
+            report["error"] = f"reading {subject_path} failed: {e}"
+            return report
+
+        op = self._find_alarm_query_op()
+        report["query_op"] = op
+        if not op:
+            report["error"] = (
+                "The alarm subject exposes no query operation, so the current "
+                "alarms cannot be listed."
+            )
+            return report
+
+        try:
+            root = self._post(op, alarms.build_filter(25))
+        except (ObixError, requests.RequestException, ET.ParseError) as e:
+            report["error"] = f"the alarm query failed: {e}"
+            return report
+
+        records = alarms.parse_alarm_list(root, self._stored_path)
+        report["record_count"] = len(records)
+        report["summary"] = alarms.summarise(records)
+        if records:
+            report["sample"] = [r.to_dict() for r in records[:3]]
+        else:
+            # Nothing parsed. The raw reply is the only way to tell an empty
+            # console from a shape the parser does not handle.
+            raw = ET.tostring(root, encoding="unicode")
+            report["raw"] = raw[:4000]
+            report["raw_truncated"] = len(raw) > 4000
+        return report
 
     # -- Watch Service -------------------------------------------------
 

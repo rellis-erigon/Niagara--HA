@@ -153,6 +153,7 @@ class _Platform(StrEnum):
     BINARY_SENSOR = "binary_sensor"
     CLIMATE = "climate"
     FAN = "fan"
+    EVENT = "event"
 
 
 class _Entity:
@@ -208,6 +209,30 @@ class _CoordinatorEntity(_Entity):
 
     def __init__(self, coordinator):
         self.coordinator = coordinator
+
+    def _handle_coordinator_update(self):
+        """Real HA writes the new state here; nothing to do in a stub."""
+
+    def async_write_ha_state(self):
+        pass
+
+
+class _EventEntity(_Entity):
+    """Records what was triggered, in place of writing to the state machine.
+
+    The list is created on first use: cooperative __init__ down an entity's
+    MRO is not something the real classes rely on, so the stub must not
+    either.
+    """
+
+    def _trigger_event(self, event_type, attributes=None):
+        if not hasattr(self, "triggered"):
+            self.triggered = []
+        self.triggered.append((event_type, attributes or {}))
+
+    @property
+    def event_types(self):
+        return self._attr("event_types", [])
 
 
 class _Generic:
@@ -269,6 +294,7 @@ def install() -> None:
     _module("homeassistant.components.binary_sensor",
             BinarySensorEntity=_Entity,
             BinarySensorDeviceClass=_BinarySensorDeviceClass)
+    _module("homeassistant.components.event", EventEntity=_EventEntity)
     _module("homeassistant.components.repairs", RepairsFlow=object)
     _module("homeassistant.data_entry_flow", FlowResult=dict)
 

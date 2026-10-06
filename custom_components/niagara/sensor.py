@@ -12,9 +12,10 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
+from .alarm_state import alarm_attributes
 from .const import DOMAIN
 from .coordinator import NiagaraCoordinator, NiagaraPoint
-from .entity import NiagaraEntity
+from .entity import NiagaraEntity, NiagaraStationEntity
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -200,7 +201,52 @@ async def async_setup_entry(
             entities.append(NiagaraEnumSensor(coordinator, point))
         elif point.point_type == "string":
             entities.append(NiagaraStringSensor(coordinator, point))
+
+    if coordinator.alarms_supported:
+        entities.append(NiagaraAlarmCount(coordinator, unacked_only=False))
+        entities.append(NiagaraAlarmCount(coordinator, unacked_only=True))
+
     async_add_entities(entities)
+
+
+class NiagaraAlarmCount(NiagaraStationEntity, SensorEntity):
+    """How many alarms the station is currently reporting.
+
+    Two of these: every active alarm, and only the unacknowledged ones. The
+    second is the one worth putting on a dashboard — a site with thirty
+    standing alarms everyone has seen is a different situation from one with
+    a single new alarm, and a single count cannot tell them apart.
+    """
+
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_native_unit_of_measurement = "alarms"
+
+    def __init__(
+        self, coordinator: NiagaraCoordinator, unacked_only: bool,
+    ) -> None:
+        super().__init__(
+            coordinator, "alarms_unacked" if unacked_only else "alarms_active",
+        )
+        self._unacked_only = unacked_only
+        self._attr_name = "Unacknowledged alarms" if unacked_only else "Active alarms"
+        self._attr_icon = (
+            "mdi:bell-badge" if unacked_only else "mdi:bell-ring-outline"
+        )
+
+    @property
+    def _records(self) -> list[dict]:
+        records = self.coordinator.alarms
+        if self._unacked_only:
+            return [r for r in records if not r.get("acked")]
+        return records
+
+    @property
+    def native_value(self) -> int:
+        return len(self._records)
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        return alarm_attributes(self._records)
 
 
 class NiagaraNumericSensor(NiagaraEntity, SensorEntity):

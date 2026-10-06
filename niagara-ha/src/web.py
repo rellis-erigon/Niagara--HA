@@ -55,6 +55,8 @@ from point_manager import (
 )
 
 VALUES_FILE = POINTS_DIR / "values.json"
+ALARMS_FILE = POINTS_DIR / "alarms.json"
+ALARM_PROBE_FILE = POINTS_DIR / "alarms_probe.json"
 
 logger = logging.getLogger("niagara-ha.web")
 
@@ -1589,6 +1591,81 @@ def acknowledge_finding():
         acks.pop(finding_id, None)
     diagnostics.save_acknowledgements(acks)
     return jsonify({"ok": True, "acknowledged": finding_id in acks})
+
+
+def _read_cache_file(path: Path) -> dict:
+    """A cache file the poll loop writes, or {} if it has not written one."""
+    try:
+        with open(path) as handle:
+            payload = json.load(handle)
+    except (json.JSONDecodeError, OSError):
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _alarm_payload() -> dict:
+    """The alarm console, with why it is empty when it is.
+
+    An empty list has four causes that look identical from here — the
+    station exports no alarm service, the oBIX user cannot see it, the
+    console is genuinely clear, or the records arrived in a shape the parser
+    did not recognise. The probe is what separates them, so it travels with
+    the list rather than hiding behind a second request.
+    """
+    cached = _read_cache_file(ALARMS_FILE)
+    probe = _read_cache_file(ALARM_PROBE_FILE)
+    records = cached.get("records") or []
+    now = time.time()
+    return {
+        "records": records,
+        "summary": cached.get("summary") or {
+            "total": 0, "active": 0, "unacked": 0, "highest_priority": None,
+        },
+        "truncated": bool(cached.get("truncated")),
+        "age": round(now - cached["ts"], 1) if cached.get("ts") else None,
+        "error": cached.get("error") or probe.get("error"),
+        "supported": bool(probe.get("query_op")),
+        "checked_at": probe.get("checked_at"),
+    }
+
+
+@app.route("/api/alarms")
+def list_alarms():
+    """The station's alarm console, for the management UI."""
+    return jsonify(_alarm_payload())
+
+
+@app.route("/api/alarms/probe")
+def alarm_probe():
+    """What the station exposes for alarming, from the last connect.
+
+    Refreshed when the bridge reconnects, which a rescan forces. Carries the
+    raw reply when nothing parsed, because that is the only way to tell an
+    empty console from an unrecognised format.
+    """
+    probe = _read_cache_file(ALARM_PROBE_FILE)
+    if not probe:
+        return jsonify({
+            "error": "The bridge has not connected to the station yet.",
+            "checked_at": None,
+        })
+    return jsonify(probe)
+
+
+@app.route("/api/integration/alarms")
+def integration_alarms():
+    """The alarm console for the HA integration.
+
+    Same data as /api/alarms. It has its own route so the UI's shape can
+    change without breaking a released integration, which is the mistake
+    /api/points made before /api/integration/points existed.
+    """
+    payload = _alarm_payload()
+    # Only the active alarms become entity state; the integration does not
+    # need the ones that have returned to normal, and a station with a
+    # noisy week would otherwise send thousands of records every poll.
+    payload["records"] = [r for r in payload["records"] if r.get("active")]
+    return jsonify(payload)
 
 
 @app.route("/api/health")

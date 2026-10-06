@@ -3,6 +3,55 @@
 The add-on and the Home Assistant integration are released as a matched
 pair and share a version number. CI fails the build if they drift.
 
+## 3.18.0 — 2026-10-07
+
+- **Feature**: The station's alarm console reaches Home Assistant. Until
+  now the bridge inferred trouble from point *names* — anything matching
+  `*alarm*` became a `problem` binary sensor — which finds the points an
+  integrator happened to name that way and nothing else. It could not tell
+  an active alarm from an acknowledged one, had no priority, no start time,
+  and no idea that twelve points on one chiller were one event.
+
+  oBIX 1.1 specifies alarming: an `obix:AlarmSubject` advertised in the
+  lobby, with a `query` operation returning `obix:Alarm` records. The add-on
+  finds it, polls it alongside the points, and serves it on
+  `/api/integration/alarms`. New entities:
+
+  - `sensor.*_active_alarms` and `sensor.*_unacknowledged_alarms` on a new
+    station device, each carrying the alarms themselves as attributes, most
+    urgent first. Two counts rather than one: a site with thirty standing
+    alarms everyone has seen is a different situation from one with a single
+    new alarm, and one number cannot tell them apart.
+  - A `Station alarm` problem sensor on every published device, from the
+    console rather than from a point name — so it knows the priority, the
+    start time and the acknowledgement, and it finds alarms sitting on
+    points nobody enabled.
+  - An `event` entity that fires once per new alarm, so an automation can
+    notify without polling a count and working out what changed. Alarms
+    already standing when Home Assistant restarts do not fire: a restart is
+    not an alarm.
+
+  None of these appear unless the station actually exposes the alarm
+  service, so a station without it gets nothing rather than a row of
+  permanently-empty sensors. New alarm entities arrive on the next reload
+  of the integration.
+
+- **Feature**: `/api/alarms/probe` reports what the station exposes for
+  alarming, refreshed on each connect and forced by a rescan. An empty alarm
+  list has four causes that look identical — the driver is not exporting the
+  alarm service, the oBIX user lacks permission to it, the console is
+  genuinely clear, or the records came back in a shape the parser did not
+  recognise — and the probe names which, keeping the raw reply when nothing
+  parsed.
+
+- **Internal**: `niagara-ha/tests/test_main.py` walks the poll loop's module
+  for calls to names that were never defined. A sibling add-on was taken
+  down on boot by an edit that landed a call without its definition, and
+  nothing caught it until the service failed to start.
+
+- **Internal**: First tests for `web.py`, the add-on's largest module. CI
+  now installs Flask for the add-on job. 270 add-on tests, 160 integration.
+
 ## 3.17.0 — 2026-10-07
 
 - **Feature**: Published HVAC devices become real Home Assistant entities
