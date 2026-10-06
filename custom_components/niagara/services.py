@@ -36,6 +36,7 @@ SERVICE_FIX_STATISTICS = "fix_statistics_units"
 SERVICE_RUN_DIAGNOSTICS = "run_diagnostics"
 SERVICE_ADD_TO_ENERGY = "add_meters_to_energy"
 SERVICE_RESCAN = "rescan"
+SERVICE_SYNC_HISTORY = "sync_history"
 ATTR_DEVICE = "device"
 
 GENERATE_CARD_SCHEMA = vol.Schema({vol.Required(ATTR_DEVICE): str})
@@ -174,9 +175,35 @@ async def _async_register_extra_services(hass: HomeAssistant) -> None:
         schema=vol.Schema({}),
         supports_response=SupportsResponse.ONLY,
     )
+    async def handle_sync_history(call: ServiceCall) -> ServiceResponse:
+        """Import the station's trend logs into long-term statistics.
+
+        Available as a service as well as on a timer, because a backfill is
+        bounded per run: a station holding years of trend takes several runs
+        to catch up, and waiting hours between them is nobody's idea of a
+        working feature.
+        """
+        from .history import HistorySync
+
+        entries = hass.data.get(DOMAIN, {})
+        if not entries:
+            raise HomeAssistantError("Niagara BMS is not set up")
+        coordinator = next(iter(entries.values()))
+
+        syncer = getattr(coordinator, "history_sync", None)
+        if syncer is None:
+            syncer = HistorySync(hass, coordinator)
+            coordinator.history_sync = syncer
+        return await syncer.async_run(call.data.get("history"))
+
     hass.services.async_register(
         DOMAIN, SERVICE_RESCAN, handle_rescan,
         schema=vol.Schema({}),
+        supports_response=SupportsResponse.ONLY,
+    )
+    hass.services.async_register(
+        DOMAIN, SERVICE_SYNC_HISTORY, handle_sync_history,
+        schema=vol.Schema({vol.Optional("history"): str}),
         supports_response=SupportsResponse.ONLY,
     )
 

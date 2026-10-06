@@ -3,6 +3,62 @@
 The add-on and the Home Assistant integration are released as a matched
 pair and share a version number. CI fails the build if they drift.
 
+## 3.19.0 — 2026-10-07
+
+- **Feature**: Trend logs. The station has always stored them and the
+  bridge threw them away — the point walker returns early at any folder
+  carrying `historyConfig` or `historyName`, because their contents are
+  logging configuration rather than building values and they outnumbered
+  the real points 6:1. Correct for discovery, but it also discarded the one
+  thing linking a point to its trend, so Home Assistant rebuilt long-term
+  statistics from live polls alone: every restart left a gap that could
+  never be filled, and a newly enabled point had no past at all.
+
+  A new **History** screen in the add-on, with:
+
+  - a master switch for the whole feature, separate from the per-trend
+    flags so a struggling station can be left alone without losing which
+    trends were chosen;
+  - the station's trend catalogue, searchable, with the sample count and
+    date range;
+  - **add one at a time**. A station carries thousands of trends and
+    importing them all would write years of statistics into Home
+    Assistant's database on the first run;
+  - **automatic pairing to the device**. The `historyName` on a point's
+    history extension is the station's own statement of which trend belongs
+    to which point, and the point already knows its device. The screen says
+    whether a pairing came from the station or from a name match, and an
+    ambiguous name pairs to nothing rather than to whichever point happened
+    to be first;
+  - a preview, reading the most recent samples straight from the station,
+    to confirm a trend is the right one before syncing years of it.
+
+- **Feature**: The chosen trends are imported into Home Assistant's
+  long-term statistics against the point's own sensor, hourly, on a timer
+  and through a new `niagara.sync_history` service. An imported hour
+  replaces what Home Assistant had computed for it, deliberately: the
+  station logged the building on a fixed interval whether Home Assistant
+  was running or not.
+
+  Two limits, both deliberate:
+
+  - **Only `measurement` sensors.** A `total_increasing` sensor's
+    statistics carry a cumulative sum, which cannot be derived from a
+    window of samples without knowing every meter reset before it. Getting
+    that wrong does not produce a slightly wrong graph, it corrupts the
+    energy dashboard — so totals are skipped and the reason is logged.
+  - **Never the current hour**, which the recorder is still accumulating.
+
+  Each run is bounded, so a station holding years of trend catches up over
+  several runs rather than occupying the JACE for an hour. The watermark
+  lives with the add-on, beside the selection, so removing and re-adding
+  the integration does not re-import everything.
+
+- **Feature**: `/api/histories/probe` reports what the station exposes for
+  trend logs, on the same terms as the alarm probe.
+
+- **Internal**: 363 add-on tests, 195 integration.
+
 ## 3.18.0 — 2026-10-07
 
 - **Feature**: The station's alarm console reaches Home Assistant. Until

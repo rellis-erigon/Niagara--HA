@@ -58,3 +58,23 @@ generate_cards:
       required: false
       selector:
         text:
+
+sync_history:
+  name: Sync trend logs
+  description: >-
+    Import the station's trend logs into Home Assistant's long-term
+    statistics, for the trends switched on in the add-on's History screen.
+    Each run is bounded, so a station holding years of trend catches up over
+    several runs; call this to move it along rather than waiting for the
+    timer. Only measurement sensors are imported — a cumulative total needs
+    a sum that cannot be derived from a window of samples.
+  fields:
+    history:
+      name: Trend log
+      description: >-
+        Sync only this one trend log, named as the History screen shows it.
+        Leave empty to sync all of them.
+      required: false
+      example: Jace1/AHU1_SupplyTemp
+      selector:
+        text:

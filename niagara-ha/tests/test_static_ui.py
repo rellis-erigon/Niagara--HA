@@ -44,3 +44,65 @@ def test_api_failures_carry_the_server_reason(page):
     helper = re.search(r"async function api\(path, opts\) \{.*?\n\}", page, re.S)
     assert helper, "the api helper was renamed; update this test"
     assert "body.error" in helper.group(0)
+
+
+def test_the_history_screen_is_reachable_from_the_nav(page):
+    """A screen with no nav button is a screen nobody can open."""
+    assert 'data-view="histories"' in page
+    assert 'id="view-histories"' in page
+    assert "if (view === 'histories') loadHistories();" in page
+
+
+def test_the_history_screen_hides_with_the_others(page):
+    """Every view's display is set on each switch; a view left out stays
+    visible underneath whichever screen you move to."""
+    switch = re.search(
+        r"document\.querySelectorAll\('\.viewnav \.btn'\).*?\n\}\);", page, re.S)
+    assert switch, "the view switch was renamed; update this test"
+    for view in ("points", "devices", "diagnostics", "histories"):
+        assert f"$('#view-{view}').style.display" in switch.group(0), view
+
+
+def test_every_control_the_history_screen_binds_to_exists(page):
+    """A wrong id here fails silently: addEventListener on null throws once
+    at load and the rest of the screen's handlers never attach."""
+    bound = set(re.findall(r"\$\('#(hist-[a-z-]+)'\)", page))
+    assert bound, "the history handlers were renamed; update this test"
+    for element_id in bound:
+        assert f'id="{element_id}"' in page, f"#{element_id} is bound but absent"
+
+
+def test_history_rows_are_handled_by_delegation(page):
+    """The rows are replaced on every load, so per-row listeners would have
+    to be reattached each time and quietly stop working once they are not."""
+    assert "$('#view-histories').addEventListener('click'" in page
+    assert "$('#view-histories').addEventListener('change'" in page
+
+
+def test_the_master_switch_posts_to_the_add_on(page):
+    screen = page[page.index("// -- History screen"):]
+    assert "/api/histories/enabled" in screen
+    assert "/api/histories/add" in screen
+    assert "/api/histories/remove" in screen
+    assert "/api/histories/toggle" in screen
+
+
+def test_the_history_screen_says_when_syncing_is_off(page):
+    """Paired trends that are not importing must not look like they are."""
+    screen = page[page.index("// -- History screen"):]
+    assert "master switch above is off" in screen
+
+
+def test_history_values_are_escaped(page):
+    """A Niagara history name can contain anything, and it is rendered into
+    HTML via innerHTML."""
+    screen = page[page.index("function renderHistSelected"):
+                  page.index("async function histPreview")]
+    for interpolation in re.findall(r"\$\{([^}]+)\}", screen):
+        assert (
+            "esc(" in interpolation
+            or "histTime(" in interpolation
+            or interpolation.strip().startswith(("device", "point", "synced",
+                                                 "evidence[", "h.enabled",
+                                                 "h.count ==", "addable"))
+        ), interpolation

@@ -18,6 +18,7 @@ import urllib3
 from requests.auth import HTTPBasicAuth
 
 import alarms
+import histories
 
 logger = logging.getLogger(__name__)
 
@@ -240,6 +241,10 @@ class ObixClient:
         self._has_batch_service = False
         self._alarm_subject: Optional[str] = None
         self._alarm_query_op: Optional[str] = None
+        self._history_service: Optional[str] = None
+        # Point path -> the history name its extension declares. Filled
+        # during discovery, which is the only time the extensions are read.
+        self._history_links: dict[str, str] = {}
         self._consecutive_full_failures = 0
         self._watch_rejected = 0
 
@@ -275,10 +280,12 @@ class ObixClient:
                     self._has_batch_service = True
             self._alarm_subject = alarms.find_alarm_subject(root)
             self._alarm_query_op = None
+            self._history_service = histories.find_history_service(root)
             logger.info(
-                "oBIX services: Watch=%s, Batch=%s, Alarms=%s",
+                "oBIX services: Watch=%s, Batch=%s, Alarms=%s, Histories=%s",
                 self._has_watch_service, self._has_batch_service,
                 self._alarm_subject or "not advertised",
+                self._history_service or "not advertised",
             )
         except (ObixError, requests.RequestException) as e:
             logger.debug("Could not detect services from lobby: %s", e)
@@ -337,8 +344,13 @@ class ObixClient:
     def alarm_subject(self) -> Optional[str]:
         return self._alarm_subject
 
-    def _resolve_alarm_href(self, href: str) -> str:
-        """An absolute or relative alarm href as a path this client can GET."""
+    def _resolve_service_href(self, href: str) -> str:
+        """An absolute or relative service href as a path this client can GET.
+
+        Shared by the alarm subject and the history service: both are
+        advertised in the lobby, and both have appeared as a bare relative
+        href on one station and a fully qualified URL on another.
+        """
         if href.startswith("http://") or href.startswith("https://"):
             if href.startswith(self._base_url):
                 return href[len(self._base_url):] or "/"
@@ -361,7 +373,7 @@ class ObixClient:
             return self._alarm_query_op
         if not self._alarm_subject:
             return None
-        subject_path = self._resolve_alarm_href(self._alarm_subject)
+        subject_path = self._resolve_service_href(self._alarm_subject)
         try:
             subject = self._get(subject_path)
         except (ObixError, requests.RequestException, ET.ParseError) as e:
@@ -372,7 +384,7 @@ class ObixClient:
                 continue
             href = child.get("href")
             if href:
-                self._alarm_query_op = self._resolve_alarm_href(href)
+                self._alarm_query_op = self._resolve_service_href(href)
                 return self._alarm_query_op
         logger.info(
             "The alarm subject at %s advertises no query operation",
@@ -426,7 +438,7 @@ class ObixClient:
             )
             return report
 
-        subject_path = self._resolve_alarm_href(self._alarm_subject)
+        subject_path = self._resolve_service_href(self._alarm_subject)
         try:
             subject = self._get(subject_path)
             report["subject_readable"] = True
@@ -461,6 +473,128 @@ class ObixClient:
         else:
             # Nothing parsed. The raw reply is the only way to tell an empty
             # console from a shape the parser does not handle.
+            raw = ET.tostring(root, encoding="unicode")
+            report["raw"] = raw[:4000]
+            report["raw_truncated"] = len(raw) > 4000
+        return report
+
+    # -- Histories -----------------------------------------------------
+
+    @property
+    def history_service(self) -> Optional[str]:
+        return self._history_service
+
+    @property
+    def history_links(self) -> dict:
+        """Point path -> history name, as the station declares it."""
+        return dict(self._history_links)
+
+    def _history_path(self, name: str) -> str:
+        """The path a history is readable at, from its name."""
+        base = self._resolve_service_href(self._history_service or "/histories/")
+        return f"{base.rstrip('/')}/{histories.normalise_history_name(name)}/"
+
+    def discover_histories(self) -> list["histories.HistoryMeta"]:
+        """Every history the station advertises.
+
+        Names and hrefs only. The record count and date range need a read of
+        each history, and a station with four thousand trends would take
+        minutes to describe them all, so the screen asks for those one at a
+        time.
+        """
+        if not self._history_service:
+            return []
+        path = self._resolve_service_href(self._history_service)
+        try:
+            root = self._get(path)
+        except (ObixError, requests.RequestException, ET.ParseError) as e:
+            logger.warning("Could not list histories: %s", e)
+            return []
+        found = histories.parse_history_list(root)
+        logger.info("Station advertises %d histories", len(found))
+        return found
+
+    def read_history(self, name: str) -> Optional["histories.HistoryMeta"]:
+        """One history's own description of itself."""
+        if not self._history_service:
+            return None
+        path = self._history_path(name)
+        try:
+            root = self._get(path)
+        except (ObixError, requests.RequestException, ET.ParseError) as e:
+            logger.debug("Could not read history %s: %s", name, e)
+            return None
+        meta = histories.parse_history_meta(root, name)
+        if meta.query_href:
+            meta.query_href = self._resolve_service_href(meta.query_href)
+        elif meta.has_query:
+            meta.query_href = f"{path.rstrip('/')}/query/"
+        return meta
+
+    def query_history(
+        self, name: str, start=None, end=None, limit: int = histories.MAX_RECORDS,
+    ) -> list["histories.HistoryRecord"]:
+        """Samples from one history over a window.
+
+        The window is always bounded. An unbounded query against a station
+        holding years of one-minute trend is how a JACE stops answering
+        anything else, which on a live building matters more than a graph.
+        """
+        meta = self.read_history(name)
+        if meta is None or not meta.query_href:
+            logger.info("History %s exposes no query operation", name)
+            return []
+        body = histories.build_history_filter(start, end, limit)
+        try:
+            root = self._post(meta.query_href, body)
+        except (ObixError, requests.RequestException, ET.ParseError) as e:
+            logger.warning("History query failed for %s: %s", name, e)
+            return []
+        records = histories.parse_history_records(root)
+        logger.debug("History %s returned %d records", name, len(records))
+        return records
+
+    def probe_histories(self) -> dict:
+        """What the station exposes for trend logs, and why not when it does not.
+
+        Same reasoning as the alarm probe: an empty history list has several
+        causes that are indistinguishable from the outside, and the one that
+        bites is the oBIX user lacking read on the history service while
+        everything else works.
+        """
+        report: dict = {
+            "connected": self._connected,
+            "service_advertised": self._history_service,
+            "service_readable": False,
+            "history_count": 0,
+            "linked_points": len(self._history_links),
+            "sample": None,
+            "error": None,
+        }
+        if not self._connected:
+            report["error"] = "not connected to the station"
+            return report
+        if not self._history_service:
+            report["error"] = (
+                "The oBIX lobby advertises no obix:HistoryService. In "
+                "Workbench, check that the oBIX export includes histories "
+                "and that the oBIX user has read permission on them."
+            )
+            return report
+
+        path = self._resolve_service_href(self._history_service)
+        try:
+            root = self._get(path)
+            report["service_readable"] = True
+        except (ObixError, requests.RequestException, ET.ParseError) as e:
+            report["error"] = f"reading {path} failed: {e}"
+            return report
+
+        found = histories.parse_history_list(root)
+        report["history_count"] = len(found)
+        if found:
+            report["sample"] = [m.to_dict() for m in found[:5]]
+        else:
             raw = ET.tostring(root, encoding="unicode")
             report["raw"] = raw[:4000]
             report["raw_truncated"] = len(raw) > 4000
@@ -677,6 +811,7 @@ class ObixClient:
 
     def discover_points(self, path_filter: str = "") -> list[NiagaraPoint]:
         points = []
+        self._history_links = {}
         start_path = "/config/"
         if path_filter:
             start_path = path_filter if path_filter.startswith("/") else f"/{path_filter}"
@@ -688,7 +823,10 @@ class ObixClient:
             logger.error("Discovery error at %s: %s", start_path, e)
         except requests.RequestException as e:
             logger.error("HTTP error during discovery: %s", e)
-        logger.info("Discovered %d points", len(points))
+        logger.info(
+            "Discovered %d points, %d with a trend log",
+            len(points), len(self._history_links),
+        )
         return points
 
     def _walk_tree(
@@ -734,6 +872,13 @@ class ObixClient:
         # station 6:1. A folder carrying historyConfig or historyName is one
         # of those, whatever it is named.
         if child_names & {"historyConfig", "historyName"}:
+            # Its contents are not points, but the historyName on it is the
+            # station's own statement of which history belongs to the parent
+            # point. That is the one thing worth keeping from in here, and
+            # discarding it is why trends never reached Home Assistant.
+            link = histories.find_history_links(path, root)
+            if link is not None:
+                self._history_links[link.point] = link.history
             logger.debug("Skipping history extension at %s", path)
             return
 

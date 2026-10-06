@@ -518,6 +518,22 @@ tr:hover td { background: var(--row-hover); }
 
 /* -- Devices view -------------------------------------------------- */
 .viewnav { display: flex; gap: 4px; margin-bottom: 16px; }
+.hist-heading { font-size: 0.95rem; margin: 20px 0 8px; }
+.hist-switch { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+.hist-notice {
+  padding: 10px 12px; border-radius: 6px; margin-bottom: 12px;
+  background: #fef3c7; color: #92400e; font-size: 0.85rem;
+}
+@media (prefers-color-scheme: dark) {
+  .hist-notice { background: #451a03; color: #fcd34d; }
+}
+.hist-preview {
+  margin-top: 12px; padding: 12px; border: 1px solid var(--border);
+  border-radius: 6px; font-size: 0.8rem; max-height: 260px; overflow: auto;
+}
+.hist-preview table { width: 100%; border-collapse: collapse; }
+.hist-preview td { padding: 2px 8px; border-bottom: 1px solid var(--border); }
+.hist-off { opacity: 0.55; }
 .viewnav .btn.active { background: var(--primary); color: #fff; border-color: var(--primary); }
 .device-table { width: 100%; border-collapse: collapse; }
 .device-table th {
@@ -619,6 +635,7 @@ tr:hover td { background: var(--row-hover); }
 <div class="viewnav">
   <button class="btn active" data-view="points">Points</button>
   <button class="btn" data-view="devices">Devices</button>
+  <button class="btn" data-view="histories">History <span id="hist-badge"></span></button>
   <button class="btn" data-view="diagnostics">Diagnostics <span id="diag-badge"></span></button>
 </div>
 
@@ -718,6 +735,62 @@ tr:hover td { background: var(--row-hover); }
       </tbody>
     </table>
   </div>
+</div>
+
+<div id="view-histories" style="display:none">
+  <div class="toolbar">
+    <label class="hist-switch">
+      <input type="checkbox" id="hist-enabled">
+      <span><strong>Sync trend logs to Home Assistant</strong></span>
+    </label>
+    <span style="font-size:0.85rem;color:var(--muted)" id="hist-summary"></span>
+    <button class="btn btn-sm" id="hist-refresh" style="margin-left:auto">Refresh</button>
+  </div>
+
+  <div id="hist-notice" class="hist-notice" style="display:none"></div>
+
+  <h3 class="hist-heading">Synced trends</h3>
+  <div class="table-wrap">
+    <table class="device-table">
+      <thead>
+        <tr>
+          <th>Trend log</th>
+          <th style="width:90px">Sync</th>
+          <th>Paired device</th>
+          <th style="width:120px">Point</th>
+          <th style="width:170px">Last synced</th>
+          <th style="width:90px"></th>
+        </tr>
+      </thead>
+      <tbody id="hist-selected">
+        <tr><td colspan="6" class="loading">Loading...</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3 class="hist-heading">Available on the station</h3>
+  <div class="toolbar">
+    <input type="search" id="hist-search" placeholder="Search trend logs..."
+           style="flex:1;max-width:320px">
+    <span style="font-size:0.85rem;color:var(--muted)" id="hist-available-count"></span>
+  </div>
+  <div class="table-wrap">
+    <table class="device-table">
+      <thead>
+        <tr>
+          <th>Trend log</th>
+          <th style="width:90px">Samples</th>
+          <th>Pairs to</th>
+          <th style="width:120px">Evidence</th>
+          <th style="width:170px"></th>
+        </tr>
+      </thead>
+      <tbody id="hist-available">
+        <tr><td colspan="5" class="loading">Loading...</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div id="hist-preview" class="hist-preview" style="display:none"></div>
 </div>
 
 <div id="view-diagnostics" style="display:none">
@@ -1464,9 +1537,224 @@ document.querySelectorAll('.viewnav .btn').forEach(btn => {
     $('#view-points').style.display = view === 'points' ? '' : 'none';
     $('#view-devices').style.display = view === 'devices' ? '' : 'none';
     $('#view-diagnostics').style.display = view === 'diagnostics' ? '' : 'none';
+    $('#view-histories').style.display = view === 'histories' ? '' : 'none';
     if (view === 'devices' && !devices.length) loadDevices();
     if (view === 'diagnostics') loadDiagnostics();
+    if (view === 'histories') loadHistories();
   });
+});
+
+// -- History screen ----------------------------------------------------
+
+let histState = { enabled: false, selected: [], available: [], search: '' };
+
+function histTime(value) {
+  if (!value) return '<span class="pill pill-none">never</span>';
+  const when = new Date(value);
+  if (isNaN(when)) return esc(String(value));
+  return esc(when.toLocaleString());
+}
+
+async function loadHistories() {
+  const query = histState.search ? '?q=' + encodeURIComponent(histState.search) : '';
+  let data;
+  try {
+    data = await api('/api/histories' + query);
+  } catch (e) {
+    $('#hist-notice').style.display = '';
+    $('#hist-notice').textContent = 'Could not load trend logs: ' + e.message;
+    return;
+  }
+  histState.enabled = data.enabled;
+  histState.selected = data.selected || [];
+  histState.available = data.available || [];
+
+  $('#hist-enabled').checked = data.enabled;
+
+  const on = histState.selected.filter(h => h.enabled).length;
+  $('#hist-summary').textContent = data.enabled
+    ? `${on} trend log${on === 1 ? '' : 's'} syncing`
+    : 'Syncing is off — nothing is being imported';
+  $('#hist-badge').textContent = on ? String(on) : '';
+  $('#hist-available-count').textContent =
+    `${data.available_shown || 0} of ${data.available_total || 0} shown` +
+    (data.linked_points ? ` · ${data.linked_points} points link to a trend` : '');
+
+  const notice = $('#hist-notice');
+  if (data.error) {
+    notice.style.display = '';
+    notice.textContent = data.error;
+  } else if (!data.enabled && histState.selected.length) {
+    notice.style.display = '';
+    notice.textContent =
+      'These trend logs are paired but the master switch above is off, ' +
+      'so nothing is being imported.';
+  } else {
+    notice.style.display = 'none';
+  }
+
+  renderHistSelected();
+  renderHistAvailable();
+}
+
+function renderHistSelected() {
+  const body = $('#hist-selected');
+  if (!histState.selected.length) {
+    body.innerHTML =
+      '<tr><td colspan="6" class="loading">No trend logs chosen yet. ' +
+      'Add one from the list below.</td></tr>';
+    return;
+  }
+  body.innerHTML = histState.selected.map(h => {
+    const device = h.group
+      ? `<span title="${esc(h.group)}">${esc(h.group_name)}</span>`
+      : '<span class="pill pill-none">unpaired</span>';
+    const point = h.point
+      ? `<span title="${esc(h.point)}">${esc(h.point_name)}</span>` +
+        (h.point_enabled ? '' : ' <span class="pill pill-warn">point off</span>')
+      : '<span class="pill pill-none">—</span>';
+    const synced = h.last_synced
+      ? histTime(h.last_synced) +
+        (h.last_count ? ` <span class="pill pill-ok">${esc(String(h.last_count))}</span>` : '')
+      : '<span class="pill pill-none">not yet</span>';
+    return `<tr class="${h.enabled ? '' : 'hist-off'}">
+      <td><code>${esc(h.history)}</code></td>
+      <td><input type="checkbox" data-hist-toggle="${esc(h.history)}"
+                 ${h.enabled ? 'checked' : ''}></td>
+      <td>${device}</td>
+      <td>${point}</td>
+      <td>${synced}</td>
+      <td><button class="btn btn-sm" data-hist-remove="${esc(h.history)}"
+                  title="Stop syncing and forget this trend log">Remove</button></td>
+    </tr>`;
+  }).join('');
+}
+
+function renderHistAvailable() {
+  const body = $('#hist-available');
+  if (!histState.available.length) {
+    body.innerHTML =
+      '<tr><td colspan="5" class="loading">Nothing to show. ' +
+      'If the station has trend logs but none appear, check the History ' +
+      'section of the add-on documentation.</td></tr>';
+    return;
+  }
+  const evidence = {
+    station: '<span class="pill pill-ok">from station</span>',
+    name: '<span class="pill pill-warn">name match</span>',
+    none: '<span class="pill pill-none">unpaired</span>',
+  };
+  body.innerHTML = histState.available.map(h => {
+    const device = h.group
+      ? `<span title="${esc(h.group)}">${esc(h.group.split('/').pop())}</span>`
+      : '<span class="pill pill-none">—</span>';
+    const addable = h.has_query !== false;
+    return `<tr>
+      <td><code>${esc(h.name)}</code></td>
+      <td>${h.count == null ? '—' : esc(String(h.count))}</td>
+      <td>${device}</td>
+      <td>${evidence[h.confidence] || evidence.none}</td>
+      <td>
+        <button class="btn btn-sm" data-hist-preview="${esc(h.name)}"
+                title="Show the most recent samples from the station">Preview</button>
+        <button class="btn btn-sm btn-primary" data-hist-add="${esc(h.name)}"
+                ${addable ? '' : 'disabled title="This trend log exposes no query operation"'}>Add</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+async function histPreview(name) {
+  const box = $('#hist-preview');
+  box.style.display = '';
+  box.innerHTML = '<div class="loading">Reading the station...</div>';
+  try {
+    const data = await api('/api/histories/preview?history=' + encodeURIComponent(name));
+    const rows = (data.records || []).map(
+      r => `<tr><td>${histTime(r.t)}</td><td>${r.v == null ? '—' : esc(String(r.v))}</td></tr>`,
+    ).join('');
+    box.innerHTML =
+      `<strong>${esc(name)}</strong> — ${data.meta.count == null ? '?' : esc(String(data.meta.count))} samples, ` +
+      `${esc(data.meta.start || '?')} to ${esc(data.meta.end || '?')}` +
+      (rows ? `<table>${rows}</table>`
+            : '<div class="loading">The station returned no samples for the last two days.</div>');
+  } catch (e) {
+    box.innerHTML = '<div class="hist-notice">Could not read it: ' + esc(e.message) + '</div>';
+  }
+}
+
+$('#hist-enabled').addEventListener('change', async (e) => {
+  try {
+    await api('/api/histories/enabled', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled: e.target.checked }),
+    });
+    toast(e.target.checked ? 'Trend syncing on' : 'Trend syncing off');
+  } catch (err) {
+    toast('Could not change it: ' + err.message);
+  }
+  loadHistories();
+});
+
+$('#hist-refresh').addEventListener('click', () => loadHistories());
+
+$('#hist-search').addEventListener('input', (e) => {
+  histState.search = e.target.value;
+  clearTimeout(debounceTimer);
+  debounceTimer = setTimeout(() => loadHistories(), 250);
+});
+
+// One listener for the whole screen: the rows are replaced on every load,
+// so listeners attached per row would have to be reattached each time.
+$('#view-histories').addEventListener('click', async (e) => {
+  const btn = e.target.closest('[data-hist-add],[data-hist-remove],[data-hist-preview]');
+  if (!btn) return;
+
+  if (btn.dataset.histPreview) {
+    histPreview(btn.dataset.histPreview);
+    return;
+  }
+
+  const name = btn.dataset.histAdd || btn.dataset.histRemove;
+  const adding = Boolean(btn.dataset.histAdd);
+  btn.disabled = true;
+  try {
+    const body = await api(adding ? '/api/histories/add' : '/api/histories/remove', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ history: name }),
+    });
+    if (adding) {
+      const how = { station: 'paired from the station',
+                    name: 'paired by name — check it',
+                    manual: 'paired manually',
+                    none: 'added unpaired' }[body.paired_by] || 'added';
+      toast(`${name}: ${how}`);
+    } else {
+      toast(`${name} removed`);
+    }
+  } catch (err) {
+    toast('Failed: ' + err.message);
+  }
+  loadHistories();
+});
+
+$('#view-histories').addEventListener('change', async (e) => {
+  const box = e.target.closest('[data-hist-toggle]');
+  if (!box) return;
+  try {
+    await api('/api/histories/toggle', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        history: box.dataset.histToggle, enabled: box.checked,
+      }),
+    });
+  } catch (err) {
+    toast('Failed: ' + err.message);
+  }
+  loadHistories();
 });
 
 async function loadTemplates() {

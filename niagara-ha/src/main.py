@@ -42,6 +42,11 @@ VALUES_FILE = POINTS_DIR / "values.json"
 ALARMS_FILE = POINTS_DIR / "alarms.json"
 ALARM_PROBE_FILE = POINTS_DIR / "alarms_probe.json"
 ALARM_LIMIT = 200
+# The station's trend catalogue and the point-to-history links it declares,
+# both written on connect. Discovery is the only time the history
+# extensions are read, so this is the only moment the links exist.
+HISTORY_CATALOGUE_FILE = POINTS_DIR / "histories_catalogue.json"
+HISTORY_PROBE_FILE = POINTS_DIR / "histories_probe.json"
 RECONNECT_DELAY = 10
 MAX_RECONNECT_DELAY = 300
 
@@ -206,6 +211,7 @@ def main() -> None:
                 del selections
 
                 _write_alarm_probe(obix)
+                _write_history_catalogue(obix)
 
                 using_watch = obix.setup_watch(active_points, poll_interval)
                 if using_watch:
@@ -349,6 +355,51 @@ def _write_alarm_probe(obix: ObixClient) -> None:
             "Alarm console reachable: %d record(s) on the first read",
             report.get("record_count", 0),
         )
+
+
+def _write_history_catalogue(obix: ObixClient) -> None:
+    """Record the station's trend logs and their links to points.
+
+    Written on connect rather than per poll. The catalogue only changes when
+    somebody adds a history in Workbench, which needs a rescan to be noticed
+    anyway, and listing four thousand trends is not work to repeat every
+    thirty seconds.
+    """
+    try:
+        report = obix.probe_histories()
+    except Exception as e:  # noqa: BLE001 - diagnostics must never stop the poll
+        logger.warning("History probe failed: %s", e)
+        report = {"error": f"the probe itself failed: {e}"}
+    report["checked_at"] = time.time()
+    _write_json(HISTORY_PROBE_FILE, report)
+
+    if report.get("error"):
+        logger.info("Trend logs unavailable: %s", report["error"])
+        _write_json(HISTORY_CATALOGUE_FILE, {
+            "checked_at": report["checked_at"],
+            "histories": [],
+            "links": obix.history_links,
+            "error": report["error"],
+        })
+        return
+
+    try:
+        catalogue = obix.discover_histories()
+    except Exception as e:  # noqa: BLE001
+        logger.warning("Listing histories failed: %s", e)
+        catalogue = []
+
+    links = obix.history_links
+    _write_json(HISTORY_CATALOGUE_FILE, {
+        "checked_at": report["checked_at"],
+        "histories": [m.to_dict() for m in catalogue],
+        "links": links,
+        "error": None,
+    })
+    logger.info(
+        "Trend logs: %d on the station, %d linked to a discovered point",
+        len(catalogue), len(links),
+    )
 
 
 def _poll_alarms(obix: ObixClient, now: float) -> None:

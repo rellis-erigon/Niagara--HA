@@ -8,6 +8,7 @@ and management UI; this coordinator just creates native HA entities.
 import hashlib
 import logging
 import re
+from time import monotonic
 from dataclasses import dataclass, field
 from datetime import timedelta
 from typing import Any
@@ -130,6 +131,8 @@ class NiagaraCoordinator(DataUpdateCoordinator[dict[str, NiagaraPoint]]):
         self.alarms: list[dict] = []
         self.alarm_summary: dict = {}
         self.alarms_supported = False
+        self.history_sync = None
+        self._last_history_sync = 0.0
         self._session: aiohttp.ClientSession | None = None
         self._poll_count = 0
 
@@ -276,6 +279,37 @@ class NiagaraCoordinator(DataUpdateCoordinator[dict[str, NiagaraPoint]]):
             await self._async_register_energy_meters()
         except Exception as err:  # noqa: BLE001
             _LOGGER.debug("Could not update the energy dashboard: %s", err)
+
+        try:
+            await self._async_sync_histories()
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.debug("Could not sync trend logs: %s", err)
+
+    async def _async_sync_histories(self) -> None:
+        """Import trend logs, at most hourly.
+
+        Housekeeping runs every few minutes, which is far too often for
+        this: the statistics it writes are hourly, so a run that completes
+        has nothing to do until the next hour begins. The interval is
+        checked here rather than with a timer so it shares the
+        housekeeping's guarantee of never failing a refresh.
+        """
+        now = monotonic()
+        if self._last_history_sync and now - self._last_history_sync < 3600:
+            return
+
+        from .history import HistorySync
+
+        if self.history_sync is None:
+            self.history_sync = HistorySync(self.hass, self)
+        result = await self.history_sync.async_run()
+        # Only count it as done when it actually ran. A sync refused
+        # because another was in flight must not push the next attempt an
+        # hour away.
+        if "skipped" not in result:
+            self._last_history_sync = now
+        if result.get("synced"):
+            _LOGGER.info("Imported %d hours of trend data", result["synced"])
 
     async def _async_sync_repairs(self) -> None:
         from .repairs import async_set_statistics_issue, async_sync_issues

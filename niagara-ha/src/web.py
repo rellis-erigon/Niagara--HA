@@ -4,10 +4,13 @@ import json
 import logging
 import os
 import time
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from flask import Flask, jsonify, request, send_from_directory
 
+import histories
+import history_store
 from device_templates import (
     STATE_DRAFT,
     STATE_PUBLISHED,
@@ -57,6 +60,8 @@ from point_manager import (
 VALUES_FILE = POINTS_DIR / "values.json"
 ALARMS_FILE = POINTS_DIR / "alarms.json"
 ALARM_PROBE_FILE = POINTS_DIR / "alarms_probe.json"
+HISTORY_CATALOGUE_FILE = POINTS_DIR / "histories_catalogue.json"
+HISTORY_PROBE_FILE = POINTS_DIR / "histories_probe.json"
 
 logger = logging.getLogger("niagara-ha.web")
 
@@ -1666,6 +1671,330 @@ def integration_alarms():
     # noisy week would otherwise send thousands of records every poll.
     payload["records"] = [r for r in payload["records"] if r.get("active")]
     return jsonify(payload)
+
+
+# -- Trend logs -----------------------------------------------------------
+
+# The poll loop holds the connection used for points, but reading a trend is
+# on demand and bursty, so this process opens its own. Both run in the same
+# container and read the same /data/options.json. Created lazily: a station
+# with no histories selected should never cause a second login.
+_station = {"client": None}
+
+
+def _station_client():
+    """A station connection for on-demand reads, or None if unconfigured."""
+    if _station["client"] is not None:
+        return _station["client"]
+    options = _addon_options()
+    host = options.get("niagara_host")
+    if not host:
+        return None
+    from obix_client import ObixClient
+
+    client = ObixClient(
+        host=host,
+        username=options.get("niagara_user", ""),
+        password=options.get("niagara_password", ""),
+        port=options.get("niagara_port", 443),
+        use_https=options.get("use_https", True),
+        verify_ssl=options.get("verify_ssl", False),
+    )
+    if not client.test_connection():
+        return None
+    _station["client"] = client
+    return client
+
+
+def _history_catalogue() -> dict:
+    payload = _read_cache_file(HISTORY_CATALOGUE_FILE)
+    return {
+        "histories": payload.get("histories") or [],
+        "links": payload.get("links") or {},
+        "checked_at": payload.get("checked_at"),
+        "error": payload.get("error"),
+    }
+
+
+def _history_screen() -> dict:
+    """Everything the History screen needs in one request.
+
+    One request rather than four because the screen is useless without all
+    of it — the selection means nothing without the catalogue to pick from,
+    and an empty catalogue means nothing without the reason it is empty.
+    """
+    state = history_store.load()
+    catalogue = _history_catalogue()
+    selections = _load_selections()
+    links = catalogue["links"]
+
+    chosen = []
+    for name, entry in sorted(state["histories"].items()):
+        point = selections.get(entry.get("point", "")) or {}
+        chosen.append({
+            "history": name,
+            "enabled": bool(entry.get("enabled")),
+            "point": entry.get("point", ""),
+            "point_name": decode_niagara_name(point.get("name", "")),
+            "point_enabled": bool(point.get("enabled")),
+            "group": entry.get("group", ""),
+            "group_name": decode_niagara_name(
+                (entry.get("group") or "").rstrip("/").split("/")[-1]
+            ),
+            "unit": entry.get("unit", ""),
+            "added": entry.get("added"),
+            "last_synced": entry.get("last_synced"),
+            "last_count": entry.get("last_count"),
+            "last_run": entry.get("last_run"),
+        })
+
+    taken = set(state["histories"])
+    available = []
+    for meta in catalogue["histories"]:
+        name = meta.get("name", "")
+        if not name or name in taken:
+            continue
+        suggestion = history_store.pair(name, links, selections)
+        available.append({**meta, **suggestion})
+
+    return {
+        "enabled": state["enabled"],
+        "selected": chosen,
+        "available": available,
+        "available_total": len(available),
+        "linked_points": len(links),
+        "checked_at": catalogue["checked_at"],
+        "error": catalogue["error"],
+    }
+
+
+@app.route("/api/histories")
+def list_histories():
+    """The History screen: the switch, the selection, and what is on offer."""
+    payload = _history_screen()
+    # A station with thousands of trends would send megabytes of JSON into
+    # the browser on every refresh. The screen searches server-side instead.
+    query = (request.args.get("q") or "").strip().lower()
+    if query:
+        payload["available"] = [
+            h for h in payload["available"]
+            if query in h.get("name", "").lower()
+            or query in (h.get("group") or "").lower()
+        ]
+    limit = max(1, min(int(request.args.get("limit", 200)), 1000))
+    payload["available_shown"] = len(payload["available"][:limit])
+    payload["available"] = payload["available"][:limit]
+    return jsonify(payload)
+
+
+@app.route("/api/histories/enabled", methods=["POST"])
+def set_histories_enabled():
+    """The master switch for history syncing."""
+    body = request.get_json(silent=True) or {}
+    state = history_store.set_global_enabled(bool(body.get("enabled")))
+    return jsonify({"enabled": state["enabled"]})
+
+
+@app.route("/api/histories/add", methods=["POST"])
+def add_history():
+    """Add one trend log, pairing it to its device.
+
+    One at a time on purpose. A station carries thousands of trends, and
+    importing them all would write years of statistics into Home Assistant's
+    database on the first run.
+    """
+    body = request.get_json(silent=True) or {}
+    name = (body.get("history") or "").strip()
+    if not name:
+        return jsonify({"error": "history is required"}), 400
+
+    catalogue = _history_catalogue()
+    known = {h.get("name") for h in catalogue["histories"]}
+    if known and name not in known:
+        return jsonify({
+            "error": f"the station does not advertise a history named {name}",
+        }), 404
+
+    selections = _load_selections()
+    suggested = history_store.pair(name, catalogue["links"], selections)
+    point = (body.get("point") or suggested["point"] or "").strip()
+    group = (body.get("group") or "").strip()
+    if not group and point:
+        group = (selections.get(point) or {}).get("group", "")
+    unit = (body.get("unit") or suggested["unit"] or "").strip()
+
+    try:
+        entry = history_store.add(
+            name, point=point, group=group, unit=unit,
+            enabled=bool(body.get("enabled", True)),
+        )
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+
+    return jsonify({
+        "history": name,
+        "entry": entry,
+        "paired_by": suggested["confidence"] if not body.get("point") else "manual",
+    })
+
+
+@app.route("/api/histories/toggle", methods=["POST"])
+def toggle_history():
+    body = request.get_json(silent=True) or {}
+    name = (body.get("history") or "").strip()
+    entry = history_store.set_enabled(name, bool(body.get("enabled")))
+    if entry is None:
+        return jsonify({"error": f"{name} is not in the selection"}), 404
+    return jsonify({"history": name, "entry": entry})
+
+
+@app.route("/api/histories/remove", methods=["POST"])
+def remove_history():
+    body = request.get_json(silent=True) or {}
+    name = (body.get("history") or "").strip()
+    if not history_store.remove(name):
+        return jsonify({"error": f"{name} is not in the selection"}), 404
+    return jsonify({"history": name, "removed": True})
+
+
+@app.route("/api/histories/pair")
+def pair_history():
+    """What this history would be paired to, and on what evidence."""
+    name = (request.args.get("history") or "").strip()
+    if not name:
+        return jsonify({"error": "history is required"}), 400
+    catalogue = _history_catalogue()
+    selections = _load_selections()
+    suggestion = history_store.pair(name, catalogue["links"], selections)
+    point = selections.get(suggestion["point"]) or {}
+    return jsonify({
+        **suggestion,
+        "history": name,
+        "point_name": decode_niagara_name(point.get("name", "")),
+        "point_enabled": bool(point.get("enabled")),
+        "point_type": point.get("type", ""),
+    })
+
+
+@app.route("/api/histories/preview")
+def preview_history():
+    """The most recent samples from one trend, to confirm it is the right one.
+
+    Reads the station directly, bounded hard. The point of the screen is to
+    let somebody see a trend before committing to syncing years of it.
+    """
+    name = (request.args.get("history") or "").strip()
+    if not name:
+        return jsonify({"error": "history is required"}), 400
+
+    client = _station_client()
+    if client is None:
+        return jsonify({"error": "cannot reach the station"}), 503
+
+    meta = client.read_history(name)
+    if meta is None:
+        return jsonify({"error": f"the station has no history named {name}"}), 404
+
+    limit = max(1, min(int(request.args.get("limit", 20)), 200))
+    end = histories.parse_time(meta.end) or datetime.now(timezone.utc)
+    records = client.query_history(
+        name, start=end - timedelta(days=2), end=end, limit=limit,
+    )
+    return jsonify({
+        "history": name,
+        "meta": meta.to_dict(),
+        "records": [r.to_dict() for r in records[-limit:]],
+    })
+
+
+@app.route("/api/histories/probe")
+def history_probe():
+    """What the station exposes for trend logs, from the last connect."""
+    probe = _read_cache_file(HISTORY_PROBE_FILE)
+    if not probe:
+        return jsonify({
+            "error": "The bridge has not connected to the station yet.",
+            "checked_at": None,
+        })
+    return jsonify(probe)
+
+
+@app.route("/api/integration/histories")
+def integration_histories():
+    """The trends to sync, for the HA integration.
+
+    Only the enabled ones, and only while the master switch is on, so
+    turning the feature off stops the integration asking rather than relying
+    on it to check.
+    """
+    selections = _load_selections()
+    entries = []
+    for name, entry in sorted(history_store.enabled_entries().items()):
+        point = selections.get(entry.get("point", "")) or {}
+        entries.append({
+            "history": name,
+            "point": entry.get("point", ""),
+            "group": entry.get("group", ""),
+            "unit": entry.get("unit") or point.get("custom_unit")
+                    or point.get("unit", ""),
+            "point_type": point.get("type", ""),
+            "last_synced": entry.get("last_synced"),
+        })
+    return jsonify({"enabled": bool(entries), "histories": entries})
+
+
+@app.route("/api/integration/histories/data")
+def integration_history_data():
+    """Samples from one trend, already grouped into hourly buckets.
+
+    Grouped here rather than in the integration because the raw samples are
+    the bulky part — a week of one-minute trend is ten thousand records and
+    168 buckets — and Home Assistant stores hours regardless.
+    """
+    name = (request.args.get("history") or "").strip()
+    if not name:
+        return jsonify({"error": "history is required"}), 400
+    if name not in history_store.enabled_entries():
+        return jsonify({"error": f"{name} is not enabled for syncing"}), 403
+
+    client = _station_client()
+    if client is None:
+        return jsonify({"error": "cannot reach the station"}), 503
+
+    start = histories.parse_time(request.args.get("start") or "")
+    end = histories.parse_time(request.args.get("end") or "") or datetime.now(
+        timezone.utc,
+    )
+    records = client.query_history(name, start=start, end=end)
+    buckets = histories.hourly_buckets(records)
+    return jsonify({
+        "history": name,
+        "requested_start": start.isoformat() if start else None,
+        "requested_end": end.isoformat(),
+        "records": len(records),
+        "buckets": buckets,
+        # A full page means there is more beyond it; the caller continues
+        # from the last bucket rather than assuming it reached the end.
+        "complete": len(records) < histories.MAX_RECORDS,
+    })
+
+
+@app.route("/api/histories/synced", methods=["POST"])
+def mark_history_synced():
+    """The integration reporting how far it got.
+
+    The watermark lives with the add-on because that is where the selection
+    lives; keeping it in Home Assistant would lose it whenever the
+    integration was removed and re-added, and the next run would re-import
+    everything.
+    """
+    body = request.get_json(silent=True) or {}
+    name = (body.get("history") or "").strip()
+    through = (body.get("through") or "").strip()
+    if not name or not through:
+        return jsonify({"error": "history and through are required"}), 400
+    history_store.record_sync(name, through, int(body.get("imported") or 0))
+    return jsonify({"history": name, "through": through})
 
 
 @app.route("/api/health")

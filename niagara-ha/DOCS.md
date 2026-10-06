@@ -121,6 +121,29 @@ why. An empty list otherwise looks identical whether:
 The probe runs when the bridge connects, so a **rescan** is how you refresh
 it after changing the station's oBIX export or the user's permissions.
 
+## Trend logs (History screen)
+
+The **History** screen imports the station's trend logs into Home
+Assistant's long-term statistics.
+
+Syncing is off until you switch it on, and trends are added one at a time.
+A station carries thousands of them, and importing the lot would write
+years of statistics into Home Assistant's database on the first run.
+
+Each trend is paired to its device automatically, from the `historyName` on
+the point's history extension — the station's own record of which trend
+belongs to which point. Where no such link exists the screen falls back to
+matching names and says so; an ambiguous name is left unpaired rather than
+guessed.
+
+**If no trends appear**, `/api/histories/probe` says why, on the same terms
+as the alarm probe. The usual cause is the oBIX user lacking read
+permission on the history service while everything else works.
+
+Note that the bridge opens a second connection to the station for trend
+reads, because they are on demand and bursty while the point poll is a
+steady loop.
+
 ## Troubleshooting
 
 - **No entities appearing** — Check the add-on logs for connection errors. Verify the Niagara host is reachable from your HA instance and that oBIX is enabled.

@@ -23,6 +23,19 @@ def homeassistant_available() -> bool:
     return True
 
 
+# What the stub recorder was asked to import, for tests to inspect.
+_imported: list = []
+
+
+def imported_statistics() -> list:
+    """Everything handed to the recorder since the last reset."""
+    return list(_imported)
+
+
+def reset_imported() -> None:
+    _imported.clear()
+
+
 def _module(name: str, **attrs) -> types.ModuleType:
     """Register a stub module, wiring it onto its parent as a submodule.
 
@@ -295,6 +308,19 @@ def install() -> None:
             BinarySensorEntity=_Entity,
             BinarySensorDeviceClass=_BinarySensorDeviceClass)
     _module("homeassistant.components.event", EventEntity=_EventEntity)
+    _module("homeassistant.components.recorder")
+    _module(
+        "homeassistant.components.recorder.models",
+        StatisticData=dict,
+        StatisticMetaData=dict,
+        StatisticMeanType=StrEnum("StatisticMeanType", "NONE ARITHMETIC CIRCULAR"),
+    )
+    _module(
+        "homeassistant.components.recorder.statistics",
+        async_import_statistics=lambda hass, metadata, rows: _imported.append(
+            (metadata, rows),
+        ),
+    )
     _module("homeassistant.components.repairs", RepairsFlow=object)
     _module("homeassistant.data_entry_flow", FlowResult=dict)
 

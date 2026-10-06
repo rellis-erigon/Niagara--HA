@@ -191,6 +191,51 @@ To expose it in Workbench: the oBIX export must include the alarm service,
 and the oBIX user's permissions must grant read on it. A rescan forces the
 probe to run again.
 
+### Trend logs
+
+The station already stores its trends. The **History** screen in the add-on
+imports them into Home Assistant's long-term statistics, so a graph covers
+what the building did rather than only what Home Assistant was running to
+see.
+
+1. Open the add-on, go to **History**, and turn on **Sync trend logs to
+   Home Assistant**.
+2. Find a trend in **Available on the station**. **Preview** reads the most
+   recent samples straight from the station, so you can confirm it is the
+   one you want.
+3. **Add** it. It is paired to its device automatically — the station
+   records which point each trend belongs to, and the point knows its
+   device. The **Evidence** column says where the pairing came from:
+
+   | Evidence | Meaning |
+   |---|---|
+   | `from station` | The point's history extension names this trend. Reliable. |
+   | `name match` | The trend's name matches exactly one point's name. A guess — check it. |
+   | `unpaired` | No match, or more than one. Add it and set the point yourself. |
+
+4. Trends are imported hourly. To move a backfill along, call
+   `niagara.sync_history`.
+
+Each trend has its own switch, and the master switch stops everything
+without losing the selection.
+
+**What is not imported:**
+
+- **Cumulative totals.** A `total_increasing` sensor's statistics carry a
+  running sum, which cannot be derived from a window of samples without
+  knowing every meter reset before it. Getting it wrong corrupts the energy
+  dashboard, so these are skipped and the reason appears in the log.
+- **The current hour**, which the recorder is still accumulating.
+- Trends whose point has no sensor in Home Assistant — enable the point
+  first.
+
+An imported hour **replaces** whatever Home Assistant had computed for that
+hour. That is the intent: the station logged the building on a fixed
+interval whether Home Assistant was up or not.
+
+A backfill is bounded per run, so a station holding years of trend catches
+up over several runs rather than occupying the JACE for an hour.
+
 ### Energy Dashboard
 
 Energy, water, and gas sensors are automatically configured for the HA Energy dashboard:
