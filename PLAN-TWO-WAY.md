@@ -1,5 +1,23 @@
 # Two-way control — plan
 
+> **Decision, 2026-10-07: not being built. The Niagara bridge stays
+> read-only.**
+>
+> This document is kept because the research in it is worth having, not
+> as a backlog item. Do not start on it without that decision being
+> revisited explicitly.
+>
+> The reasoning, briefly: a read-only bridge cannot break a building and
+> this one could, across 224 air conditioners. A Niagara write holds a
+> priority level until released, and a point held from Home Assistant
+> looks entirely normal in the BMS while the station's own schedule
+> quietly stops working. The value on offer — nudging a setpoint from a
+> dashboard — does not pay for that risk on a live hotel.
+>
+> The measurement below still stands and is useful on its own: it
+> explains why the HVAC points cannot be written *today* even if someone
+> wanted to.
+
 The bridge reads a BMS of 20,000 points and writes nothing. This is the
 plan to change that, in the order the work actually unblocks.
 

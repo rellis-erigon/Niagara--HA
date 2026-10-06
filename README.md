@@ -35,11 +35,17 @@ A native Home Assistant custom integration that reads points from a Niagara stat
 
 ## Two-way control
 
-The bridge reads and does not write. [PLAN-TWO-WAY.md](PLAN-TWO-WAY.md)
-sets out how that changes and in what order — including the finding that
-blocks all of it: on the station here, 897 HVAC command points export as
-read-only, while the 303 that are writable are meter totals and label
-strings. The first phase is a permissions change in Niagara, not code.
+**The bridge is read-only, by decision rather than by omission.**
+
+A Niagara write holds a priority level until it is released, and a point
+held from Home Assistant looks normal in the BMS while the station's own
+schedule stops working. On a live building that is not a trade worth
+making for dashboard convenience.
+
+[PLAN-TWO-WAY.md](PLAN-TWO-WAY.md) records what it would take, and the
+measurement behind the decision: 897 HVAC command points export as
+read-only, while the 303 writable points are meter totals and label
+strings.
 
 ## Features
 
