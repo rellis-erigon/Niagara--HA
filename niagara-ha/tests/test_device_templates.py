@@ -136,11 +136,20 @@ def test_fcu_prefers_the_specific_status_slot(templates):
     assert bindings["command"].endswith("/StartStopCommand/")
 
 
-def test_temp_adjust_is_not_a_setpoint(templates):
+def _values(**by_name):
+    """A value cache keyed the way the add-on writes it."""
+    return {
+        f"/config/points/{name}/": {"value": value, "status": "ok", "ts": 1.0}
+        for name, value in by_name.items()
+    }
+
+
+def test_temp_adjust_without_a_reading_is_an_offset(templates):
     """TempAdjust is an offset from the base setpoint, so 0 is normal for it.
 
     Binding it to the absolute setpoint slot, which expects 5-40 °C, blocked
-    every guest room on a perfectly healthy reading.
+    every guest room on a perfectly healthy reading. With nothing read yet
+    the name alone cannot say which it is, so the offset stays the default.
     """
     bindings = dt.bind_template(templates["fcu"], FCU)
     assert bindings["temp_adjust"].endswith("/TempAdjust/")
@@ -148,6 +157,81 @@ def test_temp_adjust_is_not_a_setpoint(templates):
 
     adjust = next(s for s in templates["fcu"].slots if s.key == "temp_adjust")
     assert adjust.validation["min"] < 0
+
+
+def test_temp_adjust_reading_in_room_range_is_the_setpoint(templates):
+    """On many controllers TempAdjust *is* the absolute room setpoint.
+
+    A point sitting at 22 °C cannot be a +/-3K offset, so the offset slot
+    must refuse it and the setpoint slot take it — otherwise the station's
+    only setpoint is labelled an adjustment and no climate entity gets a
+    target temperature.
+    """
+    bindings = dt.bind_template(
+        templates["fcu"], FCU, _values(TempAdjust="22.0"),
+    )
+    assert bindings["setpoint"].endswith("/TempAdjust/")
+    assert bindings["temp_adjust"] is None
+
+
+def test_temp_adjust_reading_near_zero_stays_an_offset(templates):
+    bindings = dt.bind_template(
+        templates["fcu"], FCU, _values(TempAdjust="0.0"),
+    )
+    assert bindings["temp_adjust"].endswith("/TempAdjust/")
+    assert bindings["setpoint"] is None
+
+
+def test_a_real_setpoint_point_still_wins_the_setpoint_slot(templates):
+    """The TempAdjust fallback must not outrank an actual Setpoint point.
+
+    TempAdjust is left over and the second pass gives it to the offset slot
+    on name. That is the right trade: what matters is that the setpoint slot
+    holds the station's actual setpoint.
+    """
+    points = FCU + [point("RoomSetpoint", "°C")]
+    bindings = dt.bind_template(
+        templates["fcu"], points, _values(TempAdjust="22.0", RoomSetpoint="21.0"),
+    )
+    assert bindings["setpoint"].endswith("/RoomSetpoint/")
+
+
+def test_a_reading_out_of_range_never_leaves_a_slot_unbound(templates):
+    """A miscalibrated reading is not grounds for dropping the only candidate.
+
+    A meter reporting power factor as 99 rather than 0.99, or one whose
+    frequency point reads 499, still has exactly one of each. Vetoing the
+    binding lost 34 real sensors on this station.
+    """
+    meter = templates["electricity_meter"]
+    points = [
+        point("MeterTotal", "kWh"),
+        point("Active_Power", "kW"),
+        point("Power_Factor"),
+        point("Frequency", "Hz"),
+    ]
+    bindings = dt.bind_template(
+        meter, points, _values(Power_Factor="99.0", Frequency="499.0"),
+    )
+    assert bindings["power_factor"].endswith("/Power_Factor/")
+    assert bindings["frequency"].endswith("/Frequency/")
+
+
+def test_an_unparseable_reading_does_not_block_binding(templates):
+    """A point whose value is not a number binds on name, as before."""
+    bindings = dt.bind_template(
+        templates["fcu"], FCU, _values(TempAdjust="null"),
+    )
+    assert bindings["temp_adjust"].endswith("/TempAdjust/")
+
+
+def test_range_filter_ignores_slots_declaring_no_range(templates):
+    """Only a slot that declares min or max can reject on value."""
+    slot = next(s for s in templates["fcu"].slots if s.key == "mode")
+    assert not slot.validation
+    assert dt.score_candidate(
+        slot, dict(FCU[3]), _values(AirConModeStatus="HEATING"),
+    ) is not None
 
 
 def test_required_slots_are_filled_before_optional(templates):

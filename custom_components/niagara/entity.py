@@ -9,10 +9,60 @@ from .const import DOMAIN
 from .coordinator import (
     BAD_STATUSES,
     NiagaraCoordinator,
+    NiagaraDevice,
     NiagaraPoint,
     decode_niagara_name,
     stable_id,
 )
+
+
+def build_device_info(
+    coordinator: NiagaraCoordinator, group: str, area: str | None = None,
+) -> DeviceInfo:
+    """Build the device registry entry for a Niagara device group.
+
+    Shared by the per-point entities and the device-level ones (climate, fan)
+    so both resolve to the same device. The identifier is derived from the
+    host and group only — change how it is built and every device in the
+    registry is orphaned.
+    """
+    group_parts = [decode_niagara_name(p) for p in group.split("/") if p]
+    # Name a device by the tail of its path. The full path plus the
+    # integration name ran to about 60 characters — roughly "Site BMS —
+    # Station / Electrical / DB-1-Loadingdock-Light" — which every
+    # dashboard truncated, and it repeats on every entity underneath.
+    depth = min(coordinator.device_name_depth, len(group_parts))
+    device_label = " / ".join(group_parts[-depth:]) or coordinator.device_name
+    device_id = f"niagara_{stable_id(coordinator.host + '/' + group)}"
+
+    info = DeviceInfo(
+        identifiers={(DOMAIN, device_id)},
+        name=device_label,
+        manufacturer="Tridium",
+        model="Niagara 4",
+        sw_version="oBIX",
+    )
+    if area:
+        info["suggested_area"] = area
+    return info
+
+
+def point_is_usable(
+    coordinator: NiagaraCoordinator, point: NiagaraPoint | None,
+) -> bool:
+    """Whether a point's current reading can be trusted."""
+    if point is None:
+        return False
+    live = coordinator.data.get(point.path) if coordinator.data else None
+    if live is None:
+        return False
+    if live.value is None:
+        return False
+    if live.status and live.status.lower() in BAD_STATUSES:
+        return False
+    if live.age is not None and live.age > coordinator.stale_after:
+        return False
+    return True
 
 
 class NiagaraEntity(CoordinatorEntity[NiagaraCoordinator]):
@@ -30,29 +80,11 @@ class NiagaraEntity(CoordinatorEntity[NiagaraCoordinator]):
         # renaming never orphans an entity.
         self._attr_name = point.slot_name or decode_niagara_name(point.name)
 
-        group = coordinator.get_group(point)
-        group_parts = [
-            decode_niagara_name(p) for p in group.split("/") if p
-        ]
-        # Name a device by the tail of its path. The full path plus the
-        # integration name ran to about 60 characters — roughly "Site BMS —
-        # Station / Electrical / DB-1-Loadingdock-Light" — which every
-        # dashboard truncated, and it repeats on every entity underneath.
-        depth = min(coordinator.device_name_depth, len(group_parts))
-        device_label = " / ".join(group_parts[-depth:]) or coordinator.device_name
-        device_id = f"niagara_{stable_id(coordinator.host + '/' + group)}"
-
-        device_info = DeviceInfo(
-            identifiers={(DOMAIN, device_id)},
-            name=device_label,
-            manufacturer="Tridium",
-            model="Niagara 4",
-            sw_version="oBIX",
+        self._attr_device_info = build_device_info(
+            coordinator,
+            coordinator.get_group(point),
+            coordinator.get_area(point),
         )
-        area = coordinator.get_area(point)
-        if area:
-            device_info["suggested_area"] = area
-        self._attr_device_info = device_info
 
     @property
     def available(self) -> bool:
@@ -95,3 +127,83 @@ class NiagaraEntity(CoordinatorEntity[NiagaraCoordinator]):
         if self.coordinator.data:
             return self.coordinator.data.get(self._point.path)
         return self._point
+
+
+class NiagaraDeviceEntity(CoordinatorEntity[NiagaraCoordinator]):
+    """Base for an entity representing a whole device rather than one point.
+
+    Climate and fan entities are assembled from several points at once, so
+    they key on the device group instead of a path and read their slots
+    through the coordinator on every state access.
+    """
+
+    _attr_has_entity_name = True
+
+    # Set by each subclass so two device-level entities on one device cannot
+    # collide on a unique id.
+    DOMAIN_KEY = "device"
+
+    def __init__(self, coordinator: NiagaraCoordinator, device: NiagaraDevice) -> None:
+        super().__init__(coordinator)
+        self._device = device
+        self._group = device.group
+        self._attr_unique_id = (
+            f"niagara_{self.DOMAIN_KEY}_{stable_id(coordinator.host + '/' + device.group)}"
+        )
+        sample = next(iter(device.slots.values()), None)
+        area = coordinator.get_area(sample) if sample else None
+        self._attr_device_info = build_device_info(coordinator, device.group, area)
+
+    def _slot_point(self, slot: str) -> NiagaraPoint | None:
+        """The live point filling a slot, or None if it is absent or faulted."""
+        point = self._device.slots.get(slot)
+        if point is None:
+            return None
+        if not self.coordinator.data:
+            return None
+        live = self.coordinator.data.get(point.path)
+        if not point_is_usable(self.coordinator, live):
+            return None
+        return live
+
+    def _number(self, slot: str) -> float | None:
+        point = self._slot_point(slot)
+        if point is None or point.value is None:
+            return None
+        try:
+            return float(point.value)
+        except (TypeError, ValueError):
+            return None
+
+    def _boolean(self, slot: str) -> bool | None:
+        point = self._slot_point(slot)
+        if point is None or point.value is None:
+            return None
+        return str(point.value).strip().lower() in {
+            "true", "1", "on", "yes", "active", "running", "run",
+        }
+
+    def _text(self, slot: str) -> str | None:
+        point = self._slot_point(slot)
+        if point is None or point.value is None:
+            return None
+        return str(point.value).strip()
+
+    @property
+    def available(self) -> bool:
+        """Available while any one of the device's slots is reporting.
+
+        A device-level entity is a view over several points, so it should not
+        vanish because one of its optional slots faulted — only when nothing
+        it is built from can be read at all.
+        """
+        if not self.coordinator.last_update_success:
+            return False
+        return any(self._slot_point(slot) is not None for slot in self._device.slots)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        attrs: dict[str, Any] = {"niagara_group": self._group}
+        for slot, point in sorted(self._device.slots.items()):
+            attrs[f"path_{slot}"] = point.path
+        return attrs

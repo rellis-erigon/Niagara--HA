@@ -176,6 +176,15 @@ def load_templates() -> dict[str, Template]:
 _UNIT_BONUS = 1000
 _EXACT_NAME_BONUS = 500
 
+# How much one step of pattern specificity is worth. It used to be 1, which
+# made the ordering of a slot's match list almost meaningless beside the
+# exact-name bonus: a loose pattern listed last still beat a specific
+# pattern listed first as long as the point's name happened to equal the
+# loose one. At 200 an exact name still wins, but only over a pattern up to
+# two positions more specific — so a slot can carry a deliberate fallback
+# at the end of its list without that fallback outranking the real thing.
+_INDEX_WEIGHT = 200
+
 
 # Meters expose period accumulators beside their lifetime total —
 # DailyUsage, TodaysTotal, ThisWeek. They reset, so they can never fill a
@@ -201,13 +210,52 @@ def effective_unit(point: dict) -> str:
     return (point.get("custom_unit") or point.get("unit") or "").strip()
 
 
-def score_candidate(slot: Slot, point: dict) -> int | None:
+def _reading(values: dict | None, point: dict) -> float | None:
+    """The point's last numeric reading, if one is known."""
+    if not values:
+        return None
+    entry = values.get(point.get("path", ""))
+    if not isinstance(entry, dict):
+        return None
+    try:
+        return float(entry.get("value"))
+    except (TypeError, ValueError):
+        return None
+
+
+def _out_of_declared_range(slot: Slot, reading: float | None) -> bool:
+    """Whether a reading contradicts the range the slot declares.
+
+    Two slots often match the same point name while meaning different
+    quantities. An FCU's "TempAdjust" is an absolute room setpoint on some
+    controllers and a +/-3K offset dial on others; the name cannot tell them
+    apart but the reading can, so a slot declaring -10..10 must not claim a
+    point sitting at 22. Only applied when a reading is known — an unbound
+    or never-polled point still binds on name as before.
+    """
+    if reading is None:
+        return False
+    low = slot.validation.get("min")
+    high = slot.validation.get("max")
+    if isinstance(low, (int, float)) and reading < low:
+        return True
+    if isinstance(high, (int, float)) and reading > high:
+        return True
+    return False
+
+
+def score_candidate(
+    slot: Slot, point: dict, values: dict | None = None,
+) -> int | None:
     """How well a point fits a slot, or None if it cannot fill it at all."""
     name = decode_niagara_name(point.get("name", "")).lower()
     if not name:
         return None
 
     if slot.point_types and point.get("type") not in slot.point_types:
+        return None
+
+    if _out_of_declared_range(slot, _reading(values, point)):
         return None
 
     if slot.validation.get("monotonic") and is_resetting_register(
@@ -219,7 +267,7 @@ def score_candidate(slot: Slot, point: dict) -> int | None:
     for index, pattern in enumerate(slot.match):
         pattern = pattern.lower()
         if fnmatch(name, pattern):
-            score = len(slot.match) - index
+            score = (len(slot.match) - index) * _INDEX_WEIGHT
             if pattern.strip("*") == name:
                 score += _EXACT_NAME_BONUS
             break
@@ -238,32 +286,46 @@ def score_candidate(slot: Slot, point: dict) -> int | None:
     return score
 
 
-def bind_template(template: Template, points: list[dict]) -> dict[str, str | None]:
+def bind_template(
+    template: Template, points: list[dict], values: dict | None = None,
+) -> dict[str, str | None]:
     """Propose a point for each slot. Returns {slot_key: path or None}.
 
     Required slots are filled first so an optional slot cannot steal a point
     a required one needs. No point fills two slots.
+
+    Run in two passes when the value cache is given. The first offers each
+    slot only the points whose current reading agrees with the range the
+    slot declares, which is what separates an FCU's TempAdjust-as-setpoint
+    from TempAdjust-as-offset. The second pass fills whatever is still empty
+    on name alone — a reading out of range is a reason to prefer a different
+    point, never a reason to leave the slot unbound, because the reading may
+    simply be miscalibrated. A meter reporting power factor as 99 instead of
+    0.99 still has exactly one power factor point.
     """
-    candidates: dict[str, list[tuple[int, str]]] = {}
-    for slot in template.slots:
+
+    def ranked(slot: Slot, vals: dict | None) -> list[tuple[int, str]]:
         scored = []
         for point in points:
-            score = score_candidate(slot, point)
+            score = score_candidate(slot, point, vals)
             if score is not None:
                 scored.append((score, point.get("path", "")))
         scored.sort(key=lambda item: (-item[0], item[1]))
-        candidates[slot.key] = scored
+        return scored
 
-    bindings: dict[str, str | None] = {}
+    order = sorted(template.slots, key=lambda s: not s.required)
+    bindings: dict[str, str | None] = {slot.key: None for slot in template.slots}
     taken: set[str] = set()
-    for slot in sorted(template.slots, key=lambda s: not s.required):
-        chosen = None
-        for _score, path in candidates[slot.key]:
-            if path and path not in taken:
-                chosen = path
-                taken.add(path)
-                break
-        bindings[slot.key] = chosen
+
+    for vals in ((values, None) if values else (None,)):
+        for slot in order:
+            if bindings[slot.key]:
+                continue
+            for _score, path in ranked(slot, vals):
+                if path and path not in taken:
+                    bindings[slot.key] = path
+                    taken.add(path)
+                    break
     return bindings
 
 
@@ -272,7 +334,10 @@ _DEVICE_NAME_BONUS = 100
 
 
 def suggest_template(
-    templates: dict[str, Template], points: list[dict], group: str = "",
+    templates: dict[str, Template],
+    points: list[dict],
+    group: str = "",
+    values: dict | None = None,
 ) -> tuple[str | None, int]:
     """Guess which template best fits a device.
 
@@ -285,7 +350,7 @@ def suggest_template(
         required = template.required_slots
         if not required:
             continue
-        bindings = bind_template(template, points)
+        bindings = bind_template(template, points, values)
         if any(not bindings.get(s.key) for s in required):
             continue
 

@@ -2,7 +2,11 @@
 
 Connect your Tridium Niagara 4 Building Management System to Home Assistant.
 
-This add-on reads points from a Niagara station via the oBIX REST interface and publishes them as Home Assistant entities through MQTT Discovery.
+This add-on reads points from a Niagara station via the oBIX REST interface
+and serves them to the **Niagara BMS integration**, which creates the Home
+Assistant entities natively. MQTT is no longer needed and is kept only for
+installs that still depend on it — leave `mqtt_host` empty to run without
+a broker.
 
 ## Prerequisites
 
@@ -87,8 +91,14 @@ Use this username and password when configuring the add-on.
    - `BooleanPoint` → `binary_sensor`
    - `EnumPoint` → `sensor` with options
    - `StringPoint` → `sensor`
-4. MQTT Discovery messages are published so entities appear automatically in HA.
-5. On each polling interval, the add-on reads updated values and publishes them.
+4. Points you enable are served from `/api/integration/points`; the
+   integration polls that and creates the entities. (With `mqtt_host` set,
+   MQTT Discovery messages are published as well.)
+5. On each polling interval, the add-on reads updated values and caches them.
+6. A device you **type and publish** is served with the slot each point
+   fills, which is what lets the integration build a `climate` entity for
+   an FCU or a `fan` entity for a VFD rather than a pile of sensors. Typing
+   a device is therefore worth doing even when the sensors already work.
 
 ## Troubleshooting
 

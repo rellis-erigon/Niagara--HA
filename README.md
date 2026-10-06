@@ -19,6 +19,8 @@ A native Home Assistant custom integration that reads points from a Niagara stat
 │  Station         │    (oBIX REST)  │                   │
 │  (oBIX servlet)  │───XML points──►│  sensor.*         │
 └──────────────────┘                 │  binary_sensor.*  │
+                                     │  climate.*        │
+                                     │  fan.*            │
                                      │  devices & areas  │
                                      └──────────────────┘
 ```
@@ -46,6 +48,14 @@ making for dashboard convenience.
 measurement behind the decision: 897 HVAC command points export as
 read-only, while the 303 writable points are meter totals and label
 strings.
+
+The `climate` and `fan` entities still declare their controllable features,
+because Home Assistant omits the setpoint from a climate entity's state
+unless `TARGET_TEMPERATURE` is declared — the card would show a bare room
+temperature and the data would be invisible. Calling
+`climate.set_temperature` or `fan.turn_on` therefore fails with a clear
+error rather than silently doing nothing. When two-way control lands, the
+setters become real and no entity id or attribute name changes.
 
 ## Features
 
@@ -113,6 +123,39 @@ strings.
 | BooleanPoint / BooleanWritable | `binary_sensor` | Device class (problem, running, opening, occupancy, motion), icon |
 | EnumPoint | `sensor` | Options list from Niagara range, icon |
 | StringPoint | `sensor` | Icon |
+
+### Device Mapping
+
+Every point becomes a sensor, as above. A device that has been **typed and
+published** in the add-on also becomes the entity its equipment actually is,
+because the template has already said which point is the room temperature
+and which is the fan:
+
+| Template | HA Entity | Built from |
+|---|---|---|
+| Fan Coil / Split Unit (`fcu`) | `climate` | Room temperature, setpoint, mode, fan status, start/stop |
+| Air Handling Unit (`ahu`) | `climate` + `fan` | Supply air temperature, supply fan status |
+| Fan / VFD (`fan`) | `fan` | Run status, speed, start/stop |
+
+This is what gives you the native thermostat card, `current_temperature` in
+automations and templates, and exposure to Google Assistant, Alexa and
+HomeKit — none of which can do anything useful with a sensor called
+`IndoorFanStatus`.
+
+Notes:
+
+- **A stopped unit reports `off`**, not the mode it would run in. A Niagara
+  FCU keeps reporting `HEATING` on its mode point while stopped; that is the
+  mode it *would* use, so the start/stop point wins.
+- **A VFD speed in Hz or rpm is not a percentage.** Only a point reporting
+  `%` becomes the fan's percentage; Hz and rpm stay on their own sensor and
+  appear as a `speed` attribute.
+- **These entities are enabled by default**, unlike the per-point sensors.
+  A published device is a deliberate statement that the device is real.
+- **Read-only.** The features are declared so the native cards show the real
+  data, but every write raises an error rather than appearing to succeed.
+  See [Two-way control](#two-way-control).
+- New devices get their entities on the next reload of the integration.
 
 ### Energy Dashboard
 

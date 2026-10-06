@@ -32,17 +32,16 @@ slots:
     point_types: [enum, string]
     match: ["*airconmodestatus*", "*mode*status*", "*mode*"]
 
-  - key: setpoint
-    name: Setpoint
-    device_class: temperature
-    state_class: measurement
-    units: ["°C", "°F"]
-    point_types: [numeric, integer]
-    match: ["*setpoint*", "*stpt*", "*set*pt*"]
-    validation: {min: 5, max: 40}
-
-  # TempAdjust is an offset from the room's base setpoint, not an absolute
-  # temperature — 0 is its normal resting value, so it needs its own range.
+  # Two slots claim "TempAdjust" because the name means two different
+  # things depending on the controller: a +/-3K offset dial from the room's
+  # base setpoint, or the absolute room setpoint itself. The reading tells
+  # them apart — 22 cannot be an offset and 2 cannot be a room setpoint —
+  # so the declared ranges decide whenever a value is known.
+  #
+  # This slot is declared first deliberately. Order is the tie-break when
+  # no reading is available yet, and the offset reading is the one that
+  # cannot be rejected on range: 0 is normal for it, and treating a healthy
+  # 0 as a setpoint blocked every room from publishing.
   - key: temp_adjust
     name: Setpoint Adjust
     device_class: temperature
@@ -51,6 +50,15 @@ slots:
     point_types: [numeric, integer]
     match: ["*tempadjust*", "*temp*adjust*", "*adjust*"]
     validation: {min: -10, max: 10}
+
+  - key: setpoint
+    name: Setpoint
+    device_class: temperature
+    state_class: measurement
+    units: ["°C", "°F"]
+    point_types: [numeric, integer]
+    match: ["*setpoint*", "*stpt*", "*set*pt*", "*tempadjust*", "*temp*adjust*"]
+    validation: {min: 5, max: 40}
 
   - key: fan_status
     name: Fan Status

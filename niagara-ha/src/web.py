@@ -629,6 +629,11 @@ def integration_points():
                 "state_class": slot.state_class,
                 "slot_units": slot.units,
                 "device_group": group,
+                # Which template typed this device. The integration needs it
+                # to decide whether a group of points is a climate entity, a
+                # fan, or a plain bundle of sensors — the slot keys alone do
+                # not say, since "run_status" appears on half the templates.
+                "device_type": assigned.get("template"),
             }
 
     now = time.time()
@@ -789,7 +794,7 @@ def list_devices():
             record["warnings"] = report["warnings"]
             record["publishable"] = report["publishable"]
         else:
-            suggested, _ = suggest_template(templates, points, group)
+            suggested, _ = suggest_template(templates, points, group, values)
             record["suggested"] = suggested
             record["suggested_name"] = (
                 templates[suggested].name if suggested else None
@@ -816,7 +821,7 @@ def device_detail():
         assigned["template"] if assigned else None
     )
     if not template_id:
-        template_id, _ = suggest_template(templates, points, group)
+        template_id, _ = suggest_template(templates, points, group, _load_values())
 
     template = templates.get(template_id) if template_id else None
     if template is None:
@@ -826,7 +831,7 @@ def device_detail():
         })
 
     # Stored bindings win; anything unset is proposed by auto-binding.
-    proposed = bind_template(template, points)
+    proposed = bind_template(template, points, _load_values())
     stored = assigned.get("bindings", {}) if assigned else {}
     by_path = {p.get("path"): p for p in points}
 
@@ -911,7 +916,7 @@ def assign_device_type():
     if not points:
         return jsonify({"error": "no points in this group"}), 404
 
-    bindings = dict(bind_template(template, points))
+    bindings = dict(bind_template(template, points, _load_values()))
     overrides = data.get("bindings") or {}
     valid_paths = {p.get("path") for p in points}
     slot_keys = {s.key for s in template.slots}
@@ -1048,6 +1053,7 @@ def rebind_devices():
         g for g, e in devices.items() if e.get("template") == template_id
     ]
 
+    values = _load_values()
     rebound, changed = 0, 0
     for target in targets:
         entry = devices.get(target)
@@ -1061,7 +1067,7 @@ def rebind_devices():
             continue
         fresh = {
             k: val for k, val in
-            bind_template(template, points).items() if val
+            bind_template(template, points, values).items() if val
         }
         if fresh != entry.get("bindings"):
             changed += 1
@@ -1460,13 +1466,14 @@ def autotype_devices():
     """
     templates = load_templates()
     devices = load_device_types()
+    values = _load_values()
     assigned = 0
     skipped = []
 
     for group, points in sorted(_device_groups().items()):
         if group in devices:
             continue
-        template_id, _ = suggest_template(templates, points, group)
+        template_id, _ = suggest_template(templates, points, group, values)
         if not template_id:
             skipped.append(group)
             continue
@@ -1474,7 +1481,7 @@ def autotype_devices():
             "template": template_id,
             "bindings": {
                 k: v for k, v in
-                bind_template(templates[template_id], points).items() if v
+                bind_template(templates[template_id], points, values).items() if v
             },
             "state": STATE_DRAFT,
         }

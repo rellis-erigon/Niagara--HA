@@ -84,6 +84,22 @@ class NiagaraPoint:
     slot_device_class: str | None = None
     slot_state_class: str | None = None
     slot_units: list[str] = field(default_factory=list)
+    # The template that typed the point's device, e.g. "fcu". Only set for
+    # points on a published device.
+    device_type: str | None = None
+
+
+@dataclass
+class NiagaraDevice:
+    """A published device: its template and the points filling its slots."""
+
+    group: str
+    device_type: str
+    slots: dict[str, NiagaraPoint] = field(default_factory=dict)
+
+    def path(self, slot: str) -> str | None:
+        point = self.slots.get(slot)
+        return point.path if point else None
 
 
 class NiagaraCoordinator(DataUpdateCoordinator[dict[str, NiagaraPoint]]):
@@ -148,6 +164,7 @@ class NiagaraCoordinator(DataUpdateCoordinator[dict[str, NiagaraPoint]]):
 
         registry = er.async_get(self.hass)
         valid = {f"niagara_{stable_id(path)}" for path in self.points}
+        valid |= self.device_entity_unique_ids()
         stale = [
             entity.entity_id
             for entity in list(registry.entities.values())
@@ -338,6 +355,7 @@ class NiagaraCoordinator(DataUpdateCoordinator[dict[str, NiagaraPoint]]):
                 slot_device_class=p.get("device_class"),
                 slot_state_class=p.get("state_class"),
                 slot_units=p.get("slot_units") or [],
+                device_type=p.get("device_type"),
             )
 
         return {
@@ -363,6 +381,52 @@ class NiagaraCoordinator(DataUpdateCoordinator[dict[str, NiagaraPoint]]):
     def get_group(self, point: NiagaraPoint) -> str:
         """Return the device group for a point (provided by the add-on)."""
         return point.group
+
+    def device_entity_unique_ids(self) -> set[str]:
+        """Unique ids of the device-level entities (climate, fan).
+
+        The purge below keys on the point path, so without this every
+        climate and fan entity is stale by definition and gets deleted on
+        the first refresh after it is created. The platform modules own the
+        rule for which templates qualify, so they are asked rather than
+        having it restated here.
+        """
+        from .climate import CLIMATE_TEMPLATES
+        from .fan import FAN_TEMPLATES
+
+        ids: set[str] = set()
+        for device in self.devices().values():
+            for key, table in (("climate", CLIMATE_TEMPLATES), ("fan", FAN_TEMPLATES)):
+                roles = table.get(device.device_type)
+                if roles is None:
+                    continue
+                required = roles.get("current_temperature") or roles.get("running")
+                if required and required not in device.slots:
+                    continue
+                ids.add(
+                    f"niagara_{key}_{stable_id(self.host + '/' + device.group)}"
+                )
+        return ids
+
+    def devices(self) -> dict[str, NiagaraDevice]:
+        """Group published points into devices by template.
+
+        Keyed on the point's own group, which is what entity.py uses to build
+        the device registry entry, so a device-level entity lands on the same
+        HA device as the sensors it is built from rather than creating a
+        second one beside it.
+        """
+        found: dict[str, NiagaraDevice] = {}
+        for point in self.points.values():
+            if not point.device_type or not point.slot:
+                continue
+            group = point.group
+            device = found.get(group)
+            if device is None:
+                device = NiagaraDevice(group=group, device_type=point.device_type)
+                found[group] = device
+            device.slots[point.slot] = point
+        return found
 
     def get_area(self, point: NiagaraPoint) -> str | None:
         """Map a point to an HA area based on its path hierarchy."""

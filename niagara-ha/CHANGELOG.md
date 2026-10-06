@@ -3,6 +3,55 @@
 The add-on and the Home Assistant integration are released as a matched
 pair and share a version number. CI fails the build if they drift.
 
+## 3.17.0 — 2026-10-07
+
+- **Feature**: Published HVAC devices become real Home Assistant entities
+  instead of bundles of sensors. An FCU is now a `climate` entity — room
+  temperature, setpoint, mode and running state in one place, with the
+  native thermostat card, `current_temperature` available to automations
+  and exposure to voice assistants. A fan or VFD becomes a `fan` entity,
+  and an AHU becomes both where its slots are bound. The per-point sensors
+  are unchanged and still there.
+
+  A stopped unit reports `off`, not the mode it would run in: 147 of the
+  195 units on the reference station sit in `HEATING` while stopped, so
+  taking the mode point at face value would have reported most of a
+  building as heating.
+
+  The bridge remains read-only. The climate and fan entities declare their
+  features so the native cards render the real data, and every setter
+  raises instead of pretending to write. When two-way lands, the setters
+  become real with no change to any entity id or attribute name.
+
+- **Fix**: A slot's declared range now takes part in auto-binding, not just
+  validation. `TempAdjust` means an absolute room setpoint on some FCU
+  controllers and a ±3K offset dial on others, and the name cannot tell
+  them apart — the reading can. On the reference station this moves 194
+  setpoints out of the "Setpoint Adjust" slot, where they were labelled as
+  adjustments and gave the climate entities no target temperature.
+
+  Binding runs in two passes: readings that agree with the slot are
+  preferred, then anything still unbound is filled on name alone. A reading
+  out of range is a reason to prefer another point, never a reason to leave
+  a slot empty — a meter reporting power factor as 99 rather than 0.99 still
+  has exactly one power factor point. Existing devices keep their stored
+  bindings until you rebind them.
+
+- **Fix**: The entity purge no longer deletes device-level entities. It
+  keys on the point path, so a climate or fan entity counted as stale the
+  moment it was created and was removed on the next refresh.
+
+- **Internal**: Pattern order within a slot's match list now carries real
+  weight (200 a step) rather than being rounded away by the exact-name
+  bonus, so a slot can declare a deliberate fallback at the end of its list
+  without that fallback outranking the specific pattern above it. Replayed
+  against the reference station this changes no existing binding.
+
+- **Internal**: The integration test suite runs without a Home Assistant
+  install, against stand-ins used only when the real package is absent. CI
+  still runs against real Home Assistant. Three test files previously could
+  not be run outside CI at all; the suite is now 127 tests.
+
 ## 3.11.0 — 2026-09-24
 
 - **Feature**: Two templates. **Pump System (3 Pump)** for a triplex set —
