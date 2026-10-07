@@ -3,6 +3,18 @@
 The add-on and the Home Assistant integration are released as a matched
 pair and share a version number. CI fails the build if they drift.
 
+## 3.25.1 — 2026-10-07
+
+- **Fix**: The fan coil template claimed refrigeration cabinets. Its
+  `device_match` carried `*fridge*` and `*freezer*`, so a kitchen fridge
+  typed as an FCU and its -18 °C bound happily to the room temperature
+  slot. There is a `fridge` template for these.
+
+- **Fix**: The fridge template now also matches `*frezzer*` and
+  `*underbench*`. The first is not a typo here — it is the station's, on
+  four commissioned cabinets, and a template that only knows the correct
+  spelling leaves them untyped forever.
+
 ## 3.25.0 — 2026-10-07
 
 - **Feature**: A device can set the options of the faceplate it wears. A

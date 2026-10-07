@@ -3,7 +3,11 @@ name: Fridge / Freezer / Cool Room
 description: Refrigeration unit with temperature, door and compressor status
 icon: mdi:fridge
 
-device_match: ["*fridge*", "*freezer*", "*coolroom*", "*cool*room*", "*chiller*room*", "*keg*", "*cellar*"]
+# "*frezzer*" is not a typo here — it is the station's. Four cabinets are
+# commissioned with that spelling, and a template that only knows the
+# correct one leaves them untyped forever.
+device_match: ["*fridge*", "*freezer*", "*frezzer*", "*coolroom*", "*cool*room*",
+               "*chiller*room*", "*keg*", "*cellar*", "*underbench*"]
 
 slots:
   - key: temperature

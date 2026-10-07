@@ -3,7 +3,10 @@ name: Fan Coil / Split Unit
 description: Room air conditioning unit with mode, status and room temperature
 icon: mdi:air-conditioner
 
-device_match: ["fcu*", "*fridge*", "*freezer*", "*room*"]
+# No "*fridge*" or "*freezer*" here. They were matching refrigeration
+# cabinets onto the fan coil template, which has its own fridge template
+# and a room temperature slot that happily bound a fridge's -18 °C.
+device_match: ["fcu*", "*fan*coil*", "*split*unit*", "*room*"]
 
 slots:
   - key: room_temperature

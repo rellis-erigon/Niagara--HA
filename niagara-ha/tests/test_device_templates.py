@@ -930,3 +930,33 @@ def test_display_round_trips(types_file):
 def test_display_defaults_to_both(types_file):
     types_file.write_text("devices:\n  Site/DB1:\n    template: pump\n")
     assert dt.load_device_types()["Site/DB1"]["display"] == "both"
+
+
+def test_a_fridge_is_not_suggested_as_a_fan_coil_unit():
+    """The fcu template matched "*fridge*" and claimed a kitchen cabinet,
+    whose -18 °C then bound happily to its room temperature slot."""
+    dt, templates = _load_builtin()
+    fcu = templates["fcu"]
+    assert not fcu.matches_device_name("Site/Kitchens/B3-Fridge")
+    assert not fcu.matches_device_name("Site/Kitchens/Walkin-Freezer")
+    # Matching is on the folder's own name, not the path, so this is the
+    # shape an FCU folder actually has.
+    assert fcu.matches_device_name("Site/HVAC/AC/Room301")
+    assert fcu.matches_device_name("Site/HVAC/FCU-3-01")
+
+
+def test_the_fridge_template_claims_them_instead():
+    dt, templates = _load_builtin()
+    fridge = templates["fridge"]
+    for name in ("Site/Kitchens/B3-Fridge", "Site/Kitchens/Walkin-Freezer",
+                 "Site/Kitchens/Show/UnderBenchFrezzer-6D"):
+        assert fridge.matches_device_name(name), name
+
+
+def test_the_stations_misspelling_of_freezer_is_matched():
+    """Four cabinets are commissioned as "Frezzer". A template that only
+    knows the correct spelling leaves them untyped forever."""
+    dt, templates = _load_builtin()
+    fridge = templates["fridge"]
+    assert fridge.matches_device_name("Site/Kitchens/Show/UnderBenchFrezzer")
+    assert fridge.matches_device_name("Site/Kitchens/Show/UnderBenchFrezzer-6D")
