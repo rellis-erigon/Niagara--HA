@@ -3,6 +3,24 @@
 The add-on and the Home Assistant integration are released as a matched
 pair and share a version number. CI fails the build if they drift.
 
+## 3.24.0 — 2026-10-07
+
+- **Fix**: The alarm console no longer counts other people's buildings. A
+  Supervisor's console covers every station attached to it, and on a
+  shared property that includes plant belonging to a different tenancy —
+  168 of the 200 alarms on this console came from a station the bridge
+  exports nothing from and nobody here can act on.
+
+  Alarms are now kept only from stations this bridge has enabled points
+  for, which needs no configuration: a station nobody enabled anything on
+  is not one this Home Assistant is responsible for. What was left out is
+  reported alongside the console rather than silently discarded, so a
+  station that *should* be included but has nothing enabled yet shows up
+  as excluded instead of simply missing.
+
+  An alarm naming no station at all is always kept — it cannot be
+  attributed, so it cannot be ruled out either.
+
 ## 3.23.0 — 2026-10-07
 
 - **Fix**: Alarms can be attributed to a device. Every alarm on this

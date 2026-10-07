@@ -546,3 +546,67 @@ def test_the_spec_shape_still_parses():
     first = records(QUERY_OUT)[0]
     assert first.source.endswith("/AHU1/Trip/")
     assert first.source_name == "AHU-1 Fire Trip"
+
+
+# -- Other people's stations --------------------------------------------
+#
+# A Supervisor's alarm console covers every station attached to it. On a
+# shared property that includes plant belonging to someone else: 168 of
+# the 200 alarms on this console came from a station this bridge exports
+# nothing from and nobody here can act on.
+
+def record(station, name="Pt", ts="2026-10-07T08:00:00+11:00"):
+    elem = xml(f"""
+    <obj {NS} is="obix:Alarm">
+      <abstime name="timestamp" val="{ts}"/>
+      <str name="sourceName" val="{station}:{name}"/>
+    </obj>
+    """)
+    return alarms.parse_alarm(elem)
+
+
+MINE = {"sitejace2"}
+
+
+def test_another_stations_alarms_are_left_out():
+    kept, dropped = alarms.filter_to_stations(
+        [record("SiteJace1"), record("SiteJace2"), record("SiteJace1")], MINE,
+    )
+    assert len(kept) == 1
+    assert dropped == {"SiteJace1": 2}
+
+
+def test_what_was_left_out_is_reported_not_silently_dropped():
+    """A station that should be included but has nothing enabled yet must
+    be visible rather than just missing."""
+    _, dropped = alarms.filter_to_stations([record("SiteJace9")], MINE)
+    assert dropped == {"SiteJace9": 1}
+
+
+def test_an_alarm_naming_no_station_is_always_kept():
+    """It cannot be attributed, so it cannot be ruled out either."""
+    kept, _ = alarms.filter_to_stations([record("", "Orphan")], MINE)
+    assert len(kept) == 1
+
+
+def test_no_known_stations_means_no_filtering():
+    """Before the first discovery there is nothing to filter against, and
+    dropping everything would be worse than showing it all."""
+    records_in = [record("SiteJace1"), record("SiteJace2")]
+    kept, dropped = alarms.filter_to_stations(records_in, set())
+    assert kept == records_in and dropped == {}
+
+
+def test_station_matching_ignores_case():
+    kept, _ = alarms.filter_to_stations([record("SITEJACE2")], MINE)
+    assert len(kept) == 1
+
+
+@pytest.mark.parametrize("path,station", [
+    ("/config/Drivers/NiagaraNetwork/SiteJace2/points/A/B/", "sitejace2"),
+    ("/config/Drivers/NiagaraNetwork/Site$20Jace/points/A/", "site jace"),
+    ("/config/points/Loose/", ""),
+    ("", ""),
+])
+def test_the_station_is_read_out_of_a_point_path(path, station):
+    assert alarms.station_of_path(path) == station

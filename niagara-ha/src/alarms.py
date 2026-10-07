@@ -312,6 +312,60 @@ def build_filter(limit: int = 200) -> str:
     )
 
 
+def station_of_path(path: str) -> str:
+    """The Niagara station a point path sits under, lowercased.
+
+    A Supervisor exports every station it is connected to, including ones
+    belonging to a different part of a property. The station in a path is
+    what tells them apart.
+    """
+    parts = [p for p in path.strip("/").split("/") if p]
+    for marker in ("niagaranetwork", "drivers"):
+        for index, part in enumerate(parts):
+            if part.lower() == marker and index + 1 < len(parts):
+                return decode_station(parts[index + 1]).lower()
+    return ""
+
+
+def decode_station(name: str) -> str:
+    """Niagara's $xx escapes, which appear in station names too."""
+    import re
+
+    return re.sub(r"\$([0-9a-fA-F]{2})",
+                  lambda m: chr(int(m.group(1), 16)), name)
+
+
+def filter_to_stations(
+    records: list[AlarmRecord], stations: set[str],
+) -> tuple[list[AlarmRecord], dict[str, int]]:
+    """Keep only alarms from stations this bridge actually exports.
+
+    A Supervisor's alarm console covers every station attached to it. On a
+    shared property that includes other people's plant, and counting their
+    alarms on this dashboard is worse than useless — it lights up for
+    something nobody here can act on.
+
+    Stations with no enabled points are therefore dropped, and what was
+    dropped is reported rather than silently discarded, so a station that
+    should be included but has nothing enabled yet is visible instead of
+    missing. An alarm naming no station is always kept: it cannot be
+    attributed, so it cannot be ruled out either.
+    """
+    if not stations:
+        return records, {}
+    kept: list[AlarmRecord] = []
+    dropped: dict[str, int] = {}
+    for record in records:
+        station = (record.source_station or "").strip().lower()
+        if not station or station in stations:
+            kept.append(record)
+        else:
+            dropped[record.source_station] = dropped.get(
+                record.source_station, 0,
+            ) + 1
+    return kept, dropped
+
+
 def summarise(records: list[AlarmRecord]) -> dict:
     """Counts the integration turns into sensors."""
     active = [r for r in records if r.active]

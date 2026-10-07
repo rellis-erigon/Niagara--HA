@@ -1702,6 +1702,11 @@ def _alarm_payload() -> dict:
     now = time.time()
     return {
         "records": records,
+        # Stations whose alarms were left out because this bridge exports
+        # no enabled points from them. Reported rather than silently
+        # dropped, so a station that should be included but has nothing
+        # enabled yet is visible instead of just missing.
+        "other_stations": cached.get("other_stations") or {},
         "summary": cached.get("summary") or {
             "total": 0, "active": 0, "unacked": 0, "highest_priority": None,
         },

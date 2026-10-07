@@ -158,6 +158,7 @@ def main() -> None:
     observation_paths: set[str] = set()
     last_statuses: dict[str, str] = {}
     using_watch = False
+    exported_stations: set[str] = set()
     if last_values:
         logger.info("Loaded %d cached point values from previous session", len(last_values))
 
@@ -190,6 +191,11 @@ def main() -> None:
                 folders_mtime = _get_file_mtime(DEVICE_FOLDERS_FILE)
                 all_points = {pt.path: pt for pt in discovered_points}
                 active_points = filter_enabled(discovered_points, selections)
+                exported_stations = {
+                    station for station in (
+                        alarm_lib.station_of_path(pt.path) for pt in active_points
+                    ) if station
+                }
                 observation_paths = monotonic_paths(
                     load_templates(), load_device_types(),
                 )
@@ -252,6 +258,11 @@ def main() -> None:
             device_folders = load_device_folders()
             enabled_paths = {p for p, e in selections.items() if e.get("enabled", False)}
             active_points = [all_points[p] for p in enabled_paths if p in all_points]
+            exported_stations = {
+                station for station in (
+                    alarm_lib.station_of_path(pt.path) for pt in active_points
+                ) if station
+            }
             del selections
             last_statuses.clear()
             if using_watch:
@@ -315,7 +326,7 @@ def main() -> None:
             "Poll: %d changed, %d failed, %d total", changed, failed, len(updated),
         )
         _write_values_cache(last_values, seq)
-        _poll_alarms(obix, now)
+        _poll_alarms(obix, now, exported_stations)
 
         if mqtt_pub:
             if not obix.connected:
@@ -417,7 +428,7 @@ def _write_history_catalogue(obix: ObixClient) -> None:
     )
 
 
-def _poll_alarms(obix: ObixClient, now: float) -> None:
+def _poll_alarms(obix: ObixClient, now: float, stations: set[str]) -> None:
     """Refresh the cached alarm console.
 
     Failure is reported in the file rather than raised. An unreachable alarm
@@ -434,16 +445,30 @@ def _poll_alarms(obix: ObixClient, now: float) -> None:
         _write_json(ALARMS_FILE, {"ts": now, "error": str(e), "records": []})
         return
 
+    # A Supervisor's console covers every station attached to it, which on
+    # a shared property includes plant belonging to someone else. Keep only
+    # the stations this bridge has enabled points for.
+    records, dropped = alarm_lib.filter_to_stations(records, stations)
     summary = alarm_lib.summarise(records)
     _write_json(ALARMS_FILE, {
         "ts": now,
         "records": [r.to_dict() for r in records],
         "summary": summary,
         "truncated": len(records) >= ALARM_LIMIT,
+        "other_stations": dropped,
     })
-    logger.debug(
-        "Alarms: %d active, %d unacked", summary["active"], summary["unacked"],
-    )
+    if dropped:
+        logger.debug(
+            "Alarms: %d active, %d unacked (%d from stations with no enabled "
+            "points: %s)",
+            summary["active"], summary["unacked"], sum(dropped.values()),
+            ", ".join(sorted(dropped)),
+        )
+    else:
+        logger.debug(
+            "Alarms: %d active, %d unacked",
+            summary["active"], summary["unacked"],
+        )
 
 
 def unwrap_values(raw) -> tuple[dict, int]:
