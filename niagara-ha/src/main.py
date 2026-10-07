@@ -153,7 +153,7 @@ def main() -> None:
     points_mtime = 0.0
     folders_mtime = 0.0
     discovered_count = 0
-    last_values: dict[str, dict] = _load_values_cache()
+    last_values, seq = _load_values_cache()
     observations = load_observations()
     observation_paths: set[str] = set()
     last_statuses: dict[str, str] = {}
@@ -267,16 +267,29 @@ def main() -> None:
         now = time.time()
         changed = 0
         failed = 0
+        # Each reading carries the cycle it last changed in, so the
+        # integration can ask for "everything since 412" and be sent the
+        # dozen points that moved instead of all 1,800 every time.
+        seq += 1
         for pt in updated:
             entry = last_values.get(pt.path)
             if pt.value is not None:
                 val_str = str(pt.value)
-                if entry is None or entry.get("value") != val_str:
+                moved = entry is None or entry.get("value") != val_str
+                if moved:
                     changed += 1
                 last_values[pt.path] = {
                     "value": val_str,
                     "status": pt.status or "ok",
                     "ts": now,
+                    # Freshness changes every cycle; the sequence only moves
+                    # when the reading or its status does. Bumping it on
+                    # every poll would make every delta a full snapshot.
+                    "seq": seq if (
+                        moved
+                        or entry is None
+                        or entry.get("status") != (pt.status or "ok")
+                    ) else entry.get("seq", seq),
                 }
             else:
                 # Read failed. Keep the last good value but mark it faulted and
@@ -284,6 +297,8 @@ def main() -> None:
                 # tell a frozen reading from a fresh one.
                 failed += 1
                 if entry is not None:
+                    if entry.get("status") != "fault":
+                        entry["seq"] = seq
                     entry["status"] = "fault"
 
         _prune_values_cache(last_values, {pt.path for pt in active_points})
@@ -299,7 +314,7 @@ def main() -> None:
         logger.debug(
             "Poll: %d changed, %d failed, %d total", changed, failed, len(updated),
         )
-        _write_values_cache(last_values)
+        _write_values_cache(last_values, seq)
         _poll_alarms(obix, now)
 
         if mqtt_pub:
@@ -431,35 +446,50 @@ def _poll_alarms(obix: ObixClient, now: float) -> None:
     )
 
 
-def _load_values_cache() -> dict[str, dict]:
-    """Load the value cache, upgrading the old flat {path: value} format.
+def unwrap_values(raw) -> tuple[dict, int]:
+    """Read either shape of the value cache. Returns (values, seq).
 
-    Entries are {"value": str, "status": str, "ts": float}. Migrated entries
-    get ts 0.0 so they read as stale until genuinely polled.
+    Three formats have existed: a flat {path: value}, the same with
+    timestamped entries, and the current envelope carrying a sequence.
+    Tolerating all three means a downgrade, or a reader that starts before
+    the first write of a new version, does not see an empty station.
     """
-    try:
-        if not VALUES_FILE.exists():
-            return {}
-        with open(VALUES_FILE) as f:
-            raw = json.load(f)
-    except (json.JSONDecodeError, OSError) as e:
-        logger.debug("Failed to read values cache: %s", e)
-        return {}
-
     if not isinstance(raw, dict):
-        return {}
+        return {}, 0
 
-    migrated = 0
+    seq = 0
+    if "values" in raw and isinstance(raw.get("values"), dict):
+        seq = int(raw.get("seq") or 0)
+        raw = raw["values"]
+
     out: dict[str, dict] = {}
     for path, entry in raw.items():
         if isinstance(entry, dict) and "value" in entry:
             out[path] = entry
         else:
+            # Migrated entries get ts 0.0 so they read as stale until
+            # genuinely polled, rather than claiming to be fresh.
             out[path] = {"value": entry, "status": "unknown", "ts": 0.0}
-            migrated += 1
+    return out, seq
+
+
+def _load_values_cache() -> tuple[dict[str, dict], int]:
+    """Load the value cache and the sequence it had reached."""
+    try:
+        if not VALUES_FILE.exists():
+            return {}, 0
+        with open(VALUES_FILE) as f:
+            raw = json.load(f)
+    except (json.JSONDecodeError, OSError) as e:
+        logger.debug("Failed to read values cache: %s", e)
+        return {}, 0
+
+    values, seq = unwrap_values(raw)
+    migrated = sum(1 for e in values.values() if e.get("status") == "unknown"
+                   and e.get("ts") == 0.0)
     if migrated:
         logger.info("Upgraded %d cached values to the timestamped format", migrated)
-    return out
+    return values, seq
 
 
 def _prune_values_cache(values: dict[str, dict], active_paths: set[str]) -> int:
@@ -477,15 +507,9 @@ def _prune_values_cache(values: dict[str, dict], active_paths: set[str]) -> int:
     return len(stale)
 
 
-def _write_values_cache(values: dict[str, dict]) -> None:
-    try:
-        POINTS_DIR.mkdir(parents=True, exist_ok=True)
-        tmp = VALUES_FILE.with_suffix(".tmp")
-        with open(tmp, "w") as f:
-            json.dump(values, f)
-        tmp.replace(VALUES_FILE)
-    except OSError as e:
-        logger.debug("Failed to write values cache: %s", e)
+def _write_values_cache(values: dict[str, dict], seq: int) -> None:
+    """Persist the cache with the sequence readers compare against."""
+    _write_json(VALUES_FILE, {"seq": seq, "values": values})
 
 
 def _sleep_interruptible(seconds: int) -> None:

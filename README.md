@@ -31,7 +31,11 @@ A native Home Assistant custom integration that reads points from a Niagara stat
 3. Points are discovered automatically from the oBIX tree
 4. Each Niagara folder becomes a separate HA device, with points as entities
 5. HA areas are auto-assigned from the Niagara folder hierarchy
-6. A polling coordinator keeps values updated (configurable interval, default 30s)
+6. Values arrive as they change: the integration holds a request open at
+   the add-on, which answers the moment a reading moves, and sends only
+   what moved. The configured interval (default 30s) becomes the floor for
+   housekeeping — point discovery, alarms, trend imports — and a safety net
+   if the held request fails
 7. Enable/disable individual entities from the HA UI — no config files to edit
 
 ---

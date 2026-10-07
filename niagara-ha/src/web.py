@@ -114,7 +114,13 @@ KNOWN_UNITS = [
 ]
 
 _sel_cache: dict = {"mtime": 0.0, "data": {}}
-_values_cache: dict = {"mtime": 0.0, "data": {}}
+_values_cache: dict = {"mtime": 0.0, "data": {}, "seq": 0}
+
+# How long a value request may be held open waiting for a change. Kept
+# under the integration's own request timeout, and under the 60 seconds
+# that proxies in front of ingress tend to cut a connection at.
+MAX_LONG_POLL_SECONDS = 45.0
+LONG_POLL_TICK_SECONDS = 0.25
 
 
 def _load_selections() -> dict[str, dict]:
@@ -182,16 +188,17 @@ def _points_match_prefix(path: str, prefix_parts: list[str]) -> bool:
     return segs[:len(prefix_parts)] == prefix_parts
 
 
-def _load_values() -> dict[str, dict]:
-    """Return the value cache as {path: {"value", "status", "ts"}}.
+def _read_values_file() -> tuple[dict[str, dict], int]:
+    """The value cache and its sequence, re-read only when the file changes.
 
-    Tolerates the old flat {path: value} format so a downgrade or a
-    half-written file cannot take the UI down.
+    Tolerates both the old flat {path: value} shape and the envelope that
+    carries the sequence, so a downgrade — or a read landing between two
+    versions — cannot take the UI down or show an empty station.
     """
     try:
         mtime = VALUES_FILE.stat().st_mtime
     except OSError:
-        return {}
+        return {}, 0
     if mtime != _values_cache["mtime"]:
         try:
             with open(VALUES_FILE) as f:
@@ -200,13 +207,27 @@ def _load_values() -> dict[str, dict]:
             raw = {}
         if not isinstance(raw, dict):
             raw = {}
+        seq = 0
+        if isinstance(raw.get("values"), dict):
+            seq = int(raw.get("seq") or 0)
+            raw = raw["values"]
         _values_cache["data"] = {
             path: (entry if isinstance(entry, dict) and "value" in entry
                    else {"value": entry, "status": "unknown", "ts": 0.0})
             for path, entry in raw.items()
         }
+        _values_cache["seq"] = seq
         _values_cache["mtime"] = mtime
-    return _values_cache["data"]
+    return _values_cache["data"], _values_cache["seq"]
+
+
+def _load_values() -> dict[str, dict]:
+    """The value cache as {path: {"value", "status", "ts"}}."""
+    return _read_values_file()[0]
+
+
+def _current_seq() -> int:
+    return _read_values_file()[1]
 
 
 def _plain_value(entry: dict | None):
@@ -683,32 +704,90 @@ def integration_points():
 
 @app.route("/api/integration/values")
 def integration_values():
-    """Return current values for all enabled points.
+    """Current values for the enabled points.
 
-    Lightweight endpoint for polling — just path:value pairs.
-    Returns null for points that haven't been polled yet so the
-    integration knows they exist.
+    Three modes, chosen by the query string:
+
+    - bare: every enabled point, as a flat {path: entry} map. This is the
+      shape released integrations expect, so it stays exactly as it was.
+    - `?since=N`: only what has changed since sequence N, wrapped in an
+      envelope carrying the current sequence. On this station that turns a
+      476 KB reply into a few hundred bytes, because a dozen points move in
+      a given cycle and 1,800 do not.
+    - `?wait=S`: hold the request open until something changes, up to S
+      seconds. Latency was previously the sum of two independent polls —
+      the add-on's and Home Assistant's — so a reading could be a minute
+      old before anyone saw it. Holding the request collapses that to the
+      add-on's own interval, using fewer requests rather than more.
     """
     selections = _load_selections()
-    values = _load_values()
+    since = request.args.get("since")
+    wait = request.args.get("wait")
+
+    if wait is not None:
+        try:
+            budget = max(0.0, min(float(wait), MAX_LONG_POLL_SECONDS))
+        except ValueError:
+            return jsonify({"error": "wait must be a number of seconds"}), 400
+        _await_change(int(since or 0), budget)
+
+    values, seq = _read_values_file()
     now = time.time()
 
-    result = {}
-    for entry in selections.values():
-        if not entry.get("enabled", False):
-            continue
-        path = entry.get("path", "")
-        cached = values.get(path)
+    def shape(cached: dict | None) -> dict | None:
         if cached is None:
-            result[path] = None
-            continue
-        result[path] = {
+            return None
+        return {
             "value": cached.get("value"),
             "status": cached.get("status", "unknown"),
             "age": round(now - cached["ts"], 1) if cached.get("ts") else None,
         }
 
-    return jsonify(result)
+    enabled = [
+        entry.get("path", "") for entry in selections.values()
+        if entry.get("enabled", False)
+    ]
+
+    if since is None:
+        return jsonify({path: shape(values.get(path)) for path in enabled})
+
+    try:
+        watermark = int(since)
+    except ValueError:
+        return jsonify({"error": "since must be a sequence number"}), 400
+
+    # A watermark ahead of ours means the add-on restarted and its sequence
+    # went backwards. Sending a delta then would leave the caller holding
+    # readings from before the restart forever, so it gets everything.
+    if watermark > seq:
+        watermark = 0
+
+    changed = {
+        path: shape(values.get(path))
+        for path in enabled
+        if watermark == 0 or (values.get(path) or {}).get("seq", 0) > watermark
+    }
+    return jsonify({
+        "seq": seq,
+        "values": changed,
+        "full": watermark == 0,
+        "total": len(enabled),
+    })
+
+
+def _await_change(since: int, budget: float) -> None:
+    """Block until the value cache moves past `since`, or the budget runs out.
+
+    Polls the file's own sequence rather than watching for an event: the
+    poll loop is a separate process, so there is nothing in here to wait
+    on, and a file stat every quarter second is cheaper than the full
+    re-fetch it replaces.
+    """
+    deadline = time.monotonic() + budget
+    while time.monotonic() < deadline:
+        if _current_seq() > since:
+            return
+        time.sleep(LONG_POLL_TICK_SECONDS)
 
 
 @app.route("/api/templates")
@@ -2039,4 +2118,8 @@ if __name__ == "__main__":
     )
     port = int(os.environ.get("INGRESS_PORT", "8099"))
     logger.info("Starting web UI on port %d", port)
-    app.run(host="0.0.0.0", port=port, debug=False)
+    # Threaded explicitly, not by default: the value endpoint holds a
+    # request open for up to 45 seconds waiting for a change, and on a
+    # single-threaded server that would block the management UI for the
+    # whole of it.
+    app.run(host="0.0.0.0", port=port, debug=False, threaded=True)

@@ -48,8 +48,9 @@ def test_flat_cache_is_migrated(main_module, tmp_path):
     """Old {path: value} entries become timestamped, marked not-yet-polled."""
     (tmp_path / "values.json").write_text(json.dumps({"/a/": "21.5", "/b/": "true"}))
 
-    cache = main_module._load_values_cache()
+    cache, seq = main_module._load_values_cache()
 
+    assert seq == 0
     assert cache["/a/"] == {"value": "21.5", "status": "unknown", "ts": 0.0}
     assert cache["/b/"]["value"] == "true"
     # ts 0.0 reads as ancient, so a migrated value is stale until truly polled.
@@ -60,7 +61,7 @@ def test_rich_entries_pass_through(main_module, tmp_path):
     entry = {"value": "12.0", "status": "ok", "ts": 1750000000.0}
     (tmp_path / "values.json").write_text(json.dumps({"/a/": entry}))
 
-    assert main_module._load_values_cache()["/a/"] == entry
+    assert main_module._load_values_cache()[0]["/a/"] == entry
 
 
 def test_mixed_cache_is_normalised(main_module, tmp_path):
@@ -69,7 +70,7 @@ def test_mixed_cache_is_normalised(main_module, tmp_path):
         "/flat/": "2",
     }))
 
-    cache = main_module._load_values_cache()
+    cache, _ = main_module._load_values_cache()
 
     assert all("value" in e and "ts" in e for e in cache.values())
     assert cache["/flat/"]["status"] == "unknown"
@@ -78,11 +79,11 @@ def test_mixed_cache_is_normalised(main_module, tmp_path):
 @pytest.mark.parametrize("payload", ["not a dict", "[]", "{broken", ""])
 def test_unreadable_cache_yields_empty(main_module, tmp_path, payload):
     (tmp_path / "values.json").write_text(payload)
-    assert main_module._load_values_cache() == {}
+    assert main_module._load_values_cache() == ({}, 0)
 
 
 def test_missing_cache_yields_empty(main_module):
-    assert main_module._load_values_cache() == {}
+    assert main_module._load_values_cache() == ({}, 0)
 
 
 def test_prune_drops_inactive_paths(main_module):
@@ -106,8 +107,41 @@ def test_prune_is_a_no_op_when_all_active(main_module):
 
 def test_round_trip_through_disk(main_module, tmp_path):
     cache = {"/a/": {"value": "21.5", "status": "ok", "ts": 1750000000.0}}
-    main_module._write_values_cache(cache)
-    assert main_module._load_values_cache() == cache
+    main_module._write_values_cache(cache, 7)
+    assert main_module._load_values_cache() == (cache, 7)
+
+
+# -- The change sequence -------------------------------------------------
+#
+# The integration used to re-fetch all 1,800 values every poll because
+# there was no way to ask what had moved. Each reading now carries the
+# cycle it last changed in.
+
+def test_the_sequence_survives_a_restart(main_module, tmp_path):
+    """Resetting it to zero would make every client re-fetch everything."""
+    main_module._write_values_cache({"/a/": {"value": "1", "seq": 412}}, 412)
+    assert main_module._load_values_cache()[1] == 412
+
+
+def test_a_cache_written_before_sequences_reads_as_zero(main_module, tmp_path):
+    (tmp_path / "values.json").write_text(json.dumps({
+        "/a/": {"value": "1", "status": "ok", "ts": 1.0},
+    }))
+    values, seq = main_module._load_values_cache()
+    assert seq == 0 and values["/a/"]["value"] == "1"
+
+
+@pytest.mark.parametrize("raw,expected", [
+    ({"seq": 5, "values": {"/a/": {"value": "1"}}}, 5),
+    ({"/a/": {"value": "1"}}, 0),
+    ({"seq": 5}, 0),
+])
+def test_both_cache_shapes_are_understood(main_module, raw, expected):
+    """A reader starting before the first write of a new version must not
+    see an empty station."""
+    values, seq = main_module.unwrap_values(raw)
+    assert seq == expected
+    assert "/a/" in values or raw == {"seq": 5}
 
 
 # -- Fast points.yaml writer ---------------------------------------------

@@ -3,6 +3,46 @@
 The add-on and the Home Assistant integration are released as a matched
 pair and share a version number. CI fails the build if they drift.
 
+## 3.20.0 — 2026-10-07
+
+- **Feature**: Values reach Home Assistant in one hop instead of two.
+  Latency was the sum of two independent polls — the add-on's reading of
+  the station and the integration's reading of the add-on — so a reading
+  could be the better part of a minute old before any dashboard saw it,
+  and nothing could push. The integration now holds a request open at the
+  add-on, which returns as soon as something changes. That removes the
+  second poll's share of the delay entirely and uses *fewer* requests, not
+  more.
+
+- **Feature**: Each reading carries the cycle it last changed in, so the
+  integration asks for "everything since 412" and is sent the dozen points
+  that moved rather than all 1,800. On this station that is a 476 KB reply
+  becoming a few hundred bytes, every poll, all day.
+
+  The sequence only advances when a reading or its status does. Freshness
+  changes every cycle, and bumping it on every poll would have made every
+  delta a full snapshot again.
+
+- **Compatibility**: A request without `since` or `wait` returns exactly
+  the shape it always did, so an integration from before this release
+  keeps working. In the other direction, an integration that asks a
+  too-old add-on for changes gets a reply with no sequence in it, says so
+  once in the log, and falls back to interval polling rather than turning
+  the attempt into a hot loop of full fetches. A watermark higher than the
+  add-on's own — which happens when the add-on restarts — is answered with
+  everything, because a delta would otherwise leave the caller holding
+  pre-restart readings forever.
+
+- **Fix**: The web server is now explicitly threaded. It was threaded by
+  default, but a held request occupies a worker for up to 45 seconds and
+  that must not be left to a default.
+
+- **Internal**: The listener notifies entities directly rather than through
+  `async_set_updated_data`, which reschedules the refresh — on a station
+  where something moves every few seconds that would have deferred the
+  periodic housekeeping (discovery, alarms, repairs, trend imports)
+  indefinitely. 385 add-on tests, 211 integration.
+
 ## 3.19.0 — 2026-10-07
 
 - **Feature**: Trend logs. The station has always stored them and the

@@ -5,6 +5,7 @@ current values. The add-on handles the oBIX connection, point discovery,
 and management UI; this coordinator just creates native HA entities.
 """
 
+import asyncio
 import hashlib
 import logging
 import re
@@ -36,6 +37,12 @@ _LOGGER = logging.getLogger(__name__)
 _NIAGARA_ESCAPE_RE = re.compile(r"\$([0-9a-fA-F]{2})")
 
 POINT_REFRESH_INTERVAL = 10
+
+# How long the add-on may hold a value request open. Under its own 45s
+# ceiling, so the add-on is the one that decides when to answer.
+LONG_POLL_SECONDS = 40.0
+LISTEN_BACKOFF_START = 2
+LISTEN_BACKOFF_MAX = 60
 
 
 def decode_niagara_name(name: str) -> str:
@@ -133,6 +140,11 @@ class NiagaraCoordinator(DataUpdateCoordinator[dict[str, NiagaraPoint]]):
         self.alarms_supported = False
         self.history_sync = None
         self._last_history_sync = 0.0
+        # The value cache sequence this coordinator has caught up to, and
+        # the task holding a request open waiting for the next change.
+        self._value_seq = 0
+        self._listener_task: asyncio.Task | None = None
+        self._listener_supported = True
         self._session: aiohttp.ClientSession | None = None
         self._poll_count = 0
 
@@ -245,20 +257,7 @@ class NiagaraCoordinator(DataUpdateCoordinator[dict[str, NiagaraPoint]]):
             await self._async_fetch_alarms()
 
             values = await self._fetch_values()
-            for path, entry in values.items():
-                point = self.points.get(path)
-                if point is None:
-                    continue
-                if isinstance(entry, dict):
-                    val = entry.get("value")
-                    point.value = str(val) if val is not None else None
-                    point.status = entry.get("status")
-                    point.age = entry.get("age")
-                else:
-                    # Add-on predating the timestamped format.
-                    point.value = str(entry) if entry is not None else None
-                    point.status = None
-                    point.age = None
+            self._apply_values(values)
             return self.points
         except Exception as err:
             raise UpdateFailed(f"Error polling add-on: {err}") from err
@@ -487,7 +486,12 @@ class NiagaraCoordinator(DataUpdateCoordinator[dict[str, NiagaraPoint]]):
         }
 
     async def _fetch_values(self) -> dict[str, Any]:
-        """Fetch current values from the add-on (lightweight poll)."""
+        """Every current value from the add-on.
+
+        The full fetch, used by the scheduled refresh. The listener below
+        asks for changes only; this one stays whole so a refresh always
+        reconciles, whatever the listener has or has not seen.
+        """
         url = f"{self.addon_url}/api/integration/values"
         try:
             session = self._get_session()
@@ -496,6 +500,112 @@ class NiagaraCoordinator(DataUpdateCoordinator[dict[str, NiagaraPoint]]):
                 return await resp.json()
         except aiohttp.ClientError as err:
             raise UpdateFailed(f"Cannot reach add-on at {url}: {err}") from err
+
+    def _apply_values(self, values: dict[str, Any]) -> int:
+        """Write fetched readings onto the points. Returns how many moved."""
+        changed = 0
+        for path, entry in values.items():
+            point = self.points.get(path)
+            if point is None:
+                continue
+            if isinstance(entry, dict):
+                raw = entry.get("value")
+                new_value = str(raw) if raw is not None else None
+                status = entry.get("status")
+                age = entry.get("age")
+            else:
+                # An add-on predating the timestamped format.
+                new_value = str(entry) if entry is not None else None
+                status, age = None, None
+            if (point.value, point.status) != (new_value, status):
+                changed += 1
+            point.value = new_value
+            point.status = status
+            point.age = age
+        return changed
+
+    async def _fetch_value_changes(self, wait: float) -> dict[str, Any] | None:
+        """Hold a request open until something changes, then take the delta.
+
+        None means the add-on does not support it — an older one answers
+        with the flat map and no sequence, and the caller stops listening
+        rather than turning this into a hot loop of full fetches.
+        """
+        url = f"{self.addon_url}/api/integration/values"
+        params = {"since": str(self._value_seq), "wait": str(wait)}
+        session = self._get_session()
+        async with session.get(
+            url, params=params,
+            # Comfortably past the add-on's own ceiling on how long it
+            # will hold the request, so a timeout here means something is
+            # actually wrong rather than the hold working as intended.
+            timeout=aiohttp.ClientTimeout(total=wait + 30),
+        ) as resp:
+            resp.raise_for_status()
+            payload = await resp.json()
+        if not isinstance(payload, dict) or "seq" not in payload:
+            return None
+        return payload
+
+    async def _async_listen(self) -> None:
+        """Keep the entities current without waiting for the next refresh.
+
+        Latency used to be the sum of two independent polls — the add-on's
+        and this one's — so a reading could be the better part of a minute
+        old before any dashboard saw it. This holds a request open at the
+        add-on instead, which collapses the second poll's share of that to
+        nothing and sends fewer requests, not more.
+
+        Listeners are notified directly rather than through
+        async_set_updated_data, which reschedules the refresh: on a station
+        where something changes every few seconds that would defer the
+        periodic housekeeping — point discovery, alarms, repairs, trend
+        imports — indefinitely.
+        """
+        backoff = LISTEN_BACKOFF_START
+        while True:
+            try:
+                payload = await self._fetch_value_changes(LONG_POLL_SECONDS)
+            except asyncio.CancelledError:
+                raise
+            except (aiohttp.ClientError, TimeoutError, ValueError) as err:
+                _LOGGER.debug("Value listener retrying after %s", err)
+                await asyncio.sleep(backoff)
+                backoff = min(backoff * 2, LISTEN_BACKOFF_MAX)
+                continue
+
+            backoff = LISTEN_BACKOFF_START
+
+            if payload is None:
+                self._listener_supported = False
+                _LOGGER.info(
+                    "The add-on does not serve value changes; falling back to "
+                    "polling every %ss. Update the add-on to match this "
+                    "integration for faster updates.", self.scan_interval,
+                )
+                return
+
+            self._value_seq = int(payload.get("seq") or 0)
+            if self._apply_values(payload.get("values") or {}):
+                self.async_update_listeners()
+
+    def async_start_listener(self) -> None:
+        """Begin listening for value changes, if not already."""
+        if self._listener_task is not None and not self._listener_task.done():
+            return
+        self._listener_task = self.hass.async_create_background_task(
+            self._async_listen(), name=f"{DOMAIN}-value-listener",
+        )
+
+    async def async_stop_listener(self) -> None:
+        if self._listener_task is None:
+            return
+        self._listener_task.cancel()
+        try:
+            await self._listener_task
+        except asyncio.CancelledError:
+            pass
+        self._listener_task = None
 
     def _clean_path_parts(self, path: str) -> list[str]:
         return [p for p in path.strip("/").split("/") if p not in SKIP_SEGMENTS]
@@ -559,5 +669,6 @@ class NiagaraCoordinator(DataUpdateCoordinator[dict[str, NiagaraPoint]]):
 
     async def async_shutdown(self) -> None:
         """Clean up on unload."""
+        await self.async_stop_listener()
         if self._session and not self._session.closed:
             await self._session.close()
