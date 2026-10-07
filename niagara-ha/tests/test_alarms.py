@@ -394,3 +394,155 @@ def test_an_alarm_class_is_itself_a_subject():
         if "obix:AlarmSubject" in (c.get("is") or "")
     ]
     assert "defaultAlarmClass" in classes
+
+
+# -- Niagara's real record shape ----------------------------------------
+#
+# Taken verbatim from a station. It carries no <ref name="source"> at all:
+# the source is a "Station:PointName" string, the ack fields are absent,
+# and the transition is stated in fromState/toState. Reading only the
+# spec's shape gave 25 alarms with an empty source — they parsed cleanly
+# and were useless.
+
+NIAGARA_QUERY = xml(f"""
+<obj {NS} is="obix:AlarmQueryOut">
+ <list name="data" of="obix:Alarm">
+  <obj href="/obix/alarm/3320d258" display=""
+       is="obix:Alarm obix:AckAlarm obix:PointAlarm obix:StatefulAlarm">
+   <op name="ack" href="/obix/alarm/3320d258/ack"
+       in="obix:AlarmAckIn" out="obix:AlarmAckOut"/>
+   <bool name="alarmValue" val="true"/>
+   <abstime name="normalTimestamp" val="2026-10-05T13:27:07.031+11:00"/>
+   <abstime name="timestamp" val="2026-10-05T13:21:33.805+11:00"/>
+   <int name="priority" val="255"/>
+   <str name="alarmClass" val="defaultAlarmClass"/>
+   <str name="presentValue" val="OK"/>
+   <str name="fromState" val="offnormal"/>
+   <str name="toState" val="normal"/>
+   <str name="offnormalValue" val="FAULT"/>
+   <str name="msgText" val=""/>
+   <str name="sourceName" val="SiteJace1:PAC_3_5_Flt"/>
+   <str name="sourceStation" val="SiteES"/>
+  </obj>
+  <obj href="/obix/alarm/99beef" is="obix:Alarm obix:PointAlarm">
+   <abstime name="timestamp" val="2026-10-07T06:00:00.000+11:00"/>
+   <int name="priority" val="10"/>
+   <str name="alarmClass" val="Critical"/>
+   <str name="fromState" val="normal"/>
+   <str name="toState" val="offnormal"/>
+   <str name="offnormalValue" val="HIGH"/>
+   <str name="msgText" val="Tank 1 level high"/>
+   <str name="sourceName" val="SiteJace2:DCW_Tank1_High_Alm"/>
+   <str name="sourceStation" val="SiteES"/>
+  </obj>
+ </list>
+</obj>
+""")
+
+
+def test_the_source_comes_from_the_name_when_there_is_no_ref():
+    """The bug: 25 alarms parsed with an empty source and no way to place
+    any of them on a device."""
+    first = records(NIAGARA_QUERY)[0]
+    assert first.source_name == "PAC_3_5_Flt"
+    assert first.source_station == "SiteJace1"
+
+
+def test_the_reporting_station_is_kept_apart_from_the_points_station():
+    """sourceStation is the station holding the alarm database — on a
+    Supervisor that is not the station the point is on. Placing an alarm
+    on a device needs the latter, and the two routinely differ."""
+    first = records(NIAGARA_QUERY)[0]
+    assert first.source_station == "SiteJace1"   # where the point lives
+    assert first.reported_by == "SiteES"         # where the alarm is stored
+
+
+def test_the_reporting_station_is_the_fallback_when_the_name_has_no_colon():
+    elem = xml(f"""
+    <obj {NS} is="obix:Alarm">
+      <abstime name="timestamp" val="2026-10-07T09:00:00Z"/>
+      <str name="sourceName" val="JustAPoint"/>
+      <str name="sourceStation" val="SiteES"/>
+    </obj>
+    """)
+    parsed = alarms.parse_alarm(elem)
+    assert parsed.source_name == "JustAPoint"
+    assert parsed.source_station == "SiteES"
+
+
+@pytest.mark.parametrize("raw,expected", [
+    ("SiteJace1:PAC_3_5_Flt", ("SiteJace1", "PAC_3_5_Flt")),
+    ("PAC_3_5_Flt", ("", "PAC_3_5_Flt")),
+    ("Jace:Folder:Point", ("Jace", "Folder:Point")),
+    ("", ("", "")),
+    ("  Jace:Pt  ", ("Jace", "Pt")),
+])
+def test_source_names_split_on_the_first_colon_only(raw, expected):
+    assert alarms.split_source_name(raw) == expected
+
+
+def test_the_transition_decides_whether_an_alarm_is_over():
+    """toState is the station saying it outright, which beats inferring it."""
+    done, live = records(NIAGARA_QUERY)
+    assert done.active is False
+    assert live.active is True
+
+
+def test_an_alarm_with_no_normal_timestamp_is_active_by_its_state():
+    """The second record has no normalTimestamp at all, so the old rule
+    would have called it active for the right reason by accident. This
+    checks the state is what decides."""
+    live = records(NIAGARA_QUERY)[1]
+    assert live.to_state == "offnormal"
+    assert live.normal_timestamp == ""
+    assert live.active is True
+
+
+def test_a_state_of_normal_ends_an_alarm_even_with_no_timestamp():
+    elem = xml(f"""
+    <obj {NS} is="obix:Alarm">
+      <abstime name="timestamp" val="2026-10-07T09:00:00Z"/>
+      <str name="sourceName" val="J1:Pt"/>
+      <str name="toState" val="normal"/>
+    </obj>
+    """)
+    assert alarms.parse_alarm(elem).active is False
+
+
+def test_the_offnormal_value_is_kept_not_the_bare_boolean():
+    """alarmValue is just "it alarmed"; offnormalValue says what it read."""
+    first = records(NIAGARA_QUERY)[0]
+    assert first.alarm_value == "FAULT"
+    assert first.present_value == "OK"
+
+
+def test_the_operators_message_is_carried():
+    live = records(NIAGARA_QUERY)[1]
+    assert live.message == "Tank 1 level high"
+    assert live.alarm_class == "Critical"
+
+
+def test_a_record_with_no_ack_fields_reads_as_unacknowledged():
+    """Niagara sends no ackState on these. Claiming they were acknowledged
+    would be the one error here with operational consequences."""
+    assert all(not r.acked for r in records(NIAGARA_QUERY))
+
+
+def test_niagara_records_are_recognised_as_alarms_at_all():
+    """They carry no <ref name="source">, which the first version required."""
+    assert len(records(NIAGARA_QUERY)) == 2
+
+
+def test_the_summary_counts_the_live_one_only():
+    summary = alarms.summarise(records(NIAGARA_QUERY))
+    assert summary["total"] == 2
+    assert summary["active"] == 1
+    assert summary["unacked"] == 1
+    assert summary["highest_priority"] == 10
+
+
+def test_the_spec_shape_still_parses():
+    """A station that does send a source ref must not regress."""
+    first = records(QUERY_OUT)[0]
+    assert first.source.endswith("/AHU1/Trip/")
+    assert first.source_name == "AHU-1 Fire Trip"

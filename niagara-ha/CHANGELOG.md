@@ -3,6 +3,36 @@
 The add-on and the Home Assistant integration are released as a matched
 pair and share a version number. CI fails the build if they drift.
 
+## 3.23.0 — 2026-10-07
+
+- **Fix**: Alarms can be attributed to a device. Every alarm on this
+  station parsed cleanly with an empty source and was therefore useless:
+  the oBIX spec puts the source in a `<ref name="source">` pointing at the
+  point, and Niagara sends no ref at all — a `sourceName` string of
+  `"Station:PointName"`. Both shapes are now read.
+
+  `sourceStation` is kept separately as `reported_by`, because on a
+  Supervisor it names the station holding the alarm database rather than
+  the station the point is on, and placing an alarm needs the latter.
+
+- **Fix**: Whether an alarm is over comes from Niagara's own `toState`
+  where it is given, which is the station saying it outright, rather than
+  being inferred from the presence of a normalTimestamp.
+
+- **Feature**: An alarm now carries the operator's message text, its alarm
+  class, the off-normal value it reached and the value it reads now. The
+  message and a non-default class reach the entity attributes; an empty
+  message and `defaultAlarmClass` on every row are left out as noise.
+
+- **Fix**: Alarms are placed on devices once per fetch instead of on every
+  entity read. Every published device's alarm sensor reads that mapping on
+  every state update, and the name lookup walks the whole point list.
+
+  A point name that several devices share maps to nothing rather than to
+  whichever was indexed first: a hundred rooms have a point called `Alarm`,
+  and attaching an alarm to the wrong room is worse than leaving it at
+  station level.
+
 ## 3.22.0 — 2026-10-07
 
 - **Feature**: `water_tank` template — up to four storage tanks with their

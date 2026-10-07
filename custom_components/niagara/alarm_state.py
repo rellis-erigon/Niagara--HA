@@ -17,7 +17,7 @@ ATTRIBUTE_LIMIT = 20
 
 def alarm_detail(record: dict) -> dict[str, Any]:
     """One alarm, trimmed to what is worth carrying in an attribute."""
-    return {
+    detail = {
         "source": record.get("source_name") or record.get("source") or "",
         "path": record.get("source") or "",
         "time": record.get("timestamp") or "",
@@ -25,6 +25,18 @@ def alarm_detail(record: dict) -> dict[str, Any]:
         "priority": record.get("priority"),
         "value": record.get("alarm_value") or "",
     }
+    # Only when the station actually said something. An empty message or a
+    # default alarm class on every row is noise in a dashboard attribute.
+    message = (record.get("message") or "").strip()
+    if message:
+        detail["message"] = message
+    alarm_class = (record.get("alarm_class") or "").strip()
+    if alarm_class and alarm_class != "defaultAlarmClass":
+        detail["alarm_class"] = alarm_class
+    station = (record.get("source_station") or "").strip()
+    if station:
+        detail["station"] = station
+    return detail
 
 
 def by_priority(records: list[dict]) -> list[dict]:

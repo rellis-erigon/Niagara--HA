@@ -35,11 +35,12 @@ HOST = "http://addon:8099"
 
 
 def alarm(source, ts="2026-10-07T08:00:00+10:00", priority=None,
-          acked=False, uri=None, name="", value="true"):
+          acked=False, uri=None, name="", value="true", station=""):
     return {
         "uri": uri or f"/obix/alarms/{source.strip('/').replace('/', '-')}/",
         "source": source,
         "source_name": name or source.rstrip("/").split("/")[-1],
+        "source_station": station,
         "timestamp": ts,
         "normal_timestamp": "",
         "ack_state": "acked" if acked else "unacked",
@@ -63,6 +64,10 @@ def coordinator(points=(), alarms=(), supported=True):
     coord.area_depth = 1
     coord.stale_after = 90
     coord.data = {p.path: p for p in points}
+    coord._alarms_by_group = {}
+    # Through the real path rather than setting the index by hand: the
+    # placement is the part worth testing.
+    coord._index_alarms()
     return coord
 
 
@@ -374,3 +379,135 @@ def test_the_device_flag_stays_available_when_its_points_fault():
     coord.data = {}
     assert entity.available is True
     assert entity.is_on is True
+
+
+# -- Placing an alarm that names no path --------------------------------
+#
+# Niagara's alarm records carry no source href at all: just
+# "Station:PointName". Every alarm on this station arrived that way, so
+# none of them could be placed on a device until this existed.
+
+JACE = "/config/Drivers/NiagaraNetwork/SiteJace1/points"
+
+STATION_POINTS = [
+    NiagaraPoint(path=f"{JACE}/HVAC/AHU1/FanSts/", name="FanSts",
+                 group="SiteJace1/HVAC/AHU1", slot="supply_fan_status",
+                 device_type="ahu"),
+    NiagaraPoint(path=f"{JACE}/HVAC/AHU1/Trip/", name="PAC_3_5_Flt",
+                 group="SiteJace1/HVAC/AHU1", slot="alarm",
+                 device_type="ahu"),
+    NiagaraPoint(path="/config/Drivers/NiagaraNetwork/SiteJace2/points/"
+                      "MISC/HYD/Tank1Lvl/", name="DCW_Tank1_High_Alm",
+                 group="SiteJace2/MISC/HYD", slot="tank1_high_alarm",
+                 device_type="water_tank"),
+]
+
+
+def named_alarm(name, station="", **extra):
+    return {
+        "uri": f"/obix/alarm/{name}", "source": "",
+        "source_name": name, "source_station": station,
+        "timestamp": "2026-10-07T08:00:00+11:00", "active": True,
+        "acked": False, "priority": 255, **extra,
+    }
+
+
+def test_an_alarm_named_by_point_lands_on_its_device():
+    coord = coordinator(STATION_POINTS, [named_alarm("PAC_3_5_Flt", "SiteJace1")])
+    assert list(coord.alarms_by_group()) == ["SiteJace1/HVAC/AHU1"]
+
+
+def test_the_station_in_the_name_picks_between_two_stations():
+    coord = coordinator(
+        STATION_POINTS, [named_alarm("DCW_Tank1_High_Alm", "SiteJace2")],
+    )
+    assert list(coord.alarms_by_group()) == ["SiteJace2/MISC/HYD"]
+
+
+def test_a_name_with_no_station_still_places_when_it_is_unambiguous():
+    coord = coordinator(STATION_POINTS, [named_alarm("PAC_3_5_Flt")])
+    assert list(coord.alarms_by_group()) == ["SiteJace1/HVAC/AHU1"]
+
+
+def test_a_name_many_devices_share_is_left_station_level():
+    """A hundred rooms have a point called Alarm. Attaching it to whichever
+    was indexed first would be worse than not attaching it."""
+    rooms = [
+        NiagaraPoint(path=f"{JACE}/Rooms/R{n}/Alarm/", name="Alarm",
+                     group=f"SiteJace1/Rooms/R{n}", slot="alarm",
+                     device_type="fcu")
+        for n in range(1, 4)
+    ]
+    coord = coordinator(rooms, [named_alarm("Alarm", "SiteJace1")])
+    assert coord.alarms_by_group() == {}
+
+
+def test_a_name_nothing_matches_is_left_station_level():
+    coord = coordinator(STATION_POINTS, [named_alarm("NoSuchPoint", "SiteJace1")])
+    assert coord.alarms_by_group() == {}
+
+
+def test_the_wrong_station_does_not_place_an_alarm_on_a_namesake():
+    """SiteJace2 has no PAC_3_5_Flt. The unqualified fallback finds the one
+    on Jace1, which is the right call — there is only one of them — but it
+    must be the fallback, not the first thing tried."""
+    coord = coordinator(STATION_POINTS, [named_alarm("PAC_3_5_Flt", "SiteJace9")])
+    assert list(coord.alarms_by_group()) == ["SiteJace1/HVAC/AHU1"]
+
+
+def test_niagara_escapes_in_a_point_name_are_decoded_before_matching():
+    points = [NiagaraPoint(path=f"{JACE}/Rooms/A/$33$33/", name="$33$33",
+                           group="SiteJace1/Rooms/A", slot="alarm",
+                           device_type="fcu")]
+    coord = coordinator(points, [named_alarm("33", "SiteJace1")])
+    assert list(coord.alarms_by_group()) == ["SiteJace1/Rooms/A"]
+
+
+def test_the_index_is_built_once_not_per_entity_read():
+    """Every device's alarm sensor reads this on every state update, and
+    the lookup walks the point list."""
+    coord = coordinator(STATION_POINTS, [named_alarm("PAC_3_5_Flt", "SiteJace1")])
+    first = coord.alarms_by_group()
+    assert coord.alarms_by_group() is first
+
+
+def test_a_path_source_still_wins_over_the_name():
+    """A station that sends a real href should not be second-guessed."""
+    coord = coordinator(STATION_POINTS, [{
+        **named_alarm("PAC_3_5_Flt", "SiteJace1"),
+        "source": f"{JACE}/HVAC/AHU1/FanSts/",
+    }])
+    assert list(coord.alarms_by_group()) == ["SiteJace1/HVAC/AHU1"]
+
+
+def test_the_station_is_read_out_of_the_point_path():
+    from custom_components.niagara.coordinator import NiagaraCoordinator as C
+
+    assert C._station_of(f"{JACE}/HVAC/AHU1/Trip/") == "sitejace1"
+    assert C._station_of("/config/points/Loose/") == ""
+
+
+def test_an_alarms_message_and_class_reach_the_attributes():
+    from custom_components.niagara.alarm_state import alarm_detail
+
+    detail = alarm_detail({
+        "source_name": "DCW_Tank1_High_Alm", "source_station": "SiteJace2",
+        "message": "Tank 1 level high", "alarm_class": "Critical",
+        "timestamp": "2026-10-07T08:00:00+11:00", "priority": 10,
+    })
+    assert detail["message"] == "Tank 1 level high"
+    assert detail["alarm_class"] == "Critical"
+    assert detail["station"] == "SiteJace2"
+
+
+def test_an_empty_message_and_the_default_class_are_left_out():
+    """Every row on this station carries both; repeating them is noise."""
+    from custom_components.niagara.alarm_state import alarm_detail
+
+    detail = alarm_detail({
+        "source_name": "PAC_3_5_Flt", "message": "",
+        "alarm_class": "defaultAlarmClass", "source_station": "",
+    })
+    assert "message" not in detail
+    assert "alarm_class" not in detail
+    assert "station" not in detail

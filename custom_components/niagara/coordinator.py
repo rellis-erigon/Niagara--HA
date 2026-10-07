@@ -138,6 +138,11 @@ class NiagaraCoordinator(DataUpdateCoordinator[dict[str, NiagaraPoint]]):
         self.alarms: list[dict] = []
         self.alarm_summary: dict = {}
         self.alarms_supported = False
+        # Alarms placed on their devices, rebuilt whenever the console or
+        # the point list changes. Not computed on demand: every device's
+        # alarm sensor reads it on every state update, and the lookup walks
+        # the point list.
+        self._alarms_by_group: dict[str, list[dict]] = {}
         self.history_sync = None
         self._last_history_sync = 0.0
         # The value cache sequence this coordinator has caught up to, and
@@ -248,6 +253,7 @@ class NiagaraCoordinator(DataUpdateCoordinator[dict[str, NiagaraPoint]]):
                         pt.value = self.points[path].value
                 self.points = new_points
                 self.device_folders = data["device_folders"]
+                self._index_alarms()
                 self._purge_orphaned_entities()
                 # Point list refreshes are infrequent, and a device only
                 # becomes published between two of them, so this is the
@@ -386,40 +392,89 @@ class NiagaraCoordinator(DataUpdateCoordinator[dict[str, NiagaraPoint]]):
         self.alarms_supported = bool(payload.get("supported"))
         self.alarms = payload.get("records") or []
         self.alarm_summary = payload.get("summary") or {}
+        self._index_alarms()
 
-    def _group_for_source(self, source: str) -> str | None:
-        """The device group an alarm's source point belongs to.
+    def _build_point_indexes(self) -> tuple[dict, dict]:
+        """Lookups from an alarm's source to a device group.
 
-        The source is matched exactly where the point is one we export. When
-        it is not — an alarm often sits on a point nobody enabled — the
-        point's folder is matched against the folders of points we do have,
-        which covers the common case of an alarm extension beside exported
-        siblings. An alarm that still cannot be placed stays station-level
-        rather than being attached to the wrong device.
+        Two, because an alarm names its source two different ways. By
+        folder, for a source given as a path — an alarm often sits on a
+        point nobody enabled, so the folder of its exported siblings is
+        what places it. And by (station, point name), because Niagara's
+        alarm records carry no path at all, only "Station:PointName".
+
+        A name claimed by points in more than one group maps to None
+        rather than to whichever was seen first: on this station a hundred
+        rooms have a point called the same thing, and attaching an alarm to
+        the wrong room is worse than leaving it station-level.
         """
-        if not source:
-            return None
-        point = self.points.get(source)
-        if point is not None:
-            return point.group
+        by_folder: dict[str, str] = {}
+        by_name: dict[tuple[str, str], str | None] = {}
+        for point in self.points.values():
+            folder = _parent_path(point.path)
+            if folder:
+                by_folder.setdefault(folder, point.group)
 
-        folder = _parent_path(source)
-        if not folder:
+            name = decode_niagara_name(point.name).lower()
+            if not name:
+                continue
+            for station in ("", self._station_of(point.path)):
+                key = (station, name)
+                if key in by_name and by_name[key] != point.group:
+                    by_name[key] = None
+                else:
+                    by_name.setdefault(key, point.group)
+        return by_folder, by_name
+
+    @staticmethod
+    def _station_of(path: str) -> str:
+        """The Niagara station a point path sits under, lowercased."""
+        parts = [p for p in path.strip("/").split("/") if p]
+        for marker in ("niagaranetwork", "drivers"):
+            for index, part in enumerate(parts):
+                if part.lower() == marker and index + 1 < len(parts):
+                    return decode_niagara_name(parts[index + 1]).lower()
+        return ""
+
+    def _index_alarms(self) -> None:
+        """Place each alarm on a device, once per fetch."""
+        grouped: dict[str, list[dict]] = {}
+        if self.alarms:
+            by_folder, by_name = self._build_point_indexes()
+            for record in self.alarms:
+                group = self._place_alarm(record, by_folder, by_name)
+                if group is not None:
+                    grouped.setdefault(group, []).append(record)
+        self._alarms_by_group = grouped
+
+    def _place_alarm(self, record: dict, by_folder: dict, by_name: dict):
+        """The device group an alarm belongs to, or None if it cannot be
+        placed. An alarm that cannot be placed stays station-level rather
+        than being attached to the wrong device."""
+        source = record.get("source") or ""
+        if source:
+            point = self.points.get(source)
+            if point is not None:
+                return point.group
+            folder = _parent_path(source)
+            if folder and folder in by_folder:
+                return by_folder[folder]
+
+        name = (record.get("source_name") or "").strip().lower()
+        if not name:
             return None
-        for candidate in self.points.values():
-            if _parent_path(candidate.path) == folder:
-                return candidate.group
+        station = (record.get("source_station") or "").strip().lower()
+        # The station-qualified name first: it is the more specific claim,
+        # and it is what separates one room's fault point from a hundred
+        # identically named ones elsewhere.
+        for key in ((station, name), ("", name)):
+            if key in by_name:
+                return by_name[key]
         return None
 
     def alarms_by_group(self) -> dict[str, list[dict]]:
         """Active alarms keyed by the device group they belong to."""
-        grouped: dict[str, list[dict]] = {}
-        for record in self.alarms:
-            group = self._group_for_source(record.get("source", ""))
-            if group is None:
-                continue
-            grouped.setdefault(group, []).append(record)
-        return grouped
+        return self._alarms_by_group
 
     def alarm_entity_unique_ids(self) -> set[str]:
         """Unique ids of the alarm entities, which are not keyed on a point.
