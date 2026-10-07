@@ -47,17 +47,28 @@ slots:
       min: -40
       max: 30
 
+# The cabinet drawing, then anything the drawing does not show. The
+# faceplate defaults to a two-door under-bench fridge because that is the
+# commonest unit in a kitchen; change it per device in the add-on to the
+# shape actually in the room — walk-in, upright, or a different door and
+# drawer count. Freezers take the matching -freezer faceplate, which is
+# the same drawing in a colder palette and against a colder band.
 card:
-  type: entities
-  title: "{{device_name}}"
-  entities:
-    - entity: "{{slot.temperature}}"
-      name: Temperature
-    - entity: "{{slot.setpoint}}"
-      name: Setpoint
-    - entity: "{{slot.door}}"
-      name: Door
-    - entity: "{{slot.compressor}}"
-      name: Compressor
-    - entity: "{{slot.alarm}}"
-      name: Alarm
+  type: vertical-stack
+  cards:
+    - type: custom:plant-equipment-card
+      faceplate: underbench-fridge
+      title: "{{device_name}}"
+      options:
+        doors: 2
+        drawers: 0
+      entities:
+        temperature: "{{slot.temperature}}"
+        setpoint: "{{slot.setpoint}}"
+        door: "{{slot.door}}"
+        compressor: "{{slot.compressor}}"
+        alarm: "{{slot.alarm}}"
+    - type: entities
+      entities:
+        - entity: "{{slot.alarm}}"
+          name: Alarm

@@ -3,6 +3,22 @@
 The add-on and the Home Assistant integration are released as a matched
 pair and share a version number. CI fails the build if they drift.
 
+## 3.21.0 — 2026-10-07
+
+- **Feature**: The `fridge` template now draws a cabinet instead of listing
+  sensors. Six new faceplates in the cards repo — under-bench (1-6 doors,
+  1-8 drawers), walk-in and upright, each in a fridge and a freezer
+  variant. The template defaults to a two-door under-bench fridge, which
+  is the commonest unit in a kitchen; change it per device to the shape
+  actually in the room.
+
+  Doors and drawers are drawn to identify the cabinet, not bound
+  separately: a real unit has one door switch covering the whole thing.
+
+- **Fix**: The alarm probe keeps the raw reply even when records parse. A
+  record that parses but comes back with no source looks like success from
+  the probe, and is the harder of the two problems to diagnose.
+
 ## 3.20.1 — 2026-10-07
 
 Both found by the probes added in 3.18.0 and 3.19.0, on first contact with
