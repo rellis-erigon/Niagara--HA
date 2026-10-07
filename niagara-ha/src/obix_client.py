@@ -489,12 +489,13 @@ class ObixClient:
         report["summary"] = alarms.summarise(records)
         if records:
             report["sample"] = [r.to_dict() for r in records[:3]]
-        else:
-            # Nothing parsed. The raw reply is the only way to tell an empty
-            # console from a shape the parser does not handle.
-            raw = ET.tostring(root, encoding="unicode")
-            report["raw"] = raw[:4000]
-            report["raw_truncated"] = len(raw) > 4000
+
+        # The raw reply always, not only when nothing parsed. A record that
+        # parses but comes back with no source is the harder problem of the
+        # two, and it looks like success from here.
+        raw = ET.tostring(root, encoding="unicode")
+        report["raw"] = raw[:4000]
+        report["raw_truncated"] = len(raw) > 4000
         return report
 
     # -- Histories -----------------------------------------------------
