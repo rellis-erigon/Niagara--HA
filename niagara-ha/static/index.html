@@ -2740,6 +2740,7 @@ async function openDeviceConfig(group) {
                 + `${esc(f.name)}${f.emulates ? ' — ' + esc(f.emulates) : ''}</option>`
               ).join('')}
             </select>
+            <div id="faceplate-options"></div>
           </div>` : ''}
         <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:18px">
           <button class="btn" onclick="closeModal()">Cancel</button>
@@ -2750,6 +2751,60 @@ async function openDeviceConfig(group) {
 
   const displaySelect = $('#display-select');
   if (displaySelect) displaySelect.value = detail.display || faces.display || 'both';
+
+  // A parametric faceplate is the same drawing at different shapes — a
+  // cabinet's door count, a tank farm's tank count — and which shape a
+  // device is belongs to the device, not to its type. The inputs are
+  // built from whatever the chosen face declares, so a new parametric
+  // faceplate needs no change here.
+  const savedOptions = detail.faceplate_options || {};
+
+  function renderFaceplateOptions() {
+    const box = $('#faceplate-options');
+    if (!box) return;
+    const chosen = ($('#faceplate-select') || {}).value || '';
+    const face = (faces.faceplates || []).find(f => f.id === chosen);
+    const opts = (face && face.options) || [];
+    if (!opts.length) { box.innerHTML = ''; return; }
+    box.innerHTML = `
+      <div class="slot-meta" style="margin:10px 0 6px">
+        How this one is built. Drawn to identify the unit; it does not
+        change which points are read.
+      </div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap">
+        ${opts.map(o => `
+          <label style="display:flex;align-items:center;gap:6px;font-size:0.85rem">
+            <span>${esc(o.label || o.key)}</span>
+            <input type="number" data-face-opt="${esc(o.key)}"
+                   min="${esc(String(o.min))}" max="${esc(String(o.max))}"
+                   value="${esc(String(
+                     savedOptions[o.key] !== undefined
+                       ? savedOptions[o.key] : o.default))}"
+                   style="width:70px"
+                   ${o.help ? `title="${esc(o.help)}"` : ''}>
+          </label>`).join('')}
+      </div>`;
+  }
+
+  const faceSelect = $('#faceplate-select');
+  if (faceSelect) {
+    faceSelect.addEventListener('change', renderFaceplateOptions);
+    renderFaceplateOptions();
+  }
+
+  function collectFaceplateOptions() {
+    const out = {};
+    document.querySelectorAll('[data-face-opt]').forEach(input => {
+      const value = Number(input.value);
+      // A blank or non-numeric box means "leave it to the default"
+      // rather than zero, which for a door count is a cabinet with no
+      // front.
+      if (input.value !== '' && Number.isFinite(value)) {
+        out[input.dataset.faceOpt] = value;
+      }
+    });
+    return out;
+  }
 
   $('#slots-save').addEventListener('click', async () => {
     const bindings = {};
@@ -2771,6 +2826,7 @@ async function openDeviceConfig(group) {
         body: JSON.stringify({
           group, template: detail.template, bindings,
           faceplate: ($('#faceplate-select') || {}).value || '',
+          faceplate_options: collectFaceplateOptions(),
           display: ($('#display-select') || {}).value || 'both',
         }),
       });

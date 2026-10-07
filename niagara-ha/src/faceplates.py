@@ -88,7 +88,9 @@ def card_types_in(card: Any) -> list[str]:
     return found
 
 
-def apply_faceplate(card: Any, faceplate_id: str) -> Any:
+def apply_faceplate(
+    card: Any, faceplate_id: str, options: dict | None = None,
+) -> Any:
     """Swap the faceplate on whichever custom card can wear it.
 
     A card tree may hold more than one custom card, so the swap is targeted
@@ -96,6 +98,13 @@ def apply_faceplate(card: Any, faceplate_id: str) -> Any:
     found. An unknown faceplate leaves the card untouched: the template's
     default is always a working card, and silently rendering nothing would
     be worse than ignoring a bad setting.
+
+    `options` are the device's own values for the faceplate's parameters —
+    a cabinet's door count, a tank farm's tank count. They are merged over
+    whatever the template declared rather than replacing it, so a template
+    that sets two of three options keeps the one the device does not
+    override. Swapping the face without them left every six-door cabinet
+    drawing two doors.
     """
     target = faceplate_card(faceplate_id)
     if not target:
@@ -107,6 +116,10 @@ def apply_faceplate(card: Any, faceplate_id: str) -> Any:
             out = {k: walk(v) for k, v in node.items()}
             if out.get("type") == f"custom:{target}":
                 out["faceplate"] = faceplate_id
+                if options:
+                    merged = dict(out.get("options") or {})
+                    merged.update(options)
+                    out["options"] = merged
             return out
         if isinstance(node, list):
             return [walk(item) for item in node]

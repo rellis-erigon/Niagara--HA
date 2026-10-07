@@ -3,6 +3,26 @@
 The add-on and the Home Assistant integration are released as a matched
 pair and share a version number. CI fails the build if they drift.
 
+## 3.25.0 — 2026-10-07
+
+- **Feature**: A device can set the options of the faceplate it wears. A
+  parametric face is the same drawing at different shapes — a cabinet's
+  door count, a tank farm's tank count — and which shape a device is
+  belongs to the device, not to its type. Without this, choosing the
+  under-bench fridge face drew the template's two doors on every cabinet,
+  including the six-door ones.
+
+  The inputs in the device dialog are built from whatever the chosen face
+  declares, with its own bounds and defaults, so a new parametric
+  faceplate needs no change to the UI. A blank box is omitted rather than
+  sent as zero: for a door count, zero is a cabinet with no front.
+
+- **Fix**: The bundled faceplate catalogue was eight faces out of date, so
+  the picker did not offer the refrigeration, tank or pool faces at all
+  and applying one silently kept the template default. It is a copy of the
+  cards repo's generated catalogue and has to be refreshed whenever
+  faceplates are added.
+
 ## 3.24.0 — 2026-10-07
 
 - **Fix**: The alarm console no longer counts other people's buildings. A

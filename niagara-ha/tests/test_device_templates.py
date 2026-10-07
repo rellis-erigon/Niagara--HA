@@ -280,10 +280,58 @@ def test_round_trip(types_file):
         "bindings": {"energy_total": "/config/points/MeterTotal/"},
         "state": dt.STATE_DRAFT,
         "faceplate": "",
+        "faceplate_options": {},
         "display": "both",
     }}
     dt.save_device_types(devices)
     assert dt.load_device_types() == devices
+
+
+# -- Per-device faceplate options ---------------------------------------
+#
+# A parametric faceplate is the same drawing at different shapes, and
+# which shape belongs to the device rather than the type. Without this,
+# every six-door cabinet drew the template's two doors.
+
+def test_faceplate_options_round_trip(types_file):
+    devices = {"Site/Kitchen/UB1": {
+        "template": "fridge",
+        "bindings": {},
+        "state": dt.STATE_DRAFT,
+        "faceplate": "underbench-fridge",
+        "faceplate_options": {"doors": 6, "drawers": 0},
+        "display": "both",
+    }}
+    dt.save_device_types(devices)
+    assert dt.load_device_types()["Site/Kitchen/UB1"]["faceplate_options"] == {
+        "doors": 6, "drawers": 0,
+    }
+
+
+def test_a_device_with_no_options_round_trips_as_empty(types_file):
+    dt.save_device_types({"Site/DB1": {
+        "template": "electricity_meter", "bindings": {},
+        "state": dt.STATE_DRAFT, "faceplate": "", "display": "both",
+    }})
+    assert dt.load_device_types()["Site/DB1"]["faceplate_options"] == {}
+
+
+def test_non_numeric_options_do_not_survive_a_load(types_file):
+    """The drawing does arithmetic with these; a string would throw inside
+    the card, where nothing can report it."""
+    types_file.write_text(
+        "devices:\n"
+        "  Site/DB1:\n"
+        "    template: electricity_meter\n"
+        "    bindings: {}\n"
+        "    state: draft\n"
+        "    faceplate_options:\n"
+        "      doors: 6\n"
+        "      label: six\n"
+        "      shown: true\n"
+    )
+    options = dt.load_device_types()["Site/DB1"]["faceplate_options"]
+    assert options == {"doors": 6}
 
 
 def test_faceplate_round_trips(types_file):

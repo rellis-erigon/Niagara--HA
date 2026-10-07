@@ -106,3 +106,55 @@ def test_history_values_are_escaped(page):
                                                  "evidence[", "h.enabled",
                                                  "h.count ==", "addable"))
         ), interpolation
+
+
+def test_faceplate_options_are_built_from_what_the_face_declares(page):
+    """Hardcoding the inputs would mean editing the UI for every new
+    parametric faceplate. They come from the catalogue instead."""
+    block = page[page.index("function renderFaceplateOptions"):
+                 page.index("const faceSelect")]
+    assert "face.options" in block
+    assert "o.label || o.key" in block
+    assert 'data-face-opt="${esc(o.key)}"' in block
+
+
+def test_faceplate_option_inputs_carry_the_declared_bounds(page):
+    block = page[page.index("function renderFaceplateOptions"):
+                 page.index("const faceSelect")]
+    assert 'min="${esc(String(o.min))}"' in block
+    assert 'max="${esc(String(o.max))}"' in block
+
+
+def test_a_saved_faceplate_option_wins_over_the_default(page):
+    """Reopening the dialog must show what the device is set to, not the
+    faceplate's default."""
+    block = page[page.index("function renderFaceplateOptions"):
+                 page.index("const faceSelect")]
+    assert "savedOptions[o.key] !== undefined" in block
+
+
+def test_the_options_rerender_when_the_face_changes(page):
+    """Each face declares its own; leaving the old inputs up would post a
+    door count to a tank."""
+    assert "faceSelect.addEventListener('change', renderFaceplateOptions)" in page
+
+
+def test_faceplate_options_are_posted_with_the_bindings(page):
+    assert "faceplate_options: collectFaceplateOptions()" in page
+
+
+def test_a_blank_option_box_is_omitted_rather_than_sent_as_zero(page):
+    """For a door count, zero is a cabinet with no front."""
+    block = page[page.index("function collectFaceplateOptions"):
+                 page.index("$('#slots-save')")]
+    assert "input.value !== ''" in block
+    assert "Number.isFinite(value)" in block
+
+
+def test_the_option_inputs_are_not_harvested_as_slot_bindings(page):
+    """`slot-select` once swept up the faceplate picker and posted it as a
+    binding called "undefined", and nothing saved."""
+    block = page[page.index("function renderFaceplateOptions"):
+                 page.index("const faceSelect")]
+    assert "slot-select" not in block
+    assert "data-slot" not in block

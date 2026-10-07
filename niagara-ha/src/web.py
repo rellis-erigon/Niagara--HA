@@ -966,6 +966,7 @@ def device_detail():
         "state": assigned["state"] if assigned else None,
         "display": (assigned or {}).get("display", "both"),
         "faceplate": (assigned or {}).get("faceplate", ""),
+        "faceplate_options": (assigned or {}).get("faceplate_options", {}),
         "severity": report["severity"],
         "publishable": report["publishable"],
         "slots": slots,
@@ -1018,6 +1019,23 @@ def assign_device_type():
     faceplate = data.get("faceplate")
     if faceplate is None:
         faceplate = previous.get("faceplate", "")
+
+    # Values for the chosen face's own parameters. Only numbers: every
+    # faceplate option is declared as one, and accepting anything else
+    # would put a string where the drawing does arithmetic.
+    raw_options = data.get("faceplate_options")
+    if raw_options is None:
+        faceplate_options = previous.get("faceplate_options") or {}
+    elif isinstance(raw_options, dict):
+        faceplate_options = {}
+        for key, value in raw_options.items():
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                return jsonify({
+                    "error": f"faceplate option {key} must be a number",
+                }), 400
+            faceplate_options[str(key)] = value
+    else:
+        return jsonify({"error": "faceplate_options must be an object"}), 400
     display = data.get("display") or previous.get("display") or "both"
     if display not in VALID_DISPLAYS:
         return jsonify({"error": f"unknown display {display!r}"}), 400
@@ -1026,6 +1044,7 @@ def assign_device_type():
         "bindings": {k: v for k, v in bindings.items() if v},
         "state": data.get("state") or previous.get("state") or STATE_DRAFT,
         "faceplate": str(faceplate or "").strip(),
+        "faceplate_options": faceplate_options,
         "display": display,
     }
     save_device_types(devices)
@@ -1329,7 +1348,7 @@ def device_card():
     card = render_card(template, {**bindings, "device_name": name})
     chosen = assigned.get("faceplate", "")
     if chosen and card:
-        card = apply_faceplate(card, chosen)
+        card = apply_faceplate(card, chosen, assigned.get("faceplate_options"))
     display = assigned.get("display", "both")
     if display == "entities":
         card = full_entities_card(template, bindings, name)
@@ -1372,7 +1391,7 @@ def device_cards():
             continue
         chosen = assigned.get("faceplate", "")
         if chosen:
-            card = apply_faceplate(card, chosen)
+            card = apply_faceplate(card, chosen, assigned.get("faceplate_options"))
         display = assigned.get("display", "both")
         if display == "entities":
             card = full_entities_card(template, bindings, name)

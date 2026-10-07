@@ -129,3 +129,63 @@ def test_entities_only_lists_every_bound_slot():
     assert card["title"] == "DB-1"
     # Unbound slots are left out; the order follows the template.
     assert [row["name"] for row in card["entities"]] == ["Energy Total", "Voltage L1"]
+
+
+# -- Per-device faceplate options ---------------------------------------
+#
+# Swapping the face without carrying its options left every six-door
+# cabinet drawing the template's two doors.
+
+CABINET_CARD = {
+    "type": "vertical-stack",
+    "cards": [
+        {"type": "custom:plant-equipment-card",
+         "faceplate": "underbench-fridge",
+         "options": {"doors": 2, "drawers": 0},
+         "entities": {"temperature": "sensor.t"}},
+        {"type": "entities", "entities": ["sensor.t"]},
+    ],
+}
+
+
+def mimic(card):
+    return card["cards"][0]
+
+
+def test_options_reach_the_card():
+    out = fp.apply_faceplate(CABINET_CARD, "underbench-fridge", {"doors": 6})
+    assert mimic(out)["options"]["doors"] == 6
+
+
+def test_options_merge_over_the_template_rather_than_replacing_it():
+    """A template setting two of three options keeps the one the device
+    does not override."""
+    out = fp.apply_faceplate(CABINET_CARD, "underbench-fridge", {"doors": 6})
+    assert mimic(out)["options"] == {"doors": 6, "drawers": 0}
+
+
+def test_no_options_leaves_the_templates_alone():
+    out = fp.apply_faceplate(CABINET_CARD, "underbench-fridge", None)
+    assert mimic(out)["options"] == {"doors": 2, "drawers": 0}
+
+
+def test_options_apply_to_a_swapped_face_too():
+    out = fp.apply_faceplate(CABINET_CARD, "underbench-freezer", {"drawers": 8})
+    assert mimic(out)["faceplate"] == "underbench-freezer"
+    assert mimic(out)["options"] == {"doors": 2, "drawers": 8}
+
+
+def test_options_are_not_written_onto_a_plain_card():
+    out = fp.apply_faceplate(CABINET_CARD, "underbench-fridge", {"doors": 6})
+    assert "options" not in out["cards"][1]
+
+
+def test_an_unknown_faceplate_still_changes_nothing():
+    out = fp.apply_faceplate(CABINET_CARD, "no-such-face", {"doors": 6})
+    assert out == CABINET_CARD
+
+
+def test_a_card_with_no_options_block_gains_one():
+    card = {"type": "custom:plant-equipment-card", "faceplate": "walkin-fridge"}
+    out = fp.apply_faceplate(card, "storage-tanks", {"tanks": 4})
+    assert out["options"] == {"tanks": 4}

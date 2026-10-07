@@ -1,5 +1,5 @@
 {
-  "generated": "2026-10-01",
+  "generated": "2026-10-07",
   "faceplates": [
     {
       "id": "av-room-controller",
@@ -321,6 +321,25 @@
       ]
     },
     {
+      "id": "pool-plant",
+      "name": "Pool Plant",
+      "card": "plant-equipment-card",
+      "description": "Pool heating and circulation. Water temperature is the hero; heater, solar and filter pump explain why it is what it is. Read-only — stack the mode selects and setpoint numbers underneath, which Home Assistant's own rows do better than a drawing. Pair with a water meter faceplate for consumption.",
+      "emulates": "Pool chlorinator / heat pump controller",
+      "pages": [],
+      "roles": [
+        "fault",
+        "filter_pump",
+        "heater",
+        "heater_setpoint",
+        "pool_mode",
+        "pump_mode",
+        "solar",
+        "solar_setpoint",
+        "water_temp"
+      ]
+    },
+    {
       "id": "qsys-zone-rack",
       "name": "Q-SYS Zone Rack",
       "card": "audio-zone-card",
@@ -394,6 +413,36 @@
       ]
     },
     {
+      "id": "storage-tanks",
+      "name": "Water Storage Tanks",
+      "card": "plant-equipment-card",
+      "description": "One to four storage tanks side by side against a shared scale, because a tank farm is read by comparing tanks. High-level alarms sit at the top of each tank where the float is. Roles are tank1_level, tank1_high_alarm, tank1_low_alarm and so on, plus a shared pressure.",
+      "emulates": "Cold water storage tank set",
+      "pages": [],
+      "roles": [
+        "common_fault",
+        "fill_valve",
+        "pressure",
+        "tank1_high_alarm",
+        "tank1_level",
+        "tank1_low_alarm",
+        "tank2_high_alarm",
+        "tank2_level",
+        "tank2_low_alarm"
+      ],
+      "options": [
+        {
+          "key": "tanks",
+          "label": "Tanks",
+          "type": "number",
+          "min": 1,
+          "max": 4,
+          "default": 2
+        }
+      ],
+      "roles_vary_with_options": true
+    },
+    {
       "id": "supply-fan-left",
       "name": "Supply Fan — in from left",
       "card": "plant-equipment-card",
@@ -439,6 +488,126 @@
       ]
     },
     {
+      "id": "underbench-freezer",
+      "name": "Under-bench Freezer",
+      "card": "plant-equipment-card",
+      "description": "Under-counter freezer, 1-6 doors or 1-8 drawers. Temperature against its -26 to -12 °C band is the primary reading; door, compressor and alarm are lamps. Doors and drawers are drawn to identify the cabinet, not bound separately — a real unit has one door switch for the whole thing.",
+      "emulates": "Under-counter commercial freezer",
+      "pages": [],
+      "roles": [
+        "alarm",
+        "compressor",
+        "door",
+        "setpoint",
+        "temperature"
+      ],
+      "options": [
+        {
+          "key": "doors",
+          "label": "Doors",
+          "type": "number",
+          "min": 0,
+          "max": 6,
+          "default": 2
+        },
+        {
+          "key": "drawers",
+          "label": "Drawers",
+          "type": "number",
+          "min": 0,
+          "max": 8,
+          "default": 0
+        }
+      ],
+      "roles_vary_with_options": true
+    },
+    {
+      "id": "underbench-fridge",
+      "name": "Under-bench Fridge",
+      "card": "plant-equipment-card",
+      "description": "Under-counter refrigerator, 1-6 doors or 1-8 drawers. Temperature against its 0 to 8 °C band is the primary reading; door, compressor and alarm are lamps. Doors and drawers are drawn to identify the cabinet, not bound separately — a real unit has one door switch for the whole thing.",
+      "emulates": "Under-counter commercial refrigerator",
+      "pages": [],
+      "roles": [
+        "alarm",
+        "compressor",
+        "door",
+        "setpoint",
+        "temperature"
+      ],
+      "options": [
+        {
+          "key": "doors",
+          "label": "Doors",
+          "type": "number",
+          "min": 0,
+          "max": 6,
+          "default": 2
+        },
+        {
+          "key": "drawers",
+          "label": "Drawers",
+          "type": "number",
+          "min": 0,
+          "max": 8,
+          "default": 0
+        }
+      ],
+      "roles_vary_with_options": true
+    },
+    {
+      "id": "upright-freezer",
+      "name": "Upright Freezer",
+      "card": "plant-equipment-card",
+      "description": "Upright reach-in freezer. Temperature against its -26 to -12 °C band is the primary reading; door, compressor and alarm are lamps. Doors and drawers are drawn to identify the cabinet, not bound separately — a real unit has one door switch for the whole thing.",
+      "emulates": "Upright reach-in freezer",
+      "pages": [],
+      "roles": [
+        "alarm",
+        "compressor",
+        "door",
+        "setpoint",
+        "temperature"
+      ],
+      "options": [
+        {
+          "key": "doors",
+          "label": "Doors",
+          "type": "number",
+          "min": 1,
+          "max": 2,
+          "default": 1
+        }
+      ],
+      "roles_vary_with_options": true
+    },
+    {
+      "id": "upright-fridge",
+      "name": "Upright Fridge",
+      "card": "plant-equipment-card",
+      "description": "Upright reach-in refrigerator. Temperature against its 0 to 8 °C band is the primary reading; door, compressor and alarm are lamps. Doors and drawers are drawn to identify the cabinet, not bound separately — a real unit has one door switch for the whole thing.",
+      "emulates": "Upright reach-in refrigerator",
+      "pages": [],
+      "roles": [
+        "alarm",
+        "compressor",
+        "door",
+        "setpoint",
+        "temperature"
+      ],
+      "options": [
+        {
+          "key": "doors",
+          "label": "Doors",
+          "type": "number",
+          "min": 1,
+          "max": 2,
+          "default": 1
+        }
+      ],
+      "roles_vary_with_options": true
+    },
+    {
       "id": "vertical-pumpset",
       "name": "Vertical multistage pump set",
       "card": "pump-system-card",
@@ -473,6 +642,36 @@
         }
       ],
       "roles_vary_with_options": true
+    },
+    {
+      "id": "walkin-freezer",
+      "name": "Walk-in Freezer",
+      "card": "plant-equipment-card",
+      "description": "Walk-in freezer room. Temperature against its -26 to -12 °C band is the primary reading; door, compressor and alarm are lamps. Doors and drawers are drawn to identify the cabinet, not bound separately — a real unit has one door switch for the whole thing.",
+      "emulates": "Walk-in freezer room",
+      "pages": [],
+      "roles": [
+        "alarm",
+        "compressor",
+        "door",
+        "setpoint",
+        "temperature"
+      ]
+    },
+    {
+      "id": "walkin-fridge",
+      "name": "Walk-in Fridge",
+      "card": "plant-equipment-card",
+      "description": "Walk-in cold room. Temperature against its 0 to 8 °C band is the primary reading; door, compressor and alarm are lamps. Doors and drawers are drawn to identify the cabinet, not bound separately — a real unit has one door switch for the whole thing.",
+      "emulates": "Walk-in cold room",
+      "pages": [],
+      "roles": [
+        "alarm",
+        "compressor",
+        "door",
+        "setpoint",
+        "temperature"
+      ]
     },
     {
       "id": "woltmann-register",
@@ -517,8 +716,16 @@
           "label": "Channels",
           "type": "number",
           "min": 1,
-          "max": 12,
+          "max": 16,
           "default": 4
+        },
+        {
+          "key": "per_row",
+          "label": "Strips per row",
+          "type": "number",
+          "min": 1,
+          "max": 16,
+          "default": 8
         },
         {
           "key": "eq",

@@ -408,6 +408,15 @@ def load_device_types() -> dict[str, dict]:
             # equipment of every make, so the face belongs to the device
             # rather than to the type. Empty means the template's default.
             "faceplate": str(entry.get("faceplate") or "").strip(),
+            # Values for the faceplate's own options. A parametric face —
+            # a cabinet's door count, a tank farm's tank count — is the
+            # same drawing at different shapes, and which shape belongs to
+            # the device, not to the type.
+            "faceplate_options": {
+                str(k): v for k, v in
+                (entry.get("faceplate_options") or {}).items()
+                if isinstance(v, (int, float)) and not isinstance(v, bool)
+            },
             # How it is drawn: the mimic, the plain list, or both.
             "display": str(entry.get("display") or "both").strip(),
         }
@@ -429,6 +438,8 @@ def save_device_types(devices: dict[str, dict]) -> None:
                 "state": entry.get("state", STATE_DRAFT),
                 **({"faceplate": entry["faceplate"]}
                    if entry.get("faceplate") else {}),
+                **({"faceplate_options": entry["faceplate_options"]}
+                   if entry.get("faceplate_options") else {}),
                 **({"display": entry["display"]}
                    if entry.get("display") not in (None, "", "both") else {}),
             }
