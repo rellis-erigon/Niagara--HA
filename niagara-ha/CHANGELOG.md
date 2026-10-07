@@ -3,6 +3,22 @@
 The add-on and the Home Assistant integration are released as a matched
 pair and share a version number. CI fails the build if they drift.
 
+## 3.22.0 — 2026-10-07
+
+- **Feature**: `water_tank` template — up to four storage tanks with their
+  levels, high and low alarms, the outlet pressure they feed and a fill
+  valve. Only the first tank is required, so a site with one tank types as
+  this and the drawing simply does not draw the others.
+
+  Its fault slot is deliberately narrow. Tanks usually share a folder with
+  the pumps they feed, and a bare `*fault*` bound it to a pump fault —
+  real, but it belongs to the pump set's own device.
+
+- **Internal**: The builtin-template test counts against the files on disk
+  instead of a number written into the test. A hardcoded count fails on
+  every new template whether or not anything is wrong; the invariant worth
+  holding is that nothing on disk fails to parse and vanishes silently.
+
 ## 3.21.0 — 2026-10-07
 
 - **Feature**: The `fridge` template now draws a cabinet instead of listing

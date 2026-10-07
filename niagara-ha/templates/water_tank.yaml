@@ -1,0 +1,134 @@
+id: water_tank
+name: Water Storage Tanks
+description: Cold water storage tanks with level, high/low alarms and the pressure they feed
+icon: mdi:storage-tank
+
+device_match: ["*tank*", "*storage*", "*hydraulic*", "*cwst*", "*dcw*"]
+
+# Up to four tanks. Only the first is required: a site with one tank must
+# still type as this, and the drawing drops the tanks nothing is bound to.
+slots:
+  - key: tank1_level
+    name: Tank 1 Level
+    required: true
+    state_class: measurement
+    units: ["%"]
+    point_types: [numeric, integer]
+    match: ["*tank*1*lvl*", "*tank*1*level*", "*tank_1*", "*tank1*", "*lvl*", "*level*"]
+    validation: {min: 0, max: 100}
+
+  - key: tank1_high_alarm
+    name: Tank 1 High Alarm
+    device_class: problem
+    point_types: [boolean]
+    match: ["*tank1*high*", "*tank*1*high*", "*tank_1*high*", "*high*alm*", "*high*alarm*"]
+
+  - key: tank1_low_alarm
+    name: Tank 1 Low Alarm
+    device_class: problem
+    point_types: [boolean]
+    match: ["*tank1*low*", "*tank*1*low*", "*tank_1*low*", "*low*alm*", "*low*alarm*"]
+
+  - key: tank2_level
+    name: Tank 2 Level
+    state_class: measurement
+    units: ["%"]
+    point_types: [numeric, integer]
+    match: ["*tank*2*lvl*", "*tank*2*level*", "*tank_2*", "*tank2*"]
+    validation: {min: 0, max: 100}
+
+  - key: tank2_high_alarm
+    name: Tank 2 High Alarm
+    device_class: problem
+    point_types: [boolean]
+    match: ["*tank2*high*", "*tank*2*high*", "*tank_2*high*"]
+
+  - key: tank2_low_alarm
+    name: Tank 2 Low Alarm
+    device_class: problem
+    point_types: [boolean]
+    match: ["*tank2*low*", "*tank*2*low*", "*tank_2*low*"]
+
+  - key: tank3_level
+    name: Tank 3 Level
+    state_class: measurement
+    units: ["%"]
+    point_types: [numeric, integer]
+    match: ["*tank*3*lvl*", "*tank*3*level*", "*tank_3*", "*tank3*"]
+    validation: {min: 0, max: 100}
+
+  - key: tank3_high_alarm
+    name: Tank 3 High Alarm
+    device_class: problem
+    point_types: [boolean]
+    match: ["*tank3*high*", "*tank*3*high*", "*tank_3*high*"]
+
+  - key: tank4_level
+    name: Tank 4 Level
+    state_class: measurement
+    units: ["%"]
+    point_types: [numeric, integer]
+    match: ["*tank*4*lvl*", "*tank*4*level*", "*tank_4*", "*tank4*"]
+    validation: {min: 0, max: 100}
+
+  - key: tank4_high_alarm
+    name: Tank 4 High Alarm
+    device_class: problem
+    point_types: [boolean]
+    match: ["*tank4*high*", "*tank*4*high*", "*tank_4*high*"]
+
+  # The tanks and the pumps they feed usually share a folder, so the
+  # pressure is here too. Bound, it labels the outlet; unbound, the whole
+  # pressure block hides.
+  - key: pressure
+    name: Outlet Pressure
+    device_class: pressure
+    state_class: measurement
+    units: [bar, kPa, psi]
+    point_types: [numeric, integer]
+    match: ["*current*pressure*", "*outlet*press*", "*pressure*", "*press*"]
+    validation: {min: 0}
+
+  - key: fill_valve
+    name: Fill Valve
+    device_class: running
+    point_types: [boolean]
+    match: ["*fill*valve*", "*fill*", "*inlet*valve*", "*makeup*"]
+
+  # Deliberately narrow. The tanks usually share a folder with the pumps
+  # they feed, and a bare "*fault*" bound this to a pump fault — which is
+  # real, but it belongs to the pump set's own device, not to the tanks.
+  - key: common_fault
+    name: Tank Fault
+    device_class: problem
+    point_types: [boolean]
+    match: ["*tank*fault*", "*tank*flt*", "*storage*fault*", "*cwst*flt*"]
+
+# Tanks side by side against a shared scale, then anything the drawing
+# does not carry.
+card:
+  type: vertical-stack
+  cards:
+    - type: custom:plant-equipment-card
+      faceplate: storage-tanks
+      title: "{{device_name}}"
+      options:
+        tanks: 2
+      entities:
+        tank1_level: "{{slot.tank1_level}}"
+        tank1_high_alarm: "{{slot.tank1_high_alarm}}"
+        tank1_low_alarm: "{{slot.tank1_low_alarm}}"
+        tank2_level: "{{slot.tank2_level}}"
+        tank2_high_alarm: "{{slot.tank2_high_alarm}}"
+        tank2_low_alarm: "{{slot.tank2_low_alarm}}"
+        tank3_level: "{{slot.tank3_level}}"
+        tank3_high_alarm: "{{slot.tank3_high_alarm}}"
+        tank4_level: "{{slot.tank4_level}}"
+        tank4_high_alarm: "{{slot.tank4_high_alarm}}"
+        pressure: "{{slot.pressure}}"
+        fill_valve: "{{slot.fill_valve}}"
+        common_fault: "{{slot.common_fault}}"
+    - type: entities
+      entities:
+        - entity: "{{slot.pressure}}"
+          name: Outlet Pressure

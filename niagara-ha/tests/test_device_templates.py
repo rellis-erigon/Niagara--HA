@@ -4,6 +4,7 @@ Point names here are taken verbatim from a real Niagara station, including
 its two different naming conventions for the same equipment: one meter
 reports MeterTotal / Phase_1_V, another TotalActivePower / V1.
 """
+import pathlib
 import sys
 from pathlib import Path
 
@@ -824,8 +825,21 @@ def test_the_fire_panel_is_suggested_for_a_fip_folder():
 
 
 def test_every_builtin_template_still_loads_and_is_unique():
+    """Every file in templates/ loads.
+
+    Counted against the directory rather than a number written here: a
+    hardcoded count fails on every new template whether or not anything is
+    wrong, and the invariant worth holding is that nothing on disk fails to
+    parse and vanishes silently.
+    """
     dt, templates = _load_builtin()
-    assert len(templates) == 14
+    on_disk = {
+        path.stem for path in
+        (pathlib.Path(__file__).resolve().parents[1] / "templates").glob("*.yaml")
+    }
+    assert set(templates) == on_disk, (
+        f"did not load: {sorted(on_disk - set(templates))}"
+    )
     ids = [t.id for t in templates.values()]
     assert len(ids) == len(set(ids))
     for template in templates.values():
