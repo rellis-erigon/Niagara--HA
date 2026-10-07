@@ -51,12 +51,22 @@ HISTORY_OBJ = xml(f"""
 </obj>
 """)
 
+# The real shape, taken from a station: the service lists one history
+# *device* per station and nothing else. The trends are a fetch deeper.
 SERVICE_LIST = xml(f"""
-<obj {NS} href="/obix/histories/" is="obix:HistoryService">
-  <ref name="J1" href="J1/">
-    <ref name="AHU1_SupplyTemp" is="obix:History" href="J1/AHU1_SupplyTemp/"/>
-    <ref name="AHU1_ReturnTemp" is="obix:History" href="J1/AHU1_ReturnTemp/"/>
-  </ref>
+<obj {NS} href="https://station/obix/histories/"
+     display="com.tridium.history.db.BLocalHistoryDatabase">
+  <ref name="SiteES" href="SiteES/" display="javax.baja.history.BHistoryDevice"/>
+  <ref name="SiteJace1" href="SiteJace1/" display="javax.baja.history.BHistoryDevice"/>
+</obj>
+""")
+
+DEVICE_LIST = xml(f"""
+<obj {NS} href="https://station/obix/histories/SiteJace1/"
+     display="javax.baja.history.BHistoryDevice">
+  <str name="displayName" val="SiteJace1"/>
+  <ref name="AHU1_SupplyTemp" href="AHU1_SupplyTemp/" is="obix:History"/>
+  <ref name="AHU1_ReturnTemp" href="AHU1_ReturnTemp/" is="obix:History"/>
 </obj>
 """)
 
@@ -134,9 +144,47 @@ def test_a_non_numeric_count_is_dropped_not_crashed():
     assert histories.parse_history_meta(odd, "x").count is None
 
 
-def test_the_service_listing_finds_the_histories_under_the_station():
-    found = {m.name for m in histories.parse_history_list(SERVICE_LIST)}
-    assert found == {"J1/AHU1_SupplyTemp", "J1/AHU1_ReturnTemp"}
+def test_the_service_lists_devices_not_trends():
+    """Reading only the top level reported zero histories on a station
+    holding thousands."""
+    assert histories.history_devices(SERVICE_LIST) == [
+        ("SiteES", "SiteES/"), ("SiteJace1", "SiteJace1/"),
+    ]
+
+
+def test_a_devices_trends_are_named_under_it():
+    """Two stations can each have an AHU1_SupplyTemp; the station name is
+    what the service indexes them by."""
+    found = {
+        m.name for m in histories.parse_history_list(
+            DEVICE_LIST, prefix="SiteJace1",
+        )
+    }
+    assert found == {"SiteJace1/AHU1_SupplyTemp", "SiteJace1/AHU1_ReturnTemp"}
+
+
+def test_a_devices_own_properties_are_not_trends():
+    """displayName, status and the ops sit beside the trends."""
+    names = {
+        m.name for m in histories.parse_history_list(
+            DEVICE_LIST, prefix="SiteJace1",
+        )
+    }
+    assert not any(n.endswith("displayName") for n in names)
+
+
+def test_the_service_itself_has_no_trends_to_list():
+    assert histories.parse_history_list(SERVICE_LIST) != []  # devices, not trends
+
+
+def test_a_flat_service_listing_still_works():
+    """Not every station nests; a flat one must not come back empty."""
+    flat = xml(f"""
+    <obj {NS} href="/obix/histories/">
+      <ref name="Trend1" href="Trend1/" is="obix:History"/>
+    </obj>
+    """)
+    assert [m.name for m in histories.parse_history_list(flat)] == ["Trend1"]
 
 
 # -- Samples ------------------------------------------------------------

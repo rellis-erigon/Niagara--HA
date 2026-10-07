@@ -3,6 +3,23 @@
 The add-on and the Home Assistant integration are released as a matched
 pair and share a version number. CI fails the build if they drift.
 
+## 3.20.1 — 2026-10-07
+
+Both found by the probes added in 3.18.0 and 3.19.0, on first contact with
+a real station.
+
+- **Fix**: Every alarm query failed with "Cannot find lobby agent for
+  obix:alarmQuery". Niagara advertises the operation as a bare
+  `~alarmQuery/`, relative to the alarm subject that carries it; resolving
+  that against the oBIX root posted to `/obix/~alarmQuery/`, which is
+  nowhere. Operation hrefs are now resolved against their own object.
+
+- **Fix**: The history service reported zero trends on a station holding
+  thousands. It does not list trends — it lists one history *device* per
+  station, each of which has to be fetched to see the trends under it. The
+  listing now follows that level, and names a trend under its station so
+  two stations can each have an `AHU1_SupplyTemp`.
+
 ## 3.20.0 — 2026-10-07
 
 - **Feature**: Values reach Home Assistant in one hop instead of two.

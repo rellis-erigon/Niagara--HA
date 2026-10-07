@@ -171,39 +171,72 @@ def parse_history_meta(elem: ET.Element, name: str = "") -> HistoryMeta:
     return meta
 
 
-def parse_history_list(root: ET.Element) -> list[HistoryMeta]:
-    """Every history advertised under the history service.
+# What Niagara calls the per-station container under the history service.
+HISTORY_DEVICE_DISPLAY = "BHistoryDevice"
 
-    Niagara nests them one level per station, so this walks rather than
-    assuming a flat list. A ref only carries a name and an href; the count
-    and date range need a read of the history itself, which is why the
-    screen loads those on demand rather than for every history at once.
+# Children of a history device that are not trends.
+NOT_A_HISTORY = frozenset({
+    "status", "faultCause", "enabled", "displayName", "count",
+    "query", "feed", "rollup", "tz", "start", "end", "interval",
+})
+
+
+def history_devices(service: ET.Element) -> list[tuple[str, str]]:
+    """The per-station containers under the history service.
+
+    The service does not list trends directly. It lists one history device
+    per station, and each has to be fetched to see the trends under it —
+    reading only the top level reported zero histories on a station holding
+    thousands.
+    """
+    devices: list[tuple[str, str]] = []
+    for child in service:
+        if _tag(child) != "ref":
+            continue
+        name = child.get("name") or ""
+        href = child.get("href") or ""
+        if not name or not href or name in NOT_A_HISTORY:
+            continue
+        devices.append((name, href))
+    return devices
+
+
+def parse_history_list(
+    root: ET.Element, prefix: str = "",
+) -> list[HistoryMeta]:
+    """The histories listed in one history device, or a flat service.
+
+    `prefix` is the device's name, so a trend comes back under the
+    "Station/TrendId" form the service is indexed by rather than a bare id
+    that two stations could both claim.
     """
     found: list[HistoryMeta] = []
     seen: set[str] = set()
 
-    def walk(elem: ET.Element, prefix: str, depth: int) -> None:
-        if depth > 3:
+    def add(name: str, href: str, display: str) -> None:
+        full = f"{prefix}/{name}".strip("/") if prefix else name
+        if full and full not in seen:
+            seen.add(full)
+            found.append(HistoryMeta(name=full, href=href, display=display))
+
+    def walk(elem: ET.Element, depth: int) -> None:
+        if depth > 2:
             return
         for child in elem:
             if _tag(child) not in {"ref", "obj", "list"}:
                 continue
             name = child.get("name") or ""
-            href = child.get("href") or ""
-            contracts = _contracts(child)
-            full = f"{prefix}/{name}".strip("/") if name else prefix
-
-            if HISTORY_CONTRACT in contracts or (
-                _tag(child) == "ref" and depth > 0 and name
-            ):
-                if full and full not in seen:
-                    seen.add(full)
-                    found.append(HistoryMeta(name=full, href=href,
-                                             display=child.get("display") or ""))
+            if not name or name in NOT_A_HISTORY:
                 continue
-            walk(child, full, depth + 1)
+            href = child.get("href") or ""
+            if HISTORY_CONTRACT in _contracts(child) or (
+                _tag(child) == "ref" and href
+            ):
+                add(name, href, child.get("display") or "")
+                continue
+            walk(child, depth + 1)
 
-    walk(root, "", 0)
+    walk(root, 0)
     return found
 
 

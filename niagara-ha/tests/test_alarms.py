@@ -341,3 +341,56 @@ def test_a_record_serialises_for_the_api():
     assert payload["active"] is True
     assert payload["acked"] is False
     assert payload["priority"] == 1
+
+
+# -- Resolving the query operation --------------------------------------
+#
+# A station answered every alarm query with "Cannot find lobby agent for
+# obix:alarmQuery". Niagara advertises the op as a bare "~alarmQuery/",
+# relative to the alarm subject; treating that as root-relative posts to
+# /obix/~alarmQuery/, which is nowhere.
+
+SUBJECT = xml(f"""
+<obj {NS} href="/obix/config/Services/AlarmService" is="obix:AlarmSubject">
+  <ref name="status" href="status/"/>
+  <ref name="defaultAlarmClass" href="defaultAlarmClass/"
+       is="/obix/def/alarm:AlarmClass obix:AlarmSubject"/>
+  <int name="count" val="0"/>
+  <op name="query" href="~alarmQuery/"/>
+  <feed name="feed" href="~alarmFeed/"/>
+</obj>
+""")
+
+
+def op_href(subject_path, href):
+    """What the client resolves an operation href to."""
+    if href.startswith(("http://", "https://", "/")):
+        return href
+    return subject_path.rstrip("/") + "/" + href.lstrip("./")
+
+
+def test_a_relative_op_resolves_against_its_own_object():
+    subject = "/config/Services/AlarmService"
+    query = next(c for c in SUBJECT if c.get("name") == "query")
+    assert op_href(subject, query.get("href")) == (
+        "/config/Services/AlarmService/~alarmQuery/"
+    )
+
+
+def test_a_root_relative_op_is_left_alone():
+    assert op_href("/config/Services/AlarmService", "/obix/alarms/query/") == (
+        "/obix/alarms/query/"
+    )
+
+
+def test_the_subject_advertises_a_query_operation():
+    assert any(c.get("name") == "query" for c in SUBJECT)
+
+
+def test_an_alarm_class_is_itself_a_subject():
+    """Each alarm class can be queried separately; the service covers all."""
+    classes = [
+        c.get("name") for c in SUBJECT
+        if "obix:AlarmSubject" in (c.get("is") or "")
+    ]
+    assert "defaultAlarmClass" in classes

@@ -361,6 +361,19 @@ class ObixClient:
             return href
         return "/" + href
 
+    def _resolve_op_href(self, object_path: str, href: str) -> str:
+        """An operation's href as a path this client can POST to.
+
+        Operations are advertised relative to the object that carries them,
+        so they are resolved against it rather than against the oBIX root.
+        An absolute URL or a root-relative path is taken as given.
+        """
+        if href.startswith("http://") or href.startswith("https://"):
+            return self._resolve_service_href(href)
+        if href.startswith("/"):
+            return self._resolve_service_href(href)
+        return object_path.rstrip("/") + "/" + href.lstrip("./")
+
     def _find_alarm_query_op(self) -> Optional[str]:
         """The href of the alarm subject's query operation.
 
@@ -384,7 +397,13 @@ class ObixClient:
                 continue
             href = child.get("href")
             if href:
-                self._alarm_query_op = self._resolve_service_href(href)
+                # Niagara advertises the op as a bare "~alarmQuery/",
+                # relative to the subject. Treating it as root-relative
+                # posts to /obix/~alarmQuery/, which the station answers
+                # with "Cannot find lobby agent for obix:alarmQuery".
+                self._alarm_query_op = self._resolve_op_href(
+                    subject_path, href,
+                )
                 return self._alarm_query_op
         logger.info(
             "The alarm subject at %s advertises no query operation",
@@ -510,7 +529,23 @@ class ObixClient:
         except (ObixError, requests.RequestException, ET.ParseError) as e:
             logger.warning("Could not list histories: %s", e)
             return []
-        found = histories.parse_history_list(root)
+
+        # The service lists one history *device* per station, each of which
+        # has to be fetched to see the trends under it — the listing is a
+        # level deep, not a flat catalogue, so reading only the top gave a
+        # station with thousands of trends a count of zero.
+        found: list[histories.HistoryMeta] = []
+        for device, device_path in histories.history_devices(root):
+            resolved = self._resolve_op_href(path, device_path)
+            try:
+                child = self._get(resolved)
+            except (ObixError, requests.RequestException, ET.ParseError) as e:
+                logger.debug("Could not list histories under %s: %s", device, e)
+                continue
+            found.extend(histories.parse_history_list(child, prefix=device))
+
+        if not found:
+            found = histories.parse_history_list(root)
         logger.info("Station advertises %d histories", len(found))
         return found
 
@@ -526,9 +561,9 @@ class ObixClient:
             return None
         meta = histories.parse_history_meta(root, name)
         if meta.query_href:
-            meta.query_href = self._resolve_service_href(meta.query_href)
+            meta.query_href = self._resolve_op_href(path, meta.query_href)
         elif meta.has_query:
-            meta.query_href = f"{path.rstrip('/')}/query/"
+            meta.query_href = f"{path.rstrip('/')}/~historyQuery/"
         return meta
 
     def query_history(
@@ -590,7 +625,7 @@ class ObixClient:
             report["error"] = f"reading {path} failed: {e}"
             return report
 
-        found = histories.parse_history_list(root)
+        found = self.discover_histories()
         report["history_count"] = len(found)
         if found:
             report["sample"] = [m.to_dict() for m in found[:5]]
