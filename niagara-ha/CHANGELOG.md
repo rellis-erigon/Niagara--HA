@@ -3,6 +3,25 @@
 The add-on and the Home Assistant integration are released as a matched
 pair and share a version number. CI fails the build if they drift.
 
+## 3.29.0 — 2026-10-08
+
+- **Fix**: Entities no longer write a database row on every poll. Home
+  Assistant writes a new `states` row whenever the state *or the
+  attributes* change, and every entity carried a `seconds_since_update`
+  attribute that moved every poll. So each one wrote a row every 30
+  seconds whether its reading had changed or not.
+
+  On the reference station that was 2,256 entities × 2,880 polls a day:
+  **5.9 million rows a day, a 44.7 million row database at 9.9 GB**, for
+  readings that mostly had not moved. One frozen meter wrote 2,880
+  identical rows a day — same state, new attributes every time.
+
+  Nothing is lost by dropping it. Staleness already decides `available`,
+  and Home Assistant's own `last_updated` answers the question the
+  attribute was answering badly. Measured against the station, ~187 of
+  2,801 points change per cycle, so the write rate should fall by roughly
+  93%.
+
 ## 3.28.0 — 2026-10-08
 
 - **Fix**: Submeters are no longer added to the water or gas dashboard.

@@ -112,14 +112,27 @@ class NiagaraEntity(CoordinatorEntity[NiagaraCoordinator]):
 
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
+        """Attributes that change only when something really has.
+
+        `seconds_since_update` used to be here, and it was quietly the most
+        expensive line in the integration. Home Assistant writes a new
+        `states` row whenever the state *or the attributes* change, so an
+        attribute carrying the age made every entity write a row on every
+        poll whether its reading moved or not. On this station that was
+        2,256 entities every 30 seconds — 5.9 million rows a day and a
+        44.7 million row, 9.9 GB database.
+
+        Nothing is lost by dropping it. Staleness already decides
+        `available`, and Home Assistant's own `last_updated` says when the
+        state last changed, which is the question the attribute was
+        answering badly.
+        """
         point = self._current_point
         if point is None:
             return None
         attrs: dict[str, Any] = {"niagara_path": point.path}
         if point.status:
             attrs["niagara_status"] = point.status
-        if point.age is not None:
-            attrs["seconds_since_update"] = point.age
         return attrs
 
     @property
