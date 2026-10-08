@@ -69,6 +69,45 @@ def plan_additions(
         (s for s in prefs["energy_sources"] if s.get("type") == "grid"), None
     )
 
+    # The same argument the grid source gets below, which was never carried
+    # across to water and gas: a building has many submeters and one
+    # supply. Home Assistant *sums* every water source into one total, and
+    # unlike electricity there is no device-level section to put a submeter
+    # in — so adding four of them counted the same water four times.
+    #
+    # Nothing here knows which meter is the incoming supply. With exactly
+    # one there is no ambiguity; with several, none is added and the
+    # dashboard is left to somebody who knows the hydraulics.
+    def _ambiguous(slots: frozenset, kind: str) -> bool:
+        candidates = [
+            m for m in meters
+            if (m.get("slot") or "") in slots
+            and m.get("entity_id") and m["entity_id"] not in existing
+        ]
+        already = any(
+            s.get("type") == kind for s in prefs["energy_sources"]
+        )
+        if len(candidates) > 1:
+            names = ", ".join(
+                sorted(m.get("name") or m["entity_id"] for m in candidates)[:6]
+            )
+            changes.append(
+                f"left {len(candidates)} {kind} meters off the dashboard "
+                f"because it sums them and only one can be the supply: "
+                f"{names}"
+            )
+            return True
+        if already and candidates:
+            changes.append(
+                f"left {len(candidates)} {kind} meter(s) off the dashboard; "
+                f"a {kind} source is already configured"
+            )
+            return True
+        return False
+
+    skip_water = _ambiguous(WATER_SLOTS, "water")
+    skip_gas = _ambiguous(GAS_SLOTS, "gas")
+
     for meter in meters:
         entity_id = meter.get("entity_id")
         slot = meter.get("slot") or ""
@@ -82,6 +121,8 @@ def plan_additions(
             })
             changes.append(f"{entity_id} as solar production")
         elif slot in WATER_SLOTS:
+            if skip_water:
+                continue
             prefs["energy_sources"].append({
                 "type": "water", "stat_energy_from": entity_id,
                 "stat_cost": None, "entity_energy_price": None,
@@ -89,6 +130,8 @@ def plan_additions(
             })
             changes.append(f"{entity_id} as water")
         elif slot in GAS_SLOTS:
+            if skip_gas:
+                continue
             prefs["energy_sources"].append({
                 "type": "gas", "stat_energy_from": entity_id,
                 "stat_cost": None, "entity_energy_price": None,

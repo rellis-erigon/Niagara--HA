@@ -107,3 +107,101 @@ def test_unrelated_preferences_are_preserved():
     existing = dict(EMPTY, currency="AUD")
     prefs, _ = energy.plan_additions(existing, [meter("sensor.a", "energy_total")])
     assert prefs["currency"] == "AUD"
+
+
+# -- Submeters must not be summed ----------------------------------------
+#
+# Home Assistant sums every water source into one total, and unlike
+# electricity there is no device-level section to put a submeter in. Four
+# water meters on this station — a main supply plus irrigation, kitchens
+# and a pool — were all added as sources, counting the same water several
+# times over.
+
+def water(entity, name, slot="volume_total"):
+    return {"entity_id": entity, "slot": slot, "name": name}
+
+
+def sources(prefs, kind):
+    return [s for s in prefs["energy_sources"] if s.get("type") == kind]
+
+
+def test_one_water_meter_is_added():
+    """No ambiguity with one, so nothing changes for a simple site."""
+    prefs, changes = energy.plan_additions(
+        {}, [water("sensor.main", "Main-Water-Meter")])
+    assert [s["stat_energy_from"] for s in sources(prefs, "water")] == [
+        "sensor.main"]
+
+
+def test_several_water_meters_are_all_left_off():
+    """The real case: one is the supply and the rest are downstream of it,
+    and nothing here knows which."""
+    prefs, changes = energy.plan_additions({}, [
+        water("sensor.main", "Main-Water-Meter"),
+        water("sensor.irrigation", "Irrigation-Water-Meter"),
+        water("sensor.kitchens", "Kitchens-Water-Meter"),
+        water("sensor.pool", "Pool-Water-Meter"),
+    ])
+    assert sources(prefs, "water") == []
+
+
+def test_it_says_which_meters_it_left_off_and_why():
+    """Silently adding nothing would read as the feature not working."""
+    _prefs, changes = energy.plan_additions({}, [
+        water("sensor.main", "Main-Water-Meter"),
+        water("sensor.pool", "Pool-Water-Meter"),
+    ])
+    message = " ".join(changes)
+    assert "only one can be the supply" in message
+    assert "Main-Water-Meter" in message and "Pool-Water-Meter" in message
+
+
+def test_a_water_meter_is_not_added_beside_one_already_configured():
+    """Somebody has already chosen the supply; a second source would
+    double the total."""
+    prefs = {"energy_sources": [
+        {"type": "water", "stat_energy_from": "sensor.chosen"}]}
+    out, changes = energy.plan_additions(
+        prefs, [water("sensor.pool", "Pool-Water-Meter")])
+    assert [s["stat_energy_from"] for s in sources(out, "water")] == [
+        "sensor.chosen"]
+    assert "already configured" in " ".join(changes)
+
+
+def test_several_gas_meters_are_treated_the_same_way():
+    prefs, _ = energy.plan_additions({}, [
+        water("sensor.g1", "Gas-Main", slot="gas_total"),
+        water("sensor.g2", "Gas-Kitchen", slot="gas_total"),
+    ])
+    assert sources(prefs, "gas") == []
+
+
+def test_ambiguous_water_does_not_stop_electricity_submeters():
+    """The two decisions are independent; a water puzzle must not drop the
+    boards."""
+    prefs, _ = energy.plan_additions({}, [
+        water("sensor.main", "Main-Water-Meter"),
+        water("sensor.pool", "Pool-Water-Meter"),
+        {"entity_id": "sensor.db1", "slot": "energy_total", "name": "DB-1"},
+    ])
+    assert [d["stat_consumption"] for d in prefs["device_consumption"]] == [
+        "sensor.db1"]
+
+
+def test_ambiguous_water_does_not_stop_solar():
+    prefs, _ = energy.plan_additions({}, [
+        water("sensor.main", "Main-Water-Meter"),
+        water("sensor.pool", "Pool-Water-Meter"),
+        {"entity_id": "sensor.pv", "slot": "energy_generated", "name": "Solar"},
+    ])
+    assert [s["stat_energy_from"] for s in sources(prefs, "solar")] == [
+        "sensor.pv"]
+
+
+def test_a_meter_already_on_the_dashboard_is_not_counted_as_ambiguity():
+    """Re-running must not start refusing the one meter it already added."""
+    prefs = {"energy_sources": [
+        {"type": "water", "stat_energy_from": "sensor.main"}]}
+    out, _ = energy.plan_additions(
+        prefs, [water("sensor.main", "Main-Water-Meter")])
+    assert len(sources(out, "water")) == 1

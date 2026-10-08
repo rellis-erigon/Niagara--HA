@@ -3,6 +3,21 @@
 The add-on and the Home Assistant integration are released as a matched
 pair and share a version number. CI fails the build if they drift.
 
+## 3.28.0 — 2026-10-08
+
+- **Fix**: Submeters are no longer added to the water or gas dashboard.
+  Home Assistant **sums** every water source into one total, and unlike
+  electricity there is no device-level section to put a submeter in — so
+  four water meters on the reference station (a main supply plus
+  irrigation, kitchens and a pool) counted the same water four times over.
+
+  The grid source already carried this reasoning: "a building has many
+  submeters and one supply", with the choice left to whoever knows which
+  meter is the main. It was simply never carried across to water and gas.
+  With exactly one meter there is no ambiguity and it is added as before;
+  with several, none is added and the result says which were left off and
+  why, because silently adding nothing reads as the feature not working.
+
 ## 3.27.1 — 2026-10-08
 
 - **Fix**: `niagara.learn_areas` learned from the station-named area as if
