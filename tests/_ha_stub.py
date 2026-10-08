@@ -343,5 +343,8 @@ def install() -> None:
     _module("homeassistant.helpers.entity_registry", EntityRegistry=object,
             async_get=lambda hass: None,
             async_entries_for_device=lambda *a, **k: [])
+    _module("homeassistant.helpers.area_registry", AreaRegistry=object,
+            async_get=lambda hass: None)
     helpers.device_registry = sys.modules["homeassistant.helpers.device_registry"]
     helpers.entity_registry = sys.modules["homeassistant.helpers.entity_registry"]
+    helpers.area_registry = sys.modules["homeassistant.helpers.area_registry"]

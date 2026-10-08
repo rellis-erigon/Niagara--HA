@@ -95,6 +95,9 @@ class NiagaraPoint:
     # The template that typed the point's device, e.g. "fcu". Only set for
     # points on a published device.
     device_type: str | None = None
+    # The area the add-on's rules map this point's folder to. None means no
+    # rule claimed it, and the depth-based guess below is used instead.
+    area: str | None = None
 
 
 @dataclass
@@ -532,6 +535,7 @@ class NiagaraCoordinator(DataUpdateCoordinator[dict[str, NiagaraPoint]]):
                 slot_state_class=p.get("state_class"),
                 slot_units=p.get("slot_units") or [],
                 device_type=p.get("device_type"),
+                area=p.get("area"),
             )
 
         return {
@@ -716,7 +720,17 @@ class NiagaraCoordinator(DataUpdateCoordinator[dict[str, NiagaraPoint]]):
         return found
 
     def get_area(self, point: NiagaraPoint) -> str | None:
-        """Map a point to an HA area based on its path hierarchy."""
+        """The area a point's device belongs to.
+
+        The add-on's rules win where one claims the folder. Falling back to
+        a depth number is kept only because it is what every station had
+        before rules existed — on its own it is close to useless, since the
+        segment that names a place sits at a different depth in every
+        branch. On the reference station it put 275 of 323 devices into one
+        area named after the station.
+        """
+        if point.area:
+            return point.area
         parts = self._clean_path_parts(point.path)
         if len(parts) > self.area_depth:
             return decode_niagara_name(parts[self.area_depth - 1])

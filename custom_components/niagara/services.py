@@ -21,14 +21,21 @@ from homeassistant.core import (
     SupportsResponse,
 )
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .const import DOMAIN
-from .coordinator import stable_id
+from .coordinator import NiagaraCoordinator, stable_id
 
 _LOGGER = logging.getLogger(__name__)
+
+def _station_of_path(path: str) -> str:
+    """The Niagara station a point path sits under, lowercased."""
+    return NiagaraCoordinator._station_of(path)
+
+
 
 SERVICE_GENERATE_CARD = "generate_card"
 SERVICE_GENERATE_CARDS = "generate_cards"
@@ -37,6 +44,8 @@ SERVICE_RUN_DIAGNOSTICS = "run_diagnostics"
 SERVICE_ADD_TO_ENERGY = "add_meters_to_energy"
 SERVICE_RESCAN = "rescan"
 SERVICE_SYNC_HISTORY = "sync_history"
+SERVICE_LEARN_AREAS = "learn_areas"
+SERVICE_APPLY_AREAS = "apply_areas"
 ATTR_DEVICE = "device"
 
 GENERATE_CARD_SCHEMA = vol.Schema({vol.Required(ATTR_DEVICE): str})
@@ -201,9 +210,134 @@ async def _async_register_extra_services(hass: HomeAssistant) -> None:
         schema=vol.Schema({}),
         supports_response=SupportsResponse.ONLY,
     )
+    def _niagara_devices(coordinator):
+        """Niagara devices with the folder each one came from.
+
+        A device id is derived from the host and the folder, so the map is
+        rebuilt the same way rather than stored — nothing else records
+        which folder a registry entry belongs to.
+        """
+        devices = dr.async_get(hass)
+        area_reg = ar.async_get(hass)
+        found = {}
+        for group in {p.group for p in coordinator.points.values() if p.group}:
+            device_id = f"niagara_{stable_id(coordinator.host + '/' + group)}"
+            entry = devices.async_get_device(identifiers={(DOMAIN, device_id)})
+            if entry is None:
+                continue
+            area = area_reg.async_get_area(entry.area_id) if entry.area_id else None
+            found[group] = (entry, area.name if area else "")
+        return found
+
+    async def handle_learn_areas(call: ServiceCall) -> ServiceResponse:
+        """Propose area rules from the areas already assigned by hand.
+
+        Home Assistant holds the assignments and the add-on owns the
+        rules, so they are collected here and sent over. Those assignments
+        are the real knowledge about the building; deriving area names from
+        path segments instead would leave a second set of near-duplicates
+        beside them.
+        """
+        entries = hass.data.get(DOMAIN, {})
+        if not entries:
+            raise HomeAssistantError("Niagara BMS is not set up")
+        coordinator = next(iter(entries.values()))
+
+        found = _niagara_devices(coordinator)
+        assignments = {g: area for g, (_e, area) in found.items() if area}
+        if not assignments:
+            return {
+                "learned": 0,
+                "reason": (
+                    "No Niagara device has an area assigned yet, so there is "
+                    "nothing to learn from. Put a few devices in the right "
+                    "areas first, then call this again."
+                ),
+            }
+
+        session = async_get_clientsession(hass)
+        try:
+            async with session.post(
+                f"{coordinator.addon_url}/api/areas/learn",
+                json={"assignments": assignments,
+                      "save": bool(call.data.get("save", False))},
+                timeout=aiohttp.ClientTimeout(total=60),
+            ) as response:
+                response.raise_for_status()
+                result = await response.json()
+        except (aiohttp.ClientError, TimeoutError) as err:
+            raise HomeAssistantError(f"Could not reach the add-on: {err}") from err
+
+        result["learned_from"] = len(assignments)
+        return result
+
+    async def handle_apply_areas(call: ServiceCall) -> ServiceResponse:
+        """Move devices into the areas the rules give them.
+
+        Only devices with no area, or sitting in an area named after the
+        Niagara station — the known-bad default from when the area was a
+        depth number. An area somebody chose deliberately is never
+        overwritten: the rules were most likely learned from those very
+        choices, and nothing here can tell a good one from a stale one.
+        """
+        entries = hass.data.get(DOMAIN, {})
+        if not entries:
+            raise HomeAssistantError("Niagara BMS is not set up")
+        coordinator = next(iter(entries.values()))
+        dry_run = bool(call.data.get("dry_run", True))
+
+        stations = {
+            s for s in (_station_of_path(p.path)
+                        for p in coordinator.points.values()) if s
+        }
+        by_group = {}
+        for point in coordinator.points.values():
+            if point.group and point.group not in by_group:
+                by_group[point.group] = point.area
+
+        devices = dr.async_get(hass)
+        area_reg = ar.async_get(hass)
+        found = _niagara_devices(coordinator)
+
+        moves, skipped = [], []
+        for group, (entry, current) in sorted(found.items()):
+            target = by_group.get(group)
+            if not target or target == current:
+                continue
+            if current and current.lower() not in stations:
+                skipped.append({"device": entry.name, "area": current,
+                                "would_be": target})
+                continue
+            moves.append({"device": entry.name, "from": current or None,
+                          "to": target})
+            if not dry_run:
+                area = area_reg.async_get_area_by_name(target)
+                if area is None:
+                    area = area_reg.async_create(target)
+                devices.async_update_device(entry.id, area_id=area.id)
+
+        return {
+            "dry_run": dry_run,
+            "moved": 0 if dry_run else len(moves),
+            "would_move": len(moves) if dry_run else 0,
+            "changes": moves[:40],
+            "left_alone": len(skipped),
+            "left_alone_detail": skipped[:20],
+        }
+
     hass.services.async_register(
         DOMAIN, SERVICE_SYNC_HISTORY, handle_sync_history,
         schema=vol.Schema({vol.Optional("history"): str}),
+        supports_response=SupportsResponse.ONLY,
+    )
+    hass.services.async_register(
+        DOMAIN, SERVICE_LEARN_AREAS, handle_learn_areas,
+        schema=vol.Schema({vol.Optional("save", default=False): bool}),
+        supports_response=SupportsResponse.ONLY,
+    )
+    hass.services.async_register(
+        DOMAIN, SERVICE_APPLY_AREAS, handle_apply_areas,
+        schema=vol.Schema({vol.Optional("dry_run", default=True): bool}),
         supports_response=SupportsResponse.ONLY,
     )
 

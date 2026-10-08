@@ -3,6 +3,43 @@
 The add-on and the Home Assistant integration are released as a matched
 pair and share a version number. CI fails the build if they drift.
 
+## 3.27.0 — 2026-10-08
+
+- **Feature**: Areas come from rules instead of a depth number. The area
+  was the Nth segment of a point's path, which cannot work on a real
+  station because the segment that names a place sits at a different depth
+  in every branch — on the reference station it put **275 of 323 devices
+  into one area named after the station**, the whole building in one
+  bucket.
+
+  Rules live in `/config/niagara-ha/areas.yaml`, in order, first match
+  wins. A match is a glob or a folder prefix against the device's folder;
+  an area may use `{name}` for the device folder's own name and `{parent}`
+  for the one above it, so the 192 FCUs under `HVAC/AC/Rooms` can each take
+  their room as an area. A station with no rules keeps exactly the old
+  behaviour.
+
+- **Feature**: `niagara.learn_areas` proposes rules from the areas already
+  assigned by hand. Those assignments are the real knowledge about the
+  building, so the rules are derived from them rather than from path
+  segments — which would have produced a second set of near-duplicate area
+  names beside the good ones.
+
+  A shared folder only becomes a rule when no other area has devices under
+  it **and** the area accounts for most of what is in it. Both conditions
+  were learned the hard way: five areas on the reference station have their
+  devices under `Electrical`, and two rooms assigned inside a folder of 192
+  made that folder look exclusive. Against the real station it now
+  reproduces all 47 hand-assigned devices exactly and claims nothing it
+  cannot justify.
+
+- **Feature**: `niagara.apply_areas` moves devices into the areas the rules
+  give them, dry run by default. It only touches a device with no area, or
+  one sitting in an area named after the Niagara station — the useless
+  default. An area somebody chose is never overwritten, because the rules
+  were most likely learned from those very choices and nothing can tell a
+  good one from a stale one.
+
 ## 3.26.0 — 2026-10-08
 
 - **Feature**: The faceplate catalogue is now under contract. The drawings

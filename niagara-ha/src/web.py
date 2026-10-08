@@ -9,6 +9,7 @@ from pathlib import Path
 
 from flask import Flask, jsonify, request, send_from_directory
 
+import areas as area_rules
 import histories
 import history_store
 from device_templates import (
@@ -664,6 +665,16 @@ def integration_points():
                 "device_type": assigned.get("template"),
             }
 
+    # Resolved once per request, not per point: the rules are walked in
+    # order and 2,800 points share a few hundred folders.
+    rules = area_rules.load()
+    resolved_areas: dict[str, str | None] = {}
+    if rules:
+        for entry in selections.values():
+            group = entry.get("group", "")
+            if group and group not in resolved_areas:
+                resolved_areas[group] = area_rules.resolve(group, rules)
+
     now = time.time()
     points = []
     for entry in selections.values():
@@ -684,6 +695,11 @@ def integration_points():
             "unit_overridden": bool(entry.get("custom_unit")),
             "discovered_unit": entry.get("unit", ""),
             "group": entry.get("group", "Ungrouped"),
+            # The area this device's folder maps to, or None when no rule
+            # claims it — in which case the integration keeps its own
+            # depth-based guess, which is what every station had before
+            # rules existed.
+            "area": resolved_areas.get(entry.get("group", "")),
             "value": _plain_value(cached),
             "status": cached.get("status", "unknown") if cached else "unknown",
             "age": round(now - cached["ts"], 1) if cached and cached.get("ts") else None,
@@ -2098,6 +2114,97 @@ def mark_history_synced():
         return jsonify({"error": "history and through are required"}), 400
     history_store.record_sync(name, through, int(body.get("imported") or 0))
     return jsonify({"history": name, "through": through})
+
+
+# -- Areas ----------------------------------------------------------------
+
+
+def _device_group_list() -> list[str]:
+    """Every folder that is or could be a device, for previewing rules."""
+    return sorted(_device_groups())
+
+
+@app.route("/api/areas")
+def list_areas():
+    """The rules, and what every device folder resolves to under them.
+
+    The preview is the point of the screen: a rule list without it is a
+    guess, and the failure it replaces — 275 of 323 devices in one area —
+    was invisible precisely because nothing showed the result.
+    """
+    rules = area_rules.load()
+    groups = _device_group_list()
+    resolved = area_rules.preview(groups, rules)
+    unclaimed = [g for g, a in resolved.items() if not a]
+    counts: dict[str, int] = {}
+    for area in resolved.values():
+        if area:
+            counts[area] = counts.get(area, 0) + 1
+    return jsonify({
+        "rules": [r.to_dict() for r in rules],
+        "areas": dict(sorted(counts.items(), key=lambda kv: -kv[1])),
+        "resolved": {
+            g: {"area": a, "name": decode_niagara_name(g.rstrip("/").split("/")[-1])}
+            for g, a in resolved.items()
+        },
+        "unclaimed": len(unclaimed),
+        "total": len(groups),
+    })
+
+
+@app.route("/api/areas", methods=["POST"])
+def save_areas():
+    """Replace the rule list. Order is the configuration, so it is kept."""
+    body = request.get_json(silent=True) or {}
+    raw = body.get("rules")
+    if not isinstance(raw, list):
+        return jsonify({"error": "rules must be a list"}), 400
+    rules = []
+    for item in raw:
+        if not isinstance(item, dict):
+            return jsonify({"error": "each rule must be an object"}), 400
+        match = str(item.get("match") or "").strip()
+        area = str(item.get("area") or "").strip()
+        if not match or not area:
+            return jsonify({
+                "error": "each rule needs a match and an area",
+            }), 400
+        rules.append(area_rules.AreaRule(match, area,
+                                        str(item.get("note") or "")))
+    area_rules.save(rules)
+    return jsonify({"ok": True, "rules": len(rules)})
+
+
+@app.route("/api/areas/learn", methods=["POST"])
+def learn_areas():
+    """Propose rules from the areas already assigned in Home Assistant.
+
+    Home Assistant holds the assignments, not the add-on, so the
+    integration sends them. Those assignments are the real knowledge about
+    the building — inventing area names from path segments would discard
+    them and leave a second set of near-duplicates beside them.
+    """
+    body = request.get_json(silent=True) or {}
+    assignments = body.get("assignments")
+    if not isinstance(assignments, dict):
+        return jsonify({"error": "assignments must be an object"}), 400
+
+    groups = _device_group_list()
+    proposed = area_rules.learn(
+        {str(k): str(v or "") for k, v in assignments.items()},
+        all_groups=groups,
+    )
+    if body.get("save"):
+        area_rules.save(proposed)
+
+    resolved = area_rules.preview(groups, proposed)
+    return jsonify({
+        "saved": bool(body.get("save")),
+        "rules": [r.to_dict() for r in proposed],
+        "would_claim": sum(1 for a in resolved.values() if a),
+        "would_leave": sum(1 for a in resolved.values() if not a),
+        "total": len(groups),
+    })
 
 
 @app.route("/api/health")

@@ -78,3 +78,41 @@ sync_history:
       example: Jace1/AHU1_SupplyTemp
       selector:
         text:
+
+learn_areas:
+  name: Learn area rules
+  description: >-
+    Propose rules mapping Niagara folders to Home Assistant areas, learned
+    from the areas you have already assigned by hand. Those assignments are
+    the real knowledge about the building, so the rules are derived from
+    them rather than from path segments. Returns the proposed rules without
+    saving unless you ask it to.
+  fields:
+    save:
+      name: Save them
+      description: >-
+        Write the proposed rules to the add-on, replacing any existing ones.
+        Leave this off to see what it would propose first.
+      required: false
+      default: false
+      selector:
+        boolean:
+
+apply_areas:
+  name: Apply area rules
+  description: >-
+    Move devices into the areas the add-on's rules give them. Only touches
+    devices with no area, or sitting in an area named after the Niagara
+    station — the useless default from when the area was a depth number.
+    An area you chose yourself is never overwritten. Reports what it would
+    do unless you turn the dry run off.
+  fields:
+    dry_run:
+      name: Dry run
+      description: >-
+        Report the changes without making them. On by default, because this
+        moves every device on the station.
+      required: false
+      default: true
+      selector:
+        boolean:
