@@ -92,3 +92,19 @@ def test_the_station_is_read_from_the_path(path, station):
     """apply_areas uses this to tell its own bad default from an area
     somebody chose."""
     assert NiagaraCoordinator._station_of(path) == station
+
+
+def test_the_station_named_area_is_not_treated_as_knowledge():
+    """It is the default from when the area was a depth number. Learning
+    from it writes one rule per device cementing the bug — on the real
+    station that was 275 of 322 devices."""
+    import inspect
+
+    from custom_components.niagara import services
+
+    source = inspect.getsource(services._async_register_extra_services)
+    learn = source[source.index("async def handle_learn_areas"):
+                   source.index("async def handle_apply_areas")]
+    assert "_station_of_path" in learn
+    assert "area.lower() not in stations" in learn
+    assert "ignored_station_default" in learn

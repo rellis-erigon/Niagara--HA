@@ -3,6 +3,15 @@
 The add-on and the Home Assistant integration are released as a matched
 pair and share a version number. CI fails the build if they drift.
 
+## 3.27.1 — 2026-10-08
+
+- **Fix**: `niagara.learn_areas` learned from the station-named area as if
+  it were a decision. That area is the useless default from when the area
+  was a depth number, so learning from it wrote one exact rule per device
+  cementing the very bug the feature replaces — 275 of 322 devices on the
+  reference station. Those are now excluded and counted separately, so the
+  result says how many were ignored and why.
+
 ## 3.27.0 — 2026-10-08
 
 - **Feature**: Areas come from rules instead of a depth number. The area

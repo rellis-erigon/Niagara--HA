@@ -243,15 +243,34 @@ async def _async_register_extra_services(hass: HomeAssistant) -> None:
             raise HomeAssistantError("Niagara BMS is not set up")
         coordinator = next(iter(entries.values()))
 
+        # An area named after the Niagara station is the useless default
+        # from when the area was a depth number, not somebody's decision.
+        # Learning from it writes one rule per device cementing the very
+        # bug this replaces — on this station that was 275 of 322.
+        stations = {
+            s for s in (_station_of_path(p.path)
+                        for p in coordinator.points.values()) if s
+        }
         found = _niagara_devices(coordinator)
-        assignments = {g: area for g, (_e, area) in found.items() if area}
+        assignments = {
+            g: area for g, (_e, area) in found.items()
+            if area and area.lower() not in stations
+        }
+        ignored = sum(
+            1 for _g, (_e, area) in found.items()
+            if area and area.lower() in stations
+        )
         if not assignments:
             return {
                 "learned": 0,
+                "ignored_station_default": ignored,
                 "reason": (
-                    "No Niagara device has an area assigned yet, so there is "
-                    "nothing to learn from. Put a few devices in the right "
-                    "areas first, then call this again."
+                    "No Niagara device has an area somebody chose, so there "
+                    "is nothing to learn from. Put a few devices in the "
+                    "right areas first, then call this again."
+                    + (f" {ignored} devices are in an area named after the "
+                       "station, which is the default this replaces and not "
+                       "a choice." if ignored else "")
                 ),
             }
 
@@ -269,6 +288,7 @@ async def _async_register_extra_services(hass: HomeAssistant) -> None:
             raise HomeAssistantError(f"Could not reach the add-on: {err}") from err
 
         result["learned_from"] = len(assignments)
+        result["ignored_station_default"] = ignored
         return result
 
     async def handle_apply_areas(call: ServiceCall) -> ServiceResponse:
