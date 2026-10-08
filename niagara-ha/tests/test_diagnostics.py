@@ -291,3 +291,85 @@ def test_a_slot_whose_own_unit_is_wrong_is_still_caught():
     finding = d.check_energy_eligibility(
         devices, {"meter": template(units=("kW",))}, selections)
     assert finding.items[0]["unit"] == "kW"
+
+
+# -- The faceplate contract as a runtime check --------------------------
+#
+# The add-on tests catch a broken contract before release. This catches a
+# catalogue that was never refreshed on a running station, where the card
+# draws, nothing looks broken, and the reading is simply absent from it.
+
+FACES = [
+    {"id": "underbench-fridge", "card": "plant-equipment-card",
+     "roles": ["temperature", "door", "compressor"], "options": [{"key": "doors"}]},
+]
+
+
+class _Template:
+    def __init__(self, card):
+        self.card = card
+
+
+def _diag_with_faces(monkeypatch, faces, devices, templates):
+    import faceplates as fp
+    monkeypatch.setattr(fp, "load_faceplates", lambda: faces)
+    return d.check_faceplate_contract(devices, templates)
+
+
+def test_a_clean_contract_reports_nothing(monkeypatch):
+    templates = {"fridge": _Template({
+        "type": "custom:plant-equipment-card",
+        "faceplate": "underbench-fridge",
+        "entities": {"temperature": "x", "door": "y"}})}
+    assert _diag_with_faces(monkeypatch, FACES, {}, templates) is None
+
+
+def test_a_renamed_role_becomes_an_error(monkeypatch):
+    """An error, not a warning: the card still draws, so nothing looks
+    wrong — the value is just missing from it."""
+    templates = {"fridge": _Template({
+        "type": "custom:plant-equipment-card",
+        "faceplate": "underbench-fridge",
+        "entities": {"cabinet_temp": "x"}})}
+    finding = _diag_with_faces(monkeypatch, FACES, {}, templates)
+    assert finding is not None
+    assert finding.severity == d.ERROR
+    assert "cabinet_temp" in finding.action
+
+
+def test_a_face_missing_from_the_catalogue_names_it(monkeypatch):
+    devices = {"Site/Kitchen/UB1": {
+        "template": "fridge", "faceplate": "walkin-freezer"}}
+    finding = _diag_with_faces(monkeypatch, FACES, devices, {})
+    assert "walkin-freezer" in finding.action
+    assert "faceplates.json" in finding.action
+
+
+def test_an_unreadable_catalogue_is_reported_separately(monkeypatch):
+    """Every card falls back to its default drawing, which is a different
+    problem from a single face having moved."""
+    finding = _diag_with_faces(monkeypatch, [], {}, {})
+    assert finding.id == "faceplate_catalogue_missing"
+    assert finding.severity == d.WARNING
+
+
+def test_many_problems_are_summarised_rather_than_listed_in_full(monkeypatch):
+    templates = {
+        f"t{n}": _Template({
+            "type": "custom:plant-equipment-card",
+            "faceplate": "underbench-fridge",
+            "entities": {f"bogus{n}": "x"}})
+        for n in range(10)
+    }
+    finding = _diag_with_faces(monkeypatch, FACES, {}, templates)
+    assert "and 4 more" in finding.detail
+    assert "10 card(s)" in finding.title
+
+
+def test_the_check_is_counted_in_the_run(monkeypatch):
+    """`checked` is shown in the UI; a check missing from the count reads
+    as one fewer than actually ran."""
+    import faceplates as fp
+    monkeypatch.setattr(fp, "load_faceplates", lambda: FACES)
+    report = d.run_all({}, {}, {}, {}, {}, "1.0.0", "1.0.0")
+    assert report["checked"] == 9

@@ -323,6 +323,44 @@ Lower the poll interval in the integration options. Check that the oBIX user has
 
 ---
 
+## The faceplate contract
+
+The drawings the generated cards wear live in a **separate repository**
+([HA-Cards]), and `niagara-ha/faceplates.json` is a copy of its generated
+catalogue, bundled into the add-on image.
+
+Nothing about that coupling fails loudly. A faceplate that renames a role
+leaves every template still binding the old key: the region binds nothing,
+draws its placeholder, and reads as a device with a missing point. A
+template naming a face that is not in the bundled catalogue falls back to
+the template's default with only a log line. Both go unnoticed for weeks.
+
+So the contract is checked in three places:
+
+| Where | What it catches |
+|---|---|
+| `tests/test_faceplate_contract.py` | Every builtin template's roles, faceplate ids and options against the bundled catalogue. Fails the build. |
+| The cards repo's `scripts/test-contract.mjs` | A role or faceplate disappearing, against a committed lock file. Fails *that* build, where the rename happens. |
+| `/api/diagnostics` | A catalogue that was never refreshed on a running station. Reported as an error, because the card still draws. |
+
+**When faceplates change, refresh the catalogue in the same change:**
+
+```sh
+cp ../HA-Cards/faceplates/index.json niagara-ha/faceplates.json
+```
+
+It does not update itself, and a stale one means the device dialog does not
+offer the new faces at all.
+
+Note the catalogue lists **every role a faceplate can bind**, not only its
+default shape — a parametric face resolved at defaults under-reports badly
+(the 16-channel mixer declared 16 roles instead of 112), and a consumer
+validating against that would reject perfectly good bindings.
+
+[HA-Cards]: https://github.com/rellis-erigon/HA-rellis-erigon-Cards
+
+---
+
 ## Tech Stack
 
 - **Protocol:** oBIX (Open Building Information Exchange) over REST/HTTPS

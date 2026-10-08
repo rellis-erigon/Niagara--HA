@@ -1,5 +1,5 @@
 {
-  "generated": "2026-10-07",
+  "generated": "2026-10-08",
   "faceplates": [
     {
       "id": "av-room-controller",
@@ -34,6 +34,12 @@
         "pump2_current",
         "pump2_fault",
         "pump2_run",
+        "pump3_current",
+        "pump3_fault",
+        "pump3_run",
+        "pump4_current",
+        "pump4_fault",
+        "pump4_run",
         "return_temp"
       ],
       "options": [
@@ -54,7 +60,18 @@
           "default": 0
         }
       ],
-      "roles_vary_with_options": true
+      "roles_vary_with_options": true,
+      "roles_at_default": [
+        "common_fault",
+        "flow_temp",
+        "pump1_current",
+        "pump1_fault",
+        "pump1_run",
+        "pump2_current",
+        "pump2_fault",
+        "pump2_run",
+        "return_temp"
+      ]
     },
     {
       "id": "circutor-cvm-e3-mini",
@@ -247,14 +264,30 @@
         "fire_alarm",
         "isolate",
         "power",
+        "zone10_alarm",
+        "zone11_alarm",
+        "zone12_alarm",
+        "zone13_alarm",
+        "zone14_alarm",
+        "zone15_alarm",
+        "zone16_alarm",
+        "zone17_alarm",
+        "zone18_alarm",
+        "zone19_alarm",
         "zone1_alarm",
+        "zone20_alarm",
+        "zone21_alarm",
+        "zone22_alarm",
+        "zone23_alarm",
+        "zone24_alarm",
         "zone2_alarm",
         "zone3_alarm",
         "zone4_alarm",
         "zone5_alarm",
         "zone6_alarm",
         "zone7_alarm",
-        "zone8_alarm"
+        "zone8_alarm",
+        "zone9_alarm"
       ],
       "options": [
         {
@@ -266,7 +299,22 @@
           "default": 8
         }
       ],
-      "roles_vary_with_options": true
+      "roles_vary_with_options": true,
+      "roles_at_default": [
+        "brigade_signal",
+        "fault",
+        "fire_alarm",
+        "isolate",
+        "power",
+        "zone1_alarm",
+        "zone2_alarm",
+        "zone3_alarm",
+        "zone4_alarm",
+        "zone5_alarm",
+        "zone6_alarm",
+        "zone7_alarm",
+        "zone8_alarm"
+      ]
     },
     {
       "id": "hot-water-unit",
@@ -282,7 +330,10 @@
         "setpoint",
         "unit1_fault",
         "unit1_run",
-        "unit1_tank_temp"
+        "unit1_tank_temp",
+        "unit2_fault",
+        "unit2_run",
+        "unit2_tank_temp"
       ],
       "options": [
         {
@@ -294,7 +345,16 @@
           "default": 1
         }
       ],
-      "roles_vary_with_options": true
+      "roles_vary_with_options": true,
+      "roles_at_default": [
+        "common_fault",
+        "flow_temp",
+        "return_temp",
+        "setpoint",
+        "unit1_fault",
+        "unit1_run",
+        "unit1_tank_temp"
+      ]
     },
     {
       "id": "lcd-water-meter",
@@ -347,6 +407,20 @@
       "emulates": "Q-SYS zone outputs",
       "pages": [],
       "roles": [
+        "zone10_mute",
+        "zone10_volume",
+        "zone11_mute",
+        "zone11_volume",
+        "zone12_mute",
+        "zone12_volume",
+        "zone13_mute",
+        "zone13_volume",
+        "zone14_mute",
+        "zone14_volume",
+        "zone15_mute",
+        "zone15_volume",
+        "zone16_mute",
+        "zone16_volume",
         "zone1_mute",
         "zone1_volume",
         "zone2_mute",
@@ -354,7 +428,17 @@
         "zone3_mute",
         "zone3_volume",
         "zone4_mute",
-        "zone4_volume"
+        "zone4_volume",
+        "zone5_mute",
+        "zone5_volume",
+        "zone6_mute",
+        "zone6_volume",
+        "zone7_mute",
+        "zone7_volume",
+        "zone8_mute",
+        "zone8_volume",
+        "zone9_mute",
+        "zone9_volume"
       ],
       "options": [
         {
@@ -366,7 +450,17 @@
           "default": 4
         }
       ],
-      "roles_vary_with_options": true
+      "roles_vary_with_options": true,
+      "roles_at_default": [
+        "zone1_mute",
+        "zone1_volume",
+        "zone2_mute",
+        "zone2_volume",
+        "zone3_mute",
+        "zone3_volume",
+        "zone4_mute",
+        "zone4_volume"
+      ]
     },
     {
       "id": "schneider-pm2200",
@@ -428,7 +522,13 @@
         "tank1_low_alarm",
         "tank2_high_alarm",
         "tank2_level",
-        "tank2_low_alarm"
+        "tank2_low_alarm",
+        "tank3_high_alarm",
+        "tank3_level",
+        "tank3_low_alarm",
+        "tank4_high_alarm",
+        "tank4_level",
+        "tank4_low_alarm"
       ],
       "options": [
         {
@@ -440,7 +540,18 @@
           "default": 2
         }
       ],
-      "roles_vary_with_options": true
+      "roles_vary_with_options": true,
+      "roles_at_default": [
+        "common_fault",
+        "fill_valve",
+        "pressure",
+        "tank1_high_alarm",
+        "tank1_level",
+        "tank1_low_alarm",
+        "tank2_high_alarm",
+        "tank2_level",
+        "tank2_low_alarm"
+      ]
     },
     {
       "id": "supply-fan-left",
@@ -519,7 +630,14 @@
           "default": 0
         }
       ],
-      "roles_vary_with_options": true
+      "roles_vary_with_options": true,
+      "roles_at_default": [
+        "alarm",
+        "compressor",
+        "door",
+        "setpoint",
+        "temperature"
+      ]
     },
     {
       "id": "underbench-fridge",
@@ -553,7 +671,14 @@
           "default": 0
         }
       ],
-      "roles_vary_with_options": true
+      "roles_vary_with_options": true,
+      "roles_at_default": [
+        "alarm",
+        "compressor",
+        "door",
+        "setpoint",
+        "temperature"
+      ]
     },
     {
       "id": "upright-freezer",
@@ -579,7 +704,14 @@
           "default": 1
         }
       ],
-      "roles_vary_with_options": true
+      "roles_vary_with_options": true,
+      "roles_at_default": [
+        "alarm",
+        "compressor",
+        "door",
+        "setpoint",
+        "temperature"
+      ]
     },
     {
       "id": "upright-fridge",
@@ -605,7 +737,14 @@
           "default": 1
         }
       ],
-      "roles_vary_with_options": true
+      "roles_vary_with_options": true,
+      "roles_at_default": [
+        "alarm",
+        "compressor",
+        "door",
+        "setpoint",
+        "temperature"
+      ]
     },
     {
       "id": "vertical-pumpset",
@@ -615,6 +754,62 @@
       "emulates": null,
       "pages": [],
       "roles": [
+        "common_fault",
+        "pressure_setpoint",
+        "pump10_current",
+        "pump10_fault",
+        "pump10_run",
+        "pump10_speed",
+        "pump1_current",
+        "pump1_fault",
+        "pump1_run",
+        "pump1_speed",
+        "pump2_current",
+        "pump2_fault",
+        "pump2_run",
+        "pump2_speed",
+        "pump3_current",
+        "pump3_fault",
+        "pump3_run",
+        "pump3_speed",
+        "pump4_current",
+        "pump4_fault",
+        "pump4_run",
+        "pump4_speed",
+        "pump5_current",
+        "pump5_fault",
+        "pump5_run",
+        "pump5_speed",
+        "pump6_current",
+        "pump6_fault",
+        "pump6_run",
+        "pump6_speed",
+        "pump7_current",
+        "pump7_fault",
+        "pump7_run",
+        "pump7_speed",
+        "pump8_current",
+        "pump8_fault",
+        "pump8_run",
+        "pump8_speed",
+        "pump9_current",
+        "pump9_fault",
+        "pump9_run",
+        "pump9_speed",
+        "system_pressure"
+      ],
+      "options": [
+        {
+          "key": "pumps",
+          "label": "Pumps",
+          "type": "number",
+          "min": 1,
+          "max": 10,
+          "default": 3
+        }
+      ],
+      "roles_vary_with_options": true,
+      "roles_at_default": [
         "common_fault",
         "pressure_setpoint",
         "pump1_current",
@@ -630,18 +825,7 @@
         "pump3_run",
         "pump3_speed",
         "system_pressure"
-      ],
-      "options": [
-        {
-          "key": "pumps",
-          "label": "Pumps",
-          "type": "number",
-          "min": 1,
-          "max": 10,
-          "default": 3
-        }
-      ],
-      "roles_vary_with_options": true
+      ]
     },
     {
       "id": "walkin-freezer",
@@ -693,22 +877,118 @@
       "emulates": "Audio mixing console channel strip",
       "pages": [],
       "roles": [
+        "zone10_balance",
+        "zone10_eq_high",
+        "zone10_eq_low",
+        "zone10_eq_mid",
+        "zone10_mute",
+        "zone10_source",
+        "zone10_volume",
+        "zone11_balance",
+        "zone11_eq_high",
+        "zone11_eq_low",
+        "zone11_eq_mid",
+        "zone11_mute",
+        "zone11_source",
+        "zone11_volume",
+        "zone12_balance",
+        "zone12_eq_high",
+        "zone12_eq_low",
+        "zone12_eq_mid",
+        "zone12_mute",
+        "zone12_source",
+        "zone12_volume",
+        "zone13_balance",
+        "zone13_eq_high",
+        "zone13_eq_low",
+        "zone13_eq_mid",
+        "zone13_mute",
+        "zone13_source",
+        "zone13_volume",
+        "zone14_balance",
+        "zone14_eq_high",
+        "zone14_eq_low",
+        "zone14_eq_mid",
+        "zone14_mute",
+        "zone14_source",
+        "zone14_volume",
+        "zone15_balance",
+        "zone15_eq_high",
+        "zone15_eq_low",
+        "zone15_eq_mid",
+        "zone15_mute",
+        "zone15_source",
+        "zone15_volume",
+        "zone16_balance",
+        "zone16_eq_high",
+        "zone16_eq_low",
+        "zone16_eq_mid",
+        "zone16_mute",
+        "zone16_source",
+        "zone16_volume",
         "zone1_balance",
+        "zone1_eq_high",
+        "zone1_eq_low",
+        "zone1_eq_mid",
         "zone1_mute",
         "zone1_source",
         "zone1_volume",
         "zone2_balance",
+        "zone2_eq_high",
+        "zone2_eq_low",
+        "zone2_eq_mid",
         "zone2_mute",
         "zone2_source",
         "zone2_volume",
         "zone3_balance",
+        "zone3_eq_high",
+        "zone3_eq_low",
+        "zone3_eq_mid",
         "zone3_mute",
         "zone3_source",
         "zone3_volume",
         "zone4_balance",
+        "zone4_eq_high",
+        "zone4_eq_low",
+        "zone4_eq_mid",
         "zone4_mute",
         "zone4_source",
-        "zone4_volume"
+        "zone4_volume",
+        "zone5_balance",
+        "zone5_eq_high",
+        "zone5_eq_low",
+        "zone5_eq_mid",
+        "zone5_mute",
+        "zone5_source",
+        "zone5_volume",
+        "zone6_balance",
+        "zone6_eq_high",
+        "zone6_eq_low",
+        "zone6_eq_mid",
+        "zone6_mute",
+        "zone6_source",
+        "zone6_volume",
+        "zone7_balance",
+        "zone7_eq_high",
+        "zone7_eq_low",
+        "zone7_eq_mid",
+        "zone7_mute",
+        "zone7_source",
+        "zone7_volume",
+        "zone8_balance",
+        "zone8_eq_high",
+        "zone8_eq_low",
+        "zone8_eq_mid",
+        "zone8_mute",
+        "zone8_source",
+        "zone8_volume",
+        "zone9_balance",
+        "zone9_eq_high",
+        "zone9_eq_low",
+        "zone9_eq_mid",
+        "zone9_mute",
+        "zone9_source",
+        "zone9_volume"
       ],
       "options": [
         {
@@ -736,7 +1016,25 @@
           "default": 0
         }
       ],
-      "roles_vary_with_options": true
+      "roles_vary_with_options": true,
+      "roles_at_default": [
+        "zone1_balance",
+        "zone1_mute",
+        "zone1_source",
+        "zone1_volume",
+        "zone2_balance",
+        "zone2_mute",
+        "zone2_source",
+        "zone2_volume",
+        "zone3_balance",
+        "zone3_mute",
+        "zone3_source",
+        "zone3_volume",
+        "zone4_balance",
+        "zone4_mute",
+        "zone4_source",
+        "zone4_volume"
+      ]
     }
   ]
 }

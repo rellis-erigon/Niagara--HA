@@ -378,6 +378,70 @@ def check_version_drift(addon: str, integration: str | None) -> Finding | None:
     return None
 
 
+def check_faceplate_contract(
+    devices: dict[str, dict], templates: dict,
+) -> Finding | None:
+    """Templates and devices drawing with faceplates that have moved.
+
+    The faceplates ship from another repository, and a renamed role or a
+    face missing from the bundled catalogue breaks nothing loudly: the
+    region binds nothing, draws its placeholder, and reads as a device
+    with a missing point. The add-on's tests catch it before release; this
+    catches a catalogue that was never refreshed on a running station.
+    """
+    import faceplate_contract as fc
+    from faceplates import load_faceplates
+
+    catalogue = load_faceplates()
+    if not catalogue:
+        return Finding(
+            id="faceplate_catalogue_missing",
+            severity=WARNING,
+            title="The faceplate catalogue could not be read",
+            detail=(
+                "Every generated card falls back to its template's default "
+                "drawing, and the device dialog offers no faces to choose."
+            ),
+            action="Reinstall or rebuild the add-on.",
+        )
+
+    problems = fc.check_templates(templates, catalogue)
+    problems += fc.check_devices(devices, templates, catalogue)
+    if not problems:
+        return None
+
+    missing = sorted({
+        p["faceplate"] for p in problems if p["kind"] == "unknown_faceplate"
+    })
+    renamed = sorted({
+        role for p in problems if p["kind"] == "unknown_roles"
+        for role in p.get("roles", [])
+    })
+    lines = [p["message"] for p in problems[:6]]
+    if len(problems) > 6:
+        lines.append(f"...and {len(problems) - 6} more.")
+
+    return Finding(
+        id="faceplate_contract",
+        # An error rather than a warning: the card draws, so nothing looks
+        # broken, and the reading is simply absent from it.
+        severity=ERROR,
+        title=(
+            f"{len(problems)} card(s) draw with a faceplate that has changed"
+        ),
+        detail=" ".join(lines),
+        action=(
+            "The bundled faceplate catalogue is behind the cards it was "
+            "built against"
+            + (f" — missing: {', '.join(missing)}." if missing else ".")
+            + (f" Roles no longer drawn: {', '.join(renamed)}."
+               if renamed else "")
+            + " Update the add-on, or refresh faceplates.json from the "
+              "cards repository."
+        ),
+    )
+
+
 def _name(entry: dict, path: str) -> str:
     raw = entry.get("name") or path.rstrip("/").split("/")[-1]
     return decode_niagara_name(raw)
@@ -436,6 +500,7 @@ def run_all(
             check_bound_but_disabled(devices, selections),
             check_energy_eligibility(devices, templates, selections),
             check_unit_overrides(selections),
+            check_faceplate_contract(devices, templates),
         ) if f is not None
     ]
     findings.sort(key=lambda f: -_RANK.get(f.severity, 0))
@@ -446,7 +511,7 @@ def run_all(
         "warnings": sum(1 for f in findings if f.severity == WARNING),
         "findings": [f.to_dict() for f in findings],
         "acknowledged": accepted,
-        "checked": 8,
+        "checked": 9,
     }
 
 

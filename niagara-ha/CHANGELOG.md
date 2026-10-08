@@ -3,6 +3,28 @@
 The add-on and the Home Assistant integration are released as a matched
 pair and share a version number. CI fails the build if they drift.
 
+## 3.26.0 — 2026-10-08
+
+- **Feature**: The faceplate catalogue is now under contract. The drawings
+  ship from a separate repository and nothing tied the two together: a
+  renamed role left every template binding a key no region reads, and a
+  template naming a face absent from the bundled catalogue fell back to its
+  default with only a log line. Neither throws.
+
+  Checked in three places now — the add-on's tests against the bundled
+  catalogue, the cards repo's own lock file against a role disappearing,
+  and `/api/diagnostics` for a catalogue that was never refreshed on a
+  running station. The last is reported as an **error** rather than a
+  warning, because the card still draws and only the value is missing.
+
+- **Fix**: Found by the new check on its first run — the catalogue listed
+  only the roles of a parametric faceplate's *default* shape. The tank set
+  declared tanks 1 and 2 while the template binds up to 4, and the mixer
+  declared 16 roles where it can bind 112. Any consumer validating against
+  that list would have rejected perfectly good bindings. The catalogue now
+  carries every role a face can bind, with `roles_at_default` alongside for
+  anything that wants the common case.
+
 ## 3.25.1 — 2026-10-07
 
 - **Fix**: The fan coil template claimed refrigeration cabinets. Its
