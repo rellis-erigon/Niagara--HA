@@ -463,12 +463,23 @@ def _faceplate_options_for(faceplate_id: str) -> dict[str, dict]:
     return {}
 
 
+def _bare_card(card_type: str) -> str:
+    """A card type without its `custom:` prefix.
+
+    The catalogue stores `plant-equipment-card` and a Lovelace card
+    declares `custom:plant-equipment-card`. Comparing the two as written
+    is never equal, so the check meant to refuse a fridge face on a
+    meter refused every face on everything.
+    """
+    return (card_type or "").removeprefix("custom:")
+
+
 def _card_type_of(template_id: str, templates: dict) -> str:
     """Which card a template's devices are drawn on."""
     template = templates.get(template_id)
     card = getattr(template, "card", None) if template else None
     types = card_types_in(card) if card else []
-    return types[0] if types else ""
+    return _bare_card(types[0]) if types else ""
 
 
 @app.route("/api/device-types/bulk", methods=["POST"])
@@ -520,7 +531,7 @@ def device_types_bulk():
         target = entry.get("faceplate", "") if faceplate is None else faceplate.strip()
 
         if faceplate:
-            wanted = faceplate_card(faceplate)
+            wanted = _bare_card(faceplate_card(faceplate) or "") or None
             if wanted is None:
                 refused.append({"group": group,
                                 "why": f"no faceplate called {faceplate!r}"})
