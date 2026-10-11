@@ -15,6 +15,7 @@ import history_store
 from device_templates import (
     STATE_DRAFT,
     STATE_PUBLISHED,
+    VALID_STATES,
     TemplateError,
     export_templates,
     import_templates,
@@ -31,7 +32,8 @@ from device_templates import (
 )
 from faceplates import (
     VALID_DISPLAYS, apply_display, apply_faceplate, card_types_in,
-    faceplates_for_card, full_entities_card, roles_in,
+    faceplate_card, faceplates_for_card, full_entities_card, load_faceplates,
+    roles_in,
 )
 from validation import (
     BLOCKED,
@@ -451,6 +453,174 @@ def toggle_group():
 
     _write_selections(selections)
     return jsonify({"ok": True, "group": group, "enabled": bool(enabled), "count": count})
+
+
+def _faceplate_options_for(faceplate_id: str) -> dict[str, dict]:
+    """The options a faceplate declares, by key."""
+    for face in load_faceplates():
+        if face.get("id") == faceplate_id:
+            return {o["key"]: o for o in (face.get("options") or [])}
+    return {}
+
+
+def _card_type_of(template_id: str, templates: dict) -> str:
+    """Which card a template's devices are drawn on."""
+    template = templates.get(template_id)
+    card = getattr(template, "card", None) if template else None
+    types = card_types_in(card) if card else []
+    return types[0] if types else ""
+
+
+@app.route("/api/device-types/bulk", methods=["POST"])
+def device_types_bulk():
+    """Set the face, its options, or the display on many devices at once.
+
+    Typing a device is per-device work and always will be — the points
+    differ. Choosing the face is not: ten under-bench fridges are ten of
+    the same drawing, and a tank farm drawn with four tanks when there
+    are two is the same mistake on every card of that type. Doing that
+    one device at a time is why those cards stayed wrong.
+
+    Selection is by explicit group or by template, so "every fridge" is
+    a request rather than a list somebody has to assemble. Nothing is
+    applied unless it is valid for the device it lands on: a faceplate
+    belongs to a card, a template's devices are drawn on one card, and
+    an option a face does not declare is a typo rather than an
+    instruction. Anything refused is named and the rest still go
+    through.
+    """
+    data = request.get_json() or {}
+    devices = load_device_types()
+    templates = load_templates()
+
+    groups = [g for g in (data.get("groups") or []) if g in devices]
+    for template_id in data.get("templates") or []:
+        groups += [g for g, e in devices.items()
+                   if e.get("template") == template_id and g not in groups]
+    if not groups:
+        return jsonify({"error": "no known device selected"}), 400
+
+    faceplate = data.get("faceplate")
+    raw_options = data.get("faceplate_options")
+    display = data.get("display")
+    state = data.get("state")
+
+    if faceplate is not None and not isinstance(faceplate, str):
+        return jsonify({"error": "faceplate must be a string"}), 400
+    if display is not None and display not in VALID_DISPLAYS:
+        return jsonify({"error": f"unknown display {display!r}"}), 400
+    if state is not None and state not in VALID_STATES:
+        return jsonify({"error": f"unknown state {state!r}"}), 400
+    if raw_options is not None and not isinstance(raw_options, dict):
+        return jsonify({"error": "faceplate_options must be an object"}), 400
+
+    applied, refused = [], []
+    for group in groups:
+        entry = dict(devices[group])
+        target = entry.get("faceplate", "") if faceplate is None else faceplate.strip()
+
+        if faceplate:
+            wanted = faceplate_card(faceplate)
+            if wanted is None:
+                refused.append({"group": group,
+                                "why": f"no faceplate called {faceplate!r}"})
+                continue
+            drawn_on = _card_type_of(entry.get("template", ""), templates)
+            if drawn_on and wanted != drawn_on:
+                # A fridge face on a meter would render nothing and look
+                # like a broken card rather than a wrong choice.
+                refused.append({
+                    "group": group,
+                    "why": f"{faceplate} is drawn on {wanted}, and this "
+                           f"device is a {entry.get('template')} on {drawn_on}",
+                })
+                continue
+            entry["faceplate"] = faceplate.strip()
+
+        if raw_options is not None:
+            declared = _faceplate_options_for(target)
+            if not declared and raw_options:
+                refused.append({"group": group,
+                                "why": f"{target or 'the default face'} takes "
+                                       f"no options"})
+                continue
+            merged = dict(entry.get("faceplate_options") or {})
+            bad = None
+            for key, value in raw_options.items():
+                option = declared.get(str(key))
+                if option is None:
+                    bad = f"{target} has no option {key!r}"
+                    break
+                if isinstance(value, bool) or not isinstance(value, (int, float)):
+                    bad = f"option {key} must be a number"
+                    break
+                low, high = option.get("min"), option.get("max")
+                if low is not None and value < low or high is not None and value > high:
+                    bad = f"option {key} must be between {low} and {high}"
+                    break
+                merged[str(key)] = value
+            if bad:
+                refused.append({"group": group, "why": bad})
+                continue
+            entry["faceplate_options"] = merged
+
+        if display is not None:
+            entry["display"] = display
+        if state is not None:
+            entry["state"] = state
+
+        devices[group] = entry
+        applied.append(group)
+
+    if applied:
+        save_device_types(devices)
+    return jsonify({
+        "ok": True,
+        "applied": applied,
+        "count": len(applied),
+        "refused": refused,
+    })
+
+
+@app.route("/api/device-types/faces")
+def device_types_faces():
+    """Every device, what it is drawn as, and what else it could be.
+
+    One call so the bulk editor can show the whole estate at once: this
+    is a view meant for spotting the odd one out across two hundred
+    devices, which is not something a per-device page can do.
+    """
+    devices = load_device_types()
+    templates = load_templates()
+    catalogue = {f["id"]: f for f in load_faceplates()}
+
+    by_template: dict[str, dict] = {}
+    rows = []
+    for group, entry in sorted(devices.items()):
+        template_id = entry.get("template", "")
+        if template_id not in by_template:
+            card = _card_type_of(template_id, templates)
+            by_template[template_id] = {
+                "card": card,
+                "faceplates": [
+                    {"id": f["id"], "name": f.get("name", f["id"]),
+                     "options": f.get("options") or []}
+                    for f in faceplates_for_card(card)
+                ] if card else [],
+            }
+        face = entry.get("faceplate", "")
+        rows.append({
+            "group": group,
+            "name": decode_niagara_name(group.rsplit("/", 1)[-1]),
+            "template": template_id,
+            "state": entry.get("state", STATE_DRAFT),
+            "display": entry.get("display", "both"),
+            "faceplate": face,
+            "faceplate_name": (catalogue.get(face) or {}).get("name", ""),
+            "faceplate_options": entry.get("faceplate_options") or {},
+            "bound": len(entry.get("bindings") or {}),
+        })
+    return jsonify({"devices": rows, "templates": by_template})
 
 
 @app.route("/api/bulk", methods=["POST"])

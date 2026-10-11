@@ -1,11 +1,15 @@
 {
   "domain": "niagara",
   "name": "Niagara BMS",
-  "version": "3.29.0",
+  "version": "3.30.0",
   "config_flow": true,
   "iot_class": "local_polling",
-  "requirements": ["aiohttp>=3.8.0"],
-  "codeowners": ["@rellis-erigon"],
+  "requirements": [
+    "aiohttp>=3.8.0"
+  ],
+  "codeowners": [
+    "@rellis-erigon"
+  ],
   "documentation": "https://github.com/rellis-erigon/Niagara--HA",
   "issue_tracker": "https://github.com/rellis-erigon/Niagara--HA/issues",
   "integration_type": "hub"
