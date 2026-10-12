@@ -712,6 +712,8 @@ tr:hover td { background: var(--row-hover); }
     <button class="btn btn-sm btn-primary" id="btn-autotype"
             title="Assign the suggested type to every device that has none">Auto-type All</button>
     <button class="btn btn-sm" id="btn-templates" title="Create and customize device templates">Templates</button>
+    <button class="btn btn-sm" id="btn-faces"
+            title="Set the faceplate and its options on many devices at once">Faceplates</button>
     <button class="btn btn-sm btn-primary" id="btn-publish-all"
             title="Publish every typed device that passes validation">Publish All</button>
     <button class="btn btn-sm" id="btn-enable-all"
@@ -2849,7 +2851,218 @@ async function openDeviceConfig(group) {
   });
 }
 
+
+// -- Faceplates in bulk --------------------------------------------------
+//
+// Typing a device is per-device work: the points differ. Choosing its
+// face is not. Ten under-bench fridges are ten of the same drawing, and
+// a tank farm drawn with four tanks where there are two is one mistake
+// repeated on every card of that type. Doing that one device page at a
+// time is why those cards stayed wrong.
+
+let faceState = { devices: [], templates: {}, selected: new Set(), filter: '' };
+
+function faceRows() {
+  const term = faceState.filter.trim().toLowerCase();
+  return faceState.devices.filter((d) => !term
+    || d.name.toLowerCase().includes(term)
+    || d.template.toLowerCase().includes(term)
+    || (d.faceplate || '').toLowerCase().includes(term));
+}
+
+/** The faces every selected device could wear — the intersection.
+ *
+ *  Offering the union would let somebody pick a meter face with a
+ *  fridge in the selection, and the save would refuse half of it. The
+ *  intersection can only ever produce a valid choice.
+ */
+function faceChoices() {
+  const chosen = faceState.devices.filter((d) => faceState.selected.has(d.group));
+  const templates = [...new Set(chosen.map((d) => d.template))];
+  if (!templates.length) return [];
+  let common = null;
+  for (const t of templates) {
+    const list = (faceState.templates[t] || {}).faceplates || [];
+    const ids = new Set(list.map((f) => f.id));
+    common = common === null ? list.filter((f) => ids.has(f.id))
+      : common.filter((f) => ids.has(f.id));
+  }
+  return common || [];
+}
+
+function renderFaceBulk() {
+  const rows = faceRows();
+  const chosenFace = $('#face-pick') ? $('#face-pick').value : '';
+  const choices = faceChoices();
+  const options = (choices.find((f) => f.id === chosenFace) || {}).options || [];
+
+  $('#face-count').textContent =
+    `${faceState.selected.size} of ${rows.length} selected`;
+
+  $('#face-pick').innerHTML =
+    '<option value="">(leave as it is)</option>'
+    + choices.map((f) => `<option value="${esc(f.id)}"${f.id === chosenFace ? ' selected' : ''}>${esc(f.name)}</option>`).join('');
+
+  $('#face-options').innerHTML = options.length
+    ? options.map((o) => `
+        <label style="display:inline-flex;gap:6px;align-items:center;margin-right:12px">
+          ${esc(o.label || o.key)}
+          <input type="number" data-face-opt="${esc(o.key)}" style="width:76px"
+                 min="${o.min}" max="${o.max}" placeholder="${o.default}">
+        </label>`).join('')
+    : '<span style="color:var(--muted)">This face takes no options.</span>';
+
+  $('#face-rows').innerHTML = rows.map((d) => `
+    <tr>
+      <td><input type="checkbox" data-face-sel="${esc(d.group)}"
+          ${faceState.selected.has(d.group) ? 'checked' : ''}></td>
+      <td>${esc(d.name)}</td>
+      <td style="color:var(--muted)">${esc(d.template)}</td>
+      <td>${d.faceplate ? esc(d.faceplate_name || d.faceplate)
+            : '<span style="color:var(--muted)">template default</span>'}</td>
+      <td style="color:var(--muted)">${
+        Object.keys(d.faceplate_options || {}).length
+          ? esc(Object.entries(d.faceplate_options).map(([k, v]) => k + '=' + v).join(' '))
+          : '—'}</td>
+      <td style="color:var(--muted)">${esc(d.state)}</td>
+    </tr>`).join('');
+
+  for (const box of document.querySelectorAll('[data-face-sel]')) {
+    box.addEventListener('change', () => {
+      const group = box.getAttribute('data-face-sel');
+      if (box.checked) faceState.selected.add(group);
+      else faceState.selected.delete(group);
+      renderFaceBulk();
+    });
+  }
+}
+
+async function openFaceplateBulk() {
+  let data;
+  try {
+    data = await api('/api/device-types/faces');
+  } catch (err) {
+    alert('Could not read the devices: ' + err.message);
+    return;
+  }
+  faceState = { devices: data.devices, templates: data.templates,
+                selected: new Set(), filter: '' };
+
+  $('#modal-root').innerHTML = `
+    <div class="modal-backdrop" onclick="if(event.target===this)closeModal()">
+      <div class="modal modal-wide">
+        <h2>Faceplates</h2>
+        <p style="font-size:0.85rem;color:var(--muted);margin-bottom:10px">
+          Which drawing a device wears, and the shape of it — a cabinet's
+          door count, a pump set's pump count. Pick the devices, pick the
+          face, apply. Only faces every selected device can wear are
+          offered, so a choice here cannot be refused on save.
+        </p>
+        <div class="row" style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
+          <input id="face-filter" placeholder="Filter by name, template or face"
+                 style="flex:1">
+          <button class="btn btn-sm" id="face-all">Select all shown</button>
+          <button class="btn btn-sm" id="face-none">Clear</button>
+          <span id="face-count" style="color:var(--muted);font-size:0.85rem"></span>
+        </div>
+        <div style="max-height:40vh;overflow:auto">
+          <table class="slot-table">
+            <thead><tr><th></th><th>Device</th><th>Template</th>
+              <th>Faceplate</th><th>Options</th><th>State</th></tr></thead>
+            <tbody id="face-rows"></tbody>
+          </table>
+        </div>
+        <div style="border-top:1px solid var(--line);margin-top:12px;padding-top:12px">
+          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+            <label style="display:inline-flex;gap:6px;align-items:center">
+              Faceplate <select id="face-pick"></select>
+            </label>
+            <span id="face-options"></span>
+          </div>
+          <p style="font-size:0.8rem;color:var(--muted);margin:8px 0 0">
+            An option left blank keeps whatever each device already has,
+            so a face can be set on fifty devices without flattening the
+            one that was deliberately different.
+          </p>
+        </div>
+        <div style="display:flex;gap:8px;justify-content:space-between;margin-top:16px">
+          <span id="face-result" style="color:var(--muted);font-size:0.85rem"></span>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-primary" id="face-apply">Apply to selected</button>
+            <button class="btn" onclick="closeModal()">Close</button>
+          </div>
+        </div>
+      </div>
+    </div>`;
+
+  renderFaceBulk();
+  $('#face-filter').addEventListener('input', (e) => {
+    faceState.filter = e.target.value;
+    renderFaceBulk();
+  });
+  $('#face-all').addEventListener('click', () => {
+    for (const d of faceRows()) faceState.selected.add(d.group);
+    renderFaceBulk();
+  });
+  $('#face-none').addEventListener('click', () => {
+    faceState.selected.clear();
+    renderFaceBulk();
+  });
+  $('#face-pick').addEventListener('change', renderFaceBulk);
+  $('#face-apply').addEventListener('click', applyFaceplateBulk);
+}
+
+async function applyFaceplateBulk() {
+  const groups = [...faceState.selected];
+  if (!groups.length) {
+    $('#face-result').textContent = 'Nothing selected.';
+    return;
+  }
+  const body = { groups };
+  const face = $('#face-pick').value;
+  if (face) body.faceplate = face;
+
+  const options = {};
+  for (const input of document.querySelectorAll('[data-face-opt]')) {
+    if (input.value === '') continue;      // blank keeps what is there
+    options[input.getAttribute('data-face-opt')] = Number(input.value);
+  }
+  if (Object.keys(options).length) body.faceplate_options = options;
+
+  if (!body.faceplate && !body.faceplate_options) {
+    $('#face-result').textContent = 'Choose a face or an option first.';
+    return;
+  }
+
+  const button = $('#face-apply');
+  button.disabled = true;
+  $('#face-result').textContent = 'applying…';
+  try {
+    const out = await api('/api/device-types/bulk', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    // Refusals are per device and the rest still went through, so both
+    // numbers matter: "40 done" alone hides the ten that did not.
+    const bits = [`${out.count} device(s) updated`];
+    if (out.refused.length) {
+      bits.push(`${out.refused.length} refused — ${out.refused[0].why}`);
+    }
+    $('#face-result').textContent = bits.join(' · ');
+    const fresh = await api('/api/device-types/faces');
+    faceState.devices = fresh.devices;
+    faceState.templates = fresh.templates;
+    renderFaceBulk();
+  } catch (err) {
+    $('#face-result').textContent = 'failed: ' + err.message;
+  } finally {
+    button.disabled = false;
+  }
+}
+
 $('#btn-templates').addEventListener('click', openTemplateList);
+$('#btn-faces').addEventListener('click', openFaceplateBulk);
 
 $('#device-search').addEventListener('input', e => {
   deviceFilter.search = e.target.value;
