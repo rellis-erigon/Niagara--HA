@@ -6,6 +6,20 @@ on:
   pull_request:
 
 jobs:
+  site-detail:
+    name: No site-specific detail
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      # This repository is public. The detail was scrubbed once in September
+      # 2026 and was back in two new files within a fortnight, because a real
+      # path makes a docstring concrete and a test realistic. A check that
+      # fails the build is the version of this that holds.
+      - name: Check for site-specific detail
+        run: python3 scripts/check-no-site-detail.py
   addon:
     name: Add-on tests
     runs-on: ubuntu-latest

@@ -12,7 +12,7 @@
 > priority level until released, and a point held from Home Assistant
 > looks entirely normal in the BMS while the station's own schedule
 > quietly stops working. The value on offer — nudging a setpoint from a
-> dashboard — does not pay for that risk on a live hotel.
+> dashboard — does not pay for that risk on a live building.
 >
 > The measurement below still stands and is useful on its own: it
 > explains why the HVAC points cannot be written *today* even if someone
@@ -21,7 +21,7 @@
 The bridge reads a BMS of 20,000 points and writes nothing. This is the
 plan to change that, in the order the work actually unblocks.
 
-Written 2026-10-07 against station `BunningsMercureJace2`, 2,801 exported
+Written 2026-10-07 against a production station, 2,801 exported
 points.
 
 ## The finding that shapes everything

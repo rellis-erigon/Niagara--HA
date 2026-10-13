@@ -21,7 +21,7 @@ from custom_components.niagara.coordinator import (  # noqa: E402
     NiagaraPoint,
 )
 
-JACE = "/config/Drivers/NiagaraNetwork/SiteJace2/points/SiteBMS"
+JACE = "/config/Drivers/NiagaraNetwork/SiteStation2/points/SiteBMS"
 
 
 def coordinator(area_depth=1):
@@ -36,16 +36,16 @@ def point(path, area=None, group=""):
 
 def test_a_rule_resolved_area_is_used():
     coord = coordinator()
-    p = point(f"{JACE}/Kitchens/Main_Kitchen/Fridge-1/Temp/",
-              area="Kitchen - Main")
-    assert coord.get_area(p) == "Kitchen - Main"
+    p = point(f"{JACE}/Kitchens/A_Kitchen/Fridge-1/Temp/",
+              area="Kitchen - A")
+    assert coord.get_area(p) == "Kitchen - A"
 
 
 def test_without_a_rule_it_falls_back_to_the_depth_number():
     """Kept only because it is what every station had before rules."""
     coord = coordinator(area_depth=1)
-    p = point(f"{JACE}/Kitchens/Main_Kitchen/Fridge-1/Temp/")
-    assert coord.get_area(p) == "SiteJace2"
+    p = point(f"{JACE}/Kitchens/A_Kitchen/Fridge-1/Temp/")
+    assert coord.get_area(p) == "SiteStation2"
 
 
 def test_the_fallback_is_the_failure_the_rules_replace():
@@ -53,29 +53,29 @@ def test_the_fallback_is_the_failure_the_rules_replace():
     building in a single bucket."""
     coord = coordinator(area_depth=1)
     paths = [
-        f"{JACE}/Kitchens/Main_Kitchen/Fridge-1/Temp/",
-        f"{JACE}/Electrical/DB-L5.1-Power/kWh/",
-        f"{JACE}/HVAC/AC/Rooms/331/RoomTemp/",
+        f"{JACE}/Kitchens/A_Kitchen/Fridge-1/Temp/",
+        f"{JACE}/Electrical/DB-A1-Power/kWh/",
+        f"{JACE}/HVAC/AC/Rooms/A1/RoomTemp/",
     ]
-    assert {coord.get_area(point(p)) for p in paths} == {"SiteJace2"}
+    assert {coord.get_area(point(p)) for p in paths} == {"SiteStation2"}
 
 
 def test_a_rule_separates_what_the_depth_number_cannot():
     coord = coordinator(area_depth=1)
     cases = [
-        (f"{JACE}/Kitchens/Main_Kitchen/Fridge-1/Temp/", "Kitchen - Main"),
-        (f"{JACE}/Electrical/DB-L5.1-Power/kWh/", "Switch Room"),
-        (f"{JACE}/HVAC/AC/Rooms/331/RoomTemp/", "Room 331"),
+        (f"{JACE}/Kitchens/A_Kitchen/Fridge-1/Temp/", "Kitchen - A"),
+        (f"{JACE}/Electrical/DB-A1-Power/kWh/", "Switch Room"),
+        (f"{JACE}/HVAC/AC/Rooms/A1/RoomTemp/", "Room A1"),
     ]
     assert [coord.get_area(point(p, area=a)) for p, a in cases] == [
-        "Kitchen - Main", "Switch Room", "Room 331"]
+        "Kitchen - A", "Switch Room", "Room A1"]
 
 
 def test_an_empty_rule_area_is_not_used():
     """The add-on sends None when no rule claims a folder; an empty string
     must not blank the area either."""
     coord = coordinator(area_depth=1)
-    assert coord.get_area(point(f"{JACE}/X/Y/", area="")) == "SiteJace2"
+    assert coord.get_area(point(f"{JACE}/X/Y/", area="")) == "SiteStation2"
 
 
 def test_a_short_path_has_no_fallback_area():
@@ -84,7 +84,7 @@ def test_a_short_path_has_no_fallback_area():
 
 
 @pytest.mark.parametrize("path,station", [
-    (f"{JACE}/X/Y/", "sitejace2"),
+    (f"{JACE}/X/Y/", "sitestation2"),
     ("/config/Drivers/NiagaraNetwork/Site$20Two/points/A/", "site two"),
     ("/config/points/Loose/", ""),
 ])

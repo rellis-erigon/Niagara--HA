@@ -18,10 +18,10 @@ import areas  # noqa: E402
 R = areas.AreaRule
 
 # The four shapes that defeat any positional rule.
-ROOM = "Jace2/SiteBMS/HVAC/AC/Rooms/$3331"          # the device is the room
-FRIDGE = "Jace2/SiteBMS/Kitchens/Main_Kitchen/Fridge$2d1"  # parent is the place
-BOARD = "Jace2/SiteBMS/Electrical/DB$2dL5.1$2dPower"       # parent is the place
-HYD = "Jace2/SiteBMS/MISC/HYDRAULICS"                # the device is the place
+ROOM = "Station2/SiteBMS/HVAC/AC/Rooms/$411"          # the device is the room
+FRIDGE = "Station2/SiteBMS/Kitchens/A_Kitchen/Fridge$2d1"  # parent is the place
+BOARD = "Station2/SiteBMS/Electrical/DB$2dA1$2dPower"       # parent is the place
+HYD = "Station2/SiteBMS/MISC/HYDRAULICS"                # the device is the place
 
 
 @pytest.fixture(autouse=True)
@@ -40,12 +40,12 @@ def test_no_rules_claims_nothing():
 def test_a_prefix_without_a_wildcard_covers_what_is_under_it():
     """Somebody writing "Kitchens" means everything in it, not a folder
     called exactly that."""
-    rules = [R("Jace2/SiteBMS/Kitchens", "Kitchen - Main")]
-    assert areas.resolve(FRIDGE, rules) == "Kitchen - Main"
+    rules = [R("Station2/SiteBMS/Kitchens", "Kitchen - A")]
+    assert areas.resolve(FRIDGE, rules) == "Kitchen - A"
 
 
 def test_a_prefix_does_not_match_a_sibling_with_the_same_start():
-    rules = [R("Jace2/SiteBMS/Kitchen", "Wrong")]
+    rules = [R("Station2/SiteBMS/Kitchen", "Wrong")]
     assert areas.resolve(FRIDGE, rules) is None
 
 
@@ -56,23 +56,23 @@ def test_a_glob_matches_mid_path():
 
 def test_the_first_matching_rule_wins():
     rules = [
-        R("Jace2/SiteBMS/Kitchens/Main_Kitchen", "Kitchen - Main"),
-        R("Jace2/SiteBMS/Kitchens", "Kitchens - other"),
+        R("Station2/SiteBMS/Kitchens/A_Kitchen", "Kitchen - A"),
+        R("Station2/SiteBMS/Kitchens", "Kitchens - other"),
     ]
-    assert areas.resolve(FRIDGE, rules) == "Kitchen - Main"
+    assert areas.resolve(FRIDGE, rules) == "Kitchen - A"
 
 
 def test_escapes_are_decoded_before_matching():
     """A rule should be writable with the names Workbench shows, not with
     $2d in it."""
-    rules = [R("*/Kitchens/Main_Kitchen/Fridge-1", "Kitchen - Main")]
-    assert areas.resolve(FRIDGE, rules) == "Kitchen - Main"
+    rules = [R("*/Kitchens/A_Kitchen/Fridge-1", "Kitchen - A")]
+    assert areas.resolve(FRIDGE, rules) == "Kitchen - A"
 
 
 def test_the_device_folders_own_name_can_be_the_area():
     """For the 192 FCUs the device *is* the room."""
     rules = [R("*/HVAC/AC/Rooms/*", "Room {name}")]
-    assert areas.resolve(ROOM, rules) == "Room 331"
+    assert areas.resolve(ROOM, rules) == "Room A1"
 
 
 def test_the_parent_folder_can_be_the_area():
@@ -92,7 +92,7 @@ def test_an_empty_group_claims_nothing():
 def test_a_rule_resolving_to_nothing_is_ignored():
     """{parent} on a top-level folder is empty, and an empty area name
     would blank the device's area rather than leave it alone."""
-    assert areas.resolve("Jace2", [R("*", "{parent}")]) is None
+    assert areas.resolve("Station2", [R("*", "{parent}")]) is None
 
 
 # -- Learning from what is already there --------------------------------
@@ -101,20 +101,20 @@ def test_rules_are_learned_from_the_shared_prefix():
     """The hand-made assignments are the real knowledge about the
     building; inventing names from path segments would discard them."""
     rules = areas.learn({
-        "Jace2/SiteBMS/Kitchens/Main_Kitchen/Fridge-1": "Kitchen - Main",
-        "Jace2/SiteBMS/Kitchens/Main_Kitchen/Freezer-2": "Kitchen - Main",
-        "Jace2/SiteBMS/Kitchens/Main_Kitchen/UnderBench-3": "Kitchen - Main",
+        "Station2/SiteBMS/Kitchens/A_Kitchen/Fridge-1": "Kitchen - A",
+        "Station2/SiteBMS/Kitchens/A_Kitchen/Freezer-2": "Kitchen - A",
+        "Station2/SiteBMS/Kitchens/A_Kitchen/UnderBench-3": "Kitchen - A",
     })
     assert len(rules) == 1
-    assert rules[0].match == "Jace2/SiteBMS/Kitchens/Main_Kitchen"
-    assert rules[0].area == "Kitchen - Main"
+    assert rules[0].match == "Station2/SiteBMS/Kitchens/A_Kitchen"
+    assert rules[0].area == "Kitchen - A"
     assert "3 devices" in rules[0].note
 
 
 def test_an_area_with_one_device_gets_an_exact_rule():
     """One device says nothing about where the boundary is."""
-    rules = areas.learn({"Jace2/SiteBMS/MISC/HYDRAULICS": "Hydrulics Room"})
-    assert rules[0].match == "Jace2/SiteBMS/MISC/HYDRAULICS"
+    rules = areas.learn({"Station2/SiteBMS/MISC/HYDRAULICS": "Hydrulics Room"})
+    assert rules[0].match == "Station2/SiteBMS/MISC/HYDRAULICS"
     assert "one device" in rules[0].note
 
 
@@ -145,13 +145,13 @@ def test_a_prefix_shared_with_another_area_is_not_used():
 def test_an_exclusive_prefix_is_still_used():
     """Being cautious must not stop the easy case working."""
     rules = areas.learn({
-        "J/BMS/Kitchens/Main/A": "Kitchen - Main",
-        "J/BMS/Kitchens/Main/B": "Kitchen - Main",
+        "J/BMS/Kitchens/Main/A": "Kitchen - A",
+        "J/BMS/Kitchens/Main/B": "Kitchen - A",
         "J/BMS/Electrical/DB-1": "Switch Room",
         "J/BMS/Electrical/DB-2": "Switch Room",
     })
     assert {(r.match, r.area) for r in rules} == {
-        ("J/BMS/Kitchens/Main", "Kitchen - Main"),
+        ("J/BMS/Kitchens/Main", "Kitchen - A"),
         ("J/BMS/Electrical", "Switch Room"),
     }
 
@@ -179,8 +179,8 @@ def test_every_learned_rule_set_round_trips_exactly():
     """The invariant worth holding: learn from what is there, and every
     device that had an area still has it."""
     assignments = {
-        "J/BMS/Kitchens/Main/A": "Kitchen - Main",
-        "J/BMS/Kitchens/Main/B": "Kitchen - Main",
+        "J/BMS/Kitchens/Main/A": "Kitchen - A",
+        "J/BMS/Kitchens/Main/B": "Kitchen - A",
         "J/BMS/Electrical/DB-1": "Comms Room L4",
         "J/BMS/Electrical/DB-2": "Comms Room L5",
         "J/BMS/Electrical/DB-3": "Lifts",
@@ -195,19 +195,19 @@ def test_every_learned_rule_set_round_trips_exactly():
 def test_longer_prefixes_are_ordered_first():
     """Otherwise the general rule shadows the specific one inside it."""
     rules = areas.learn({
-        "Jace2/BMS/Kitchens/A/x": "Kitchen - Main",
-        "Jace2/BMS/Kitchens/A/y": "Kitchen - Main",
-        "Jace2/BMS/Kitchens/B/x": "Kitchen - Function",
-        "Jace2/BMS/Kitchens/B/y": "Kitchen - Function",
-        "Jace2/BMS/Electrical/a": "Electrical",
-        "Jace2/BMS/Electrical/b": "Electrical",
+        "Station2/BMS/Kitchens/A/x": "Kitchen - A",
+        "Station2/BMS/Kitchens/A/y": "Kitchen - A",
+        "Station2/BMS/Kitchens/B/x": "Kitchen - Function",
+        "Station2/BMS/Kitchens/B/y": "Kitchen - Function",
+        "Station2/BMS/Electrical/a": "Electrical",
+        "Station2/BMS/Electrical/b": "Electrical",
     })
     lengths = [len(r.match) for r in rules]
     assert lengths == sorted(lengths, reverse=True)
 
 
 def test_devices_with_no_area_are_not_learned_from():
-    rules = areas.learn({"Jace2/BMS/X/a": "", "Jace2/BMS/X/b": None})
+    rules = areas.learn({"Station2/BMS/X/a": "", "Station2/BMS/X/b": None})
     assert rules == []
 
 
@@ -215,10 +215,10 @@ def test_learned_rules_resolve_the_devices_they_came_from():
     """The round trip is the point: learn, then every device that had an
     area keeps it."""
     assignments = {
-        "Jace2/BMS/Kitchens/Main/Fridge-1": "Kitchen - Main",
-        "Jace2/BMS/Kitchens/Main/Freezer-2": "Kitchen - Main",
-        "Jace2/BMS/Electrical/DB-1": "Switch Room",
-        "Jace2/BMS/Electrical/DB-2": "Switch Room",
+        "Station2/BMS/Kitchens/Main/Fridge-1": "Kitchen - A",
+        "Station2/BMS/Kitchens/Main/Freezer-2": "Kitchen - A",
+        "Station2/BMS/Electrical/DB-1": "Switch Room",
+        "Station2/BMS/Electrical/DB-2": "Switch Room",
     }
     rules = areas.learn(assignments)
     for group, area in assignments.items():
@@ -228,12 +228,12 @@ def test_learned_rules_resolve_the_devices_they_came_from():
 # -- Persistence --------------------------------------------------------
 
 def test_rules_round_trip(store):
-    rules = [R("*/Kitchens/*", "Kitchen - Main", "learned"),
+    rules = [R("*/Kitchens/*", "Kitchen - A", "learned"),
              R("*/HVAC/AC/Rooms/*", "Room {name}")]
     areas.save(rules)
     back = areas.load()
     assert [(r.match, r.area) for r in back] == [
-        ("*/Kitchens/*", "Kitchen - Main"), ("*/HVAC/AC/Rooms/*", "Room {name}")]
+        ("*/Kitchens/*", "Kitchen - A"), ("*/HVAC/AC/Rooms/*", "Room {name}")]
 
 
 def test_order_survives_the_round_trip(store):
@@ -269,10 +269,10 @@ def test_the_file_explains_itself(store):
 
 def test_preview_shows_what_each_device_would_get():
     rules = [R("*/HVAC/AC/Rooms/*", "Room {name}"),
-             R("*/Kitchens/*", "Kitchen - Main")]
+             R("*/Kitchens/*", "Kitchen - A")]
     out = areas.preview([ROOM, FRIDGE, BOARD], rules)
-    assert out[ROOM] == "Room 331"
-    assert out[FRIDGE] == "Kitchen - Main"
+    assert out[ROOM] == "Room A1"
+    assert out[FRIDGE] == "Kitchen - A"
     assert out[BOARD] is None
 
 
@@ -281,8 +281,8 @@ def test_a_prefix_covering_a_sliver_of_its_folder_is_rejected():
     look exclusive, and the rule would have moved all two hundred into one
     of them. Exclusivity among the *assigned* devices is not enough."""
     assignments = {
-        "J/BMS/HVAC/AC/Rooms/301": "L3 Wing",
-        "J/BMS/HVAC/AC/Rooms/302": "L3 Wing",
+        "J/BMS/HVAC/AC/Rooms/A1": "Block A",
+        "J/BMS/HVAC/AC/Rooms/A2": "Block A",
     }
     everything = list(assignments) + [
         f"J/BMS/HVAC/AC/Rooms/{n}" for n in range(400, 600)
@@ -303,8 +303,8 @@ def test_a_prefix_covering_most_of_its_folder_is_accepted():
 
 def test_the_coverage_check_still_round_trips_every_assignment():
     assignments = {
-        "J/BMS/HVAC/AC/Rooms/301": "L3 Wing",
-        "J/BMS/HVAC/AC/Rooms/302": "L3 Wing",
+        "J/BMS/HVAC/AC/Rooms/A1": "Block A",
+        "J/BMS/HVAC/AC/Rooms/A2": "Block A",
         "J/BMS/MISC/HYD/A": "Hydraulics",
         "J/BMS/MISC/HYD/B": "Hydraulics",
     }
@@ -321,6 +321,6 @@ def test_folders_nobody_assigned_stay_unclaimed():
     leaving them for somebody who does."""
     assignments = {"J/BMS/MISC/HYD/A": "Hydraulics",
                    "J/BMS/MISC/HYD/B": "Hydraulics"}
-    everything = list(assignments) + ["J/BMS/HVAC/AC/Rooms/301"]
+    everything = list(assignments) + ["J/BMS/HVAC/AC/Rooms/A1"]
     rules = areas.learn(assignments, all_groups=everything)
-    assert areas.resolve("J/BMS/HVAC/AC/Rooms/301", rules) is None
+    assert areas.resolve("J/BMS/HVAC/AC/Rooms/A1", rules) is None

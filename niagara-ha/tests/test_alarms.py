@@ -421,7 +421,7 @@ NIAGARA_QUERY = xml(f"""
    <str name="toState" val="normal"/>
    <str name="offnormalValue" val="FAULT"/>
    <str name="msgText" val=""/>
-   <str name="sourceName" val="SiteJace1:PAC_3_5_Flt"/>
+   <str name="sourceName" val="SiteStation1:PAC_3_5_Flt"/>
    <str name="sourceStation" val="SiteES"/>
   </obj>
   <obj href="/obix/alarm/99beef" is="obix:Alarm obix:PointAlarm">
@@ -432,7 +432,7 @@ NIAGARA_QUERY = xml(f"""
    <str name="toState" val="offnormal"/>
    <str name="offnormalValue" val="HIGH"/>
    <str name="msgText" val="Tank 1 level high"/>
-   <str name="sourceName" val="SiteJace2:DCW_Tank1_High_Alm"/>
+   <str name="sourceName" val="SiteStation2:DCW_Tank1_High_Alm"/>
    <str name="sourceStation" val="SiteES"/>
   </obj>
  </list>
@@ -445,7 +445,7 @@ def test_the_source_comes_from_the_name_when_there_is_no_ref():
     any of them on a device."""
     first = records(NIAGARA_QUERY)[0]
     assert first.source_name == "PAC_3_5_Flt"
-    assert first.source_station == "SiteJace1"
+    assert first.source_station == "SiteStation1"
 
 
 def test_the_reporting_station_is_kept_apart_from_the_points_station():
@@ -453,7 +453,7 @@ def test_the_reporting_station_is_kept_apart_from_the_points_station():
     Supervisor that is not the station the point is on. Placing an alarm
     on a device needs the latter, and the two routinely differ."""
     first = records(NIAGARA_QUERY)[0]
-    assert first.source_station == "SiteJace1"   # where the point lives
+    assert first.source_station == "SiteStation1"   # where the point lives
     assert first.reported_by == "SiteES"         # where the alarm is stored
 
 
@@ -471,7 +471,7 @@ def test_the_reporting_station_is_the_fallback_when_the_name_has_no_colon():
 
 
 @pytest.mark.parametrize("raw,expected", [
-    ("SiteJace1:PAC_3_5_Flt", ("SiteJace1", "PAC_3_5_Flt")),
+    ("SiteStation1:PAC_3_5_Flt", ("SiteStation1", "PAC_3_5_Flt")),
     ("PAC_3_5_Flt", ("", "PAC_3_5_Flt")),
     ("Jace:Folder:Point", ("Jace", "Folder:Point")),
     ("", ("", "")),
@@ -565,22 +565,22 @@ def record(station, name="Pt", ts="2026-10-07T08:00:00+11:00"):
     return alarms.parse_alarm(elem)
 
 
-MINE = {"sitejace2"}
+MINE = {"sitestation2"}
 
 
 def test_another_stations_alarms_are_left_out():
     kept, dropped = alarms.filter_to_stations(
-        [record("SiteJace1"), record("SiteJace2"), record("SiteJace1")], MINE,
+        [record("SiteStation1"), record("SiteStation2"), record("SiteStation1")], MINE,
     )
     assert len(kept) == 1
-    assert dropped == {"SiteJace1": 2}
+    assert dropped == {"SiteStation1": 2}
 
 
 def test_what_was_left_out_is_reported_not_silently_dropped():
     """A station that should be included but has nothing enabled yet must
     be visible rather than just missing."""
-    _, dropped = alarms.filter_to_stations([record("SiteJace9")], MINE)
-    assert dropped == {"SiteJace9": 1}
+    _, dropped = alarms.filter_to_stations([record("SiteStation9")], MINE)
+    assert dropped == {"SiteStation9": 1}
 
 
 def test_an_alarm_naming_no_station_is_always_kept():
@@ -592,19 +592,19 @@ def test_an_alarm_naming_no_station_is_always_kept():
 def test_no_known_stations_means_no_filtering():
     """Before the first discovery there is nothing to filter against, and
     dropping everything would be worse than showing it all."""
-    records_in = [record("SiteJace1"), record("SiteJace2")]
+    records_in = [record("SiteStation1"), record("SiteStation2")]
     kept, dropped = alarms.filter_to_stations(records_in, set())
     assert kept == records_in and dropped == {}
 
 
 def test_station_matching_ignores_case():
-    kept, _ = alarms.filter_to_stations([record("SITEJACE2")], MINE)
+    kept, _ = alarms.filter_to_stations([record("SITESTATION2")], MINE)
     assert len(kept) == 1
 
 
 @pytest.mark.parametrize("path,station", [
-    ("/config/Drivers/NiagaraNetwork/SiteJace2/points/A/B/", "sitejace2"),
-    ("/config/Drivers/NiagaraNetwork/Site$20Jace/points/A/", "site jace"),
+    ("/config/Drivers/NiagaraNetwork/SiteStation2/points/A/B/", "sitestation2"),
+    ("/config/Drivers/NiagaraNetwork/Site$20Station/points/A/", "site station"),
     ("/config/points/Loose/", ""),
     ("", ""),
 ])

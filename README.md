@@ -107,7 +107,7 @@ setters become real and no entity id or attribute name changes.
 
    | Setting | Example |
    |---|---|
-   | Host | `192.168.1.100` |
+   | Host | `192.0.2.10` |
    | Port | `443` |
    | Username | `obix_reader` |
    | Password | `••••••••` |

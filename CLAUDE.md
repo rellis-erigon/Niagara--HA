@@ -3,6 +3,35 @@
 Connects a Tridium Niagara 4 station to Home Assistant over oBIX. Two parts,
 versioned together and always released as a matched pair.
 
+## This repository is public
+
+Nothing that identifies the estate it was developed against goes in it — not
+in code, comments, tests, fixtures, documentation or planning notes. That
+covers real IP addresses, station and processor hostnames, property names,
+room numbers, and real device or point paths.
+
+`scripts/check-no-site-detail.py` enforces it and runs first in CI. Run it
+before committing anything that quotes a path you saw on a site:
+
+```bash
+python3 scripts/check-no-site-detail.py
+```
+
+Use these instead:
+
+| | |
+|---|---|
+| Addresses | `192.0.2.x`, `198.51.100.x`, `203.0.113.x` (RFC 5737) |
+| Stations | `Station1`, `Station2`, `SiteBMS` |
+| Places | `Main Hall`, `Meeting Room`, `Block A`, `Room A1` |
+| Equipment | `AHU1`, `DB-A1-Power`, `A_Kitchen`, `Fridge-1` |
+
+The reason this is a build check rather than a note: the detail was removed
+once in September 2026 and was back in two new files within a fortnight. A
+real path makes a docstring concrete and a test realistic, so it gets
+written back by anyone documenting what they actually saw. Only a failing
+build survives that.
+
 ## Architecture
 
 ### Add-on (`niagara-ha/`)

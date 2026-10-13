@@ -635,7 +635,7 @@ Entries below predate the two-part split, when this was a single add-on.
 
 ## 0.6.8
 
-- **Fix**: Decode Niagara URL-encoded names — `DB$2dL4$2e2$2dPower` now displays as `DB-L4.2-Power` in entity names and device names
+- **Fix**: Decode Niagara URL-encoded names — `DB$2dA1$2e2$2dPower` now displays as `DB-A1.2-Power` in entity names and device names
 - Handles all `$XX` hex escapes (`$2d` = `-`, `$2e` = `.`, `$24` = `$`, etc.)
 
 ## 0.6.7

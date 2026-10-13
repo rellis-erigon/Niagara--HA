@@ -9,9 +9,9 @@ generate_card:
       name: Device
       description: >-
         The device folder path, exactly as shown in the add-on's Devices view
-        (for example Jace1/BMS/HVAC/AC/Rooms/$3331).
+        (for example Station1/BMS/HVAC/AC/Rooms/$411).
       required: true
-      example: Jace1/BMS/HVAC/AC/Rooms/$3331
+      example: Station1/BMS/HVAC/AC/Rooms/$411
       selector:
         text:
 
@@ -75,7 +75,7 @@ sync_history:
         Sync only this one trend log, named as the History screen shows it.
         Leave empty to sync all of them.
       required: false
-      example: Jace1/AHU1_SupplyTemp
+      example: Station1/AHU1_SupplyTemp
       selector:
         text:
 

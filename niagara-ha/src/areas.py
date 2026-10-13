@@ -8,10 +8,10 @@ which is the whole building in one bucket.
 
 The useful level genuinely varies:
 
-    .../MercureBMS/HVAC/AC/Rooms/331      the device *is* the room
-    .../MercureBMS/Kitchens/Main_Kitchen/Fridge-1   the parent is the place
-    .../MercureBMS/Electrical/DB-L5.1-Power         the parent is the place
-    .../MercureBMS/MISC/HYDRAULICS                  the device is the place
+    .../SiteBMS/HVAC/AC/Rooms/A1      the device *is* the room
+    .../SiteBMS/Kitchens/A_Kitchen/Fridge-1   the parent is the place
+    .../SiteBMS/Electrical/DB-A1-Power         the parent is the place
+    .../SiteBMS/MISC/HYDRAULICS                  the device is the place
 
 So it is rules, in order, first match wins — and rules that name the areas
 somebody has already created by hand rather than inventing new ones from
@@ -162,7 +162,7 @@ def learn(
     five areas — a loading bay, three comms rooms and the lifts — all have
     their devices under `Electrical`, and one area is as good a claim to
     that folder as another. Taking the prefix anyway gave the first of them
-    all twenty-nine boards, and "Kitchen - Main" a prefix covering the
+    all twenty-nine boards, and "Kitchen - A" a prefix covering the
     entire station.
 
     So an area whose prefix is not exclusive gets one exact rule per

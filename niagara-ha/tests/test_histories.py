@@ -57,14 +57,14 @@ SERVICE_LIST = xml(f"""
 <obj {NS} href="https://station/obix/histories/"
      display="com.tridium.history.db.BLocalHistoryDatabase">
   <ref name="SiteES" href="SiteES/" display="javax.baja.history.BHistoryDevice"/>
-  <ref name="SiteJace1" href="SiteJace1/" display="javax.baja.history.BHistoryDevice"/>
+  <ref name="SiteStation1" href="SiteStation1/" display="javax.baja.history.BHistoryDevice"/>
 </obj>
 """)
 
 DEVICE_LIST = xml(f"""
-<obj {NS} href="https://station/obix/histories/SiteJace1/"
+<obj {NS} href="https://station/obix/histories/SiteStation1/"
      display="javax.baja.history.BHistoryDevice">
-  <str name="displayName" val="SiteJace1"/>
+  <str name="displayName" val="SiteStation1"/>
   <ref name="AHU1_SupplyTemp" href="AHU1_SupplyTemp/" is="obix:History"/>
   <ref name="AHU1_ReturnTemp" href="AHU1_ReturnTemp/" is="obix:History"/>
 </obj>
@@ -148,7 +148,7 @@ def test_the_service_lists_devices_not_trends():
     """Reading only the top level reported zero histories on a station
     holding thousands."""
     assert histories.history_devices(SERVICE_LIST) == [
-        ("SiteES", "SiteES/"), ("SiteJace1", "SiteJace1/"),
+        ("SiteES", "SiteES/"), ("SiteStation1", "SiteStation1/"),
     ]
 
 
@@ -157,17 +157,17 @@ def test_a_devices_trends_are_named_under_it():
     what the service indexes them by."""
     found = {
         m.name for m in histories.parse_history_list(
-            DEVICE_LIST, prefix="SiteJace1",
+            DEVICE_LIST, prefix="SiteStation1",
         )
     }
-    assert found == {"SiteJace1/AHU1_SupplyTemp", "SiteJace1/AHU1_ReturnTemp"}
+    assert found == {"SiteStation1/AHU1_SupplyTemp", "SiteStation1/AHU1_ReturnTemp"}
 
 
 def test_a_devices_own_properties_are_not_trends():
     """displayName, status and the ops sit beside the trends."""
     names = {
         m.name for m in histories.parse_history_list(
-            DEVICE_LIST, prefix="SiteJace1",
+            DEVICE_LIST, prefix="SiteStation1",
         )
     }
     assert not any(n.endswith("displayName") for n in names)

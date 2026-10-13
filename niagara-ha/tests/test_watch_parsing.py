@@ -18,9 +18,9 @@ from obix_client import OBIX_NS, ObixClient  # noqa: E402
 WATCH_OUT_ALL_ERRORS = f"""<?xml version="1.0" encoding="UTF-8"?>
 <obj is="obix:WatchOut" xmlns="{OBIX_NS}">
  <list name="values" of="obix:obj">
-  <err href="/config/Drivers/NiagaraNetwork/Jace2/points/A/" is="obix:BadUriErr"
+  <err href="/config/Drivers/NiagaraNetwork/Station2/points/A/" is="obix:BadUriErr"
        display="com.tridium.obix.util.BadUriErr"/>
-  <err href="/config/Drivers/NiagaraNetwork/Jace2/points/B/" is="obix:BadUriErr"
+  <err href="/config/Drivers/NiagaraNetwork/Station2/points/B/" is="obix:BadUriErr"
        display="com.tridium.obix.util.BadUriErr"/>
  </list>
 </obj>"""
@@ -28,10 +28,10 @@ WATCH_OUT_ALL_ERRORS = f"""<?xml version="1.0" encoding="UTF-8"?>
 WATCH_OUT_MIXED = f"""<?xml version="1.0" encoding="UTF-8"?>
 <obj is="obix:WatchOut" xmlns="{OBIX_NS}">
  <list name="values" of="obix:obj">
-  <real href="/config/Drivers/NiagaraNetwork/Jace2/points/Temp/" val="21.5"
+  <real href="/config/Drivers/NiagaraNetwork/Station2/points/Temp/" val="21.5"
         status="ok" display="21.5 {{ok}}"/>
-  <bool href="/config/Drivers/NiagaraNetwork/Jace2/points/Fan/" val="true"/>
-  <err href="/config/Drivers/NiagaraNetwork/Jace2/points/Bad/" is="obix:BadUriErr"/>
+  <bool href="/config/Drivers/NiagaraNetwork/Station2/points/Fan/" val="true"/>
+  <err href="/config/Drivers/NiagaraNetwork/Station2/points/Bad/" is="obix:BadUriErr"/>
  </list>
 </obj>"""
 
@@ -57,7 +57,7 @@ def test_real_values_parse(client):
     elems = list(_values(WATCH_OUT_MIXED))
     temp = client._parse_watch_element(elems[0])
     assert temp == {
-        "path": "/config/Drivers/NiagaraNetwork/Jace2/points/Temp/",
+        "path": "/config/Drivers/NiagaraNetwork/Station2/points/Temp/",
         "value": "21.5",
         "status": "ok",
     }
@@ -68,7 +68,7 @@ def test_real_values_parse(client):
 
 def test_href_is_used_unchanged(client):
     """Niagara returns the same path we subscribed with — no rewriting."""
-    subscribed = "/config/Drivers/NiagaraNetwork/Jace2/points/Temp/"
+    subscribed = "/config/Drivers/NiagaraNetwork/Station2/points/Temp/"
     parsed = client._parse_watch_element(list(_values(WATCH_OUT_MIXED))[0])
     assert parsed["path"] == subscribed
 
