@@ -214,18 +214,25 @@ class NiagaraCoordinator(DataUpdateCoordinator[dict[str, NiagaraPoint]]):
         return len(stale)
 
     def _purge_empty_devices(self, registry: er.EntityRegistry) -> None:
-        """Drop devices left with no entities once their points went away."""
+        """Drop devices left with no entities once their points went away.
+
+        Written against the current device registry API. The previous
+        version walked every device in the registry and detached ours from
+        the config entry, which Home Assistant has deprecated on three
+        counts: a device now belongs to a single config entry, so there is
+        a helper that returns just ours, `config_entries` has become
+        `config_entry_id`, and detaching the last entry is simply removing
+        the device.
+        """
         devices = dr.async_get(self.hass)
-        for device in list(devices.devices.values()):
-            if self.entry.entry_id not in device.config_entries:
-                continue
+        for device in dr.async_entries_for_config_entry(
+            devices, self.entry.entry_id
+        ):
             if er.async_entries_for_device(
                 registry, device.id, include_disabled_entities=True,
             ):
                 continue
-            devices.async_update_device(
-                device.id, remove_config_entry_id=self.entry.entry_id,
-            )
+            devices.async_remove_device(device.id)
 
     async def async_setup(self) -> None:
         """Initial point discovery from the add-on."""

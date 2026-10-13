@@ -255,6 +255,46 @@ class _Generic:
         return cls
 
 
+class _DeviceEntry:
+    """A device registry entry, as far as purging empty ones needs one."""
+
+    def __init__(self, device_id, config_entry_id, name=""):
+        self.id = device_id
+        self.config_entry_id = config_entry_id
+        self.name = name
+
+
+class _DeviceRegistry:
+    def __init__(self) -> None:
+        self.devices: dict = {}
+        self.removed: list = []
+
+    def add(self, device_id, config_entry_id, name=""):
+        self.devices[device_id] = _DeviceEntry(device_id, config_entry_id, name)
+        return self.devices[device_id]
+
+    def async_remove_device(self, device_id) -> None:
+        self.devices.pop(device_id, None)
+        self.removed.append(device_id)
+
+
+_DEVICE_REGISTRIES: dict = {}
+
+
+def device_registry(hass):
+    """The stub registry for a hass, so a test can seed and inspect it."""
+    return _DEVICE_REGISTRIES.setdefault(id(hass), _DeviceRegistry())
+
+
+def _device_registry(hass):
+    return device_registry(hass)
+
+
+def _devices_for_entry(registry, config_entry_id):
+    return [d for d in registry.devices.values()
+            if d.config_entry_id == config_entry_id]
+
+
 def _install_aiohttp() -> None:
     """The coordinator imports aiohttp at module level for its session.
 
@@ -339,7 +379,8 @@ def install() -> None:
             DataUpdateCoordinator=_Generic,
             UpdateFailed=type("UpdateFailed", (Exception,), {}))
     _module("homeassistant.helpers.device_registry", DeviceInfo=dict,
-            async_get=lambda hass: None)
+            async_get=_device_registry,
+            async_entries_for_config_entry=_devices_for_entry)
     _module("homeassistant.helpers.entity_registry", EntityRegistry=object,
             async_get=lambda hass: None,
             async_entries_for_device=lambda *a, **k: [])
