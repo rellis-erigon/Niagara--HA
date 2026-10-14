@@ -236,6 +236,7 @@ class ObixClient:
         self._session.headers.update({"Accept": "text/xml", "Content-Type": "text/xml"})
         self._connected = False
         self._watch_uri: Optional[str] = None
+        self._watch_consecutive_failures = 0
         self._watch_points: set[str] = set()
         self._has_watch_service = False
         self._has_batch_service = False
@@ -702,6 +703,11 @@ class ObixClient:
 
         return results
 
+    #: Consecutive pollChanges failures tolerated before the Watch is given
+    #: up. One covers a blip; more than that and the subscription is gone and
+    #: every value is frozen, which is far worse than polling slowly.
+    WATCH_FAILURES_BEFORE_GIVING_UP = 2
+
     def _watch_poll_changes(self) -> dict[str, dict]:
         if not self._watch_uri:
             return {}
@@ -717,13 +723,34 @@ class ObixClient:
                     parsed = self._parse_watch_element(child)
                     if parsed:
                         results[parsed["path"]] = parsed
+            self._watch_consecutive_failures = 0
             return results
         except (ObixError, requests.RequestException) as e:
-            logger.warning("Watch.pollChanges failed: %s", e)
-            if "not found" in str(e).lower() or "expired" in str(e).lower():
-                logger.info("Watch appears expired — will recreate")
+            self._watch_consecutive_failures += 1
+            logger.warning(
+                "Watch.pollChanges failed (%d in a row): %s",
+                self._watch_consecutive_failures, e,
+            )
+            # Not a string match on the message. A station whose Watch has
+            # gone reported nothing but the request path as the error
+            # display, which names no cause — so the old check for the words
+            # "not found" or "expired" never fired, the Watch was never given
+            # up, and every point kept the value it held when it died.
+            said_so = (
+                "not found" in str(e).lower() or "expired" in str(e).lower()
+            )
+            if said_so or (
+                self._watch_consecutive_failures
+                >= self.WATCH_FAILURES_BEFORE_GIVING_UP
+            ):
+                logger.warning(
+                    "Giving up the Watch after %d failure(s) — falling back "
+                    "to reading points directly, which is slower but moves",
+                    self._watch_consecutive_failures,
+                )
                 self._watch_uri = None
                 self._watch_points.clear()
+                self._watch_consecutive_failures = 0
             return {}
 
     def _watch_poll_refresh(self) -> dict[str, dict]:
