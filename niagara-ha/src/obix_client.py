@@ -213,6 +213,18 @@ class ObixError(Exception):
     pass
 
 
+#: How far below `/config/` discovery walks. Ten was not enough: a station
+#: here re-created its main incoming meter as an imported subtree —
+#: `.../points/SiteBMS/Electrical/MainMeter/OtherBMS/Electrical/MainMeter/` —
+#: which puts the points themselves at depth 11. The walk found 1,938 points
+#: at depth 10 and none at all below, and said nothing about it.
+#:
+#: Raised with room for one more nesting rather than to the first number
+#: that worked, because a proxy of a proxy is evidently something this
+#: estate does.
+MAX_DISCOVERY_DEPTH = 13
+
+
 class ObixClient:
     def __init__(
         self,
@@ -875,13 +887,15 @@ class ObixClient:
     def discover_points(self, path_filter: str = "") -> list[NiagaraPoint]:
         points = []
         self._history_links = {}
+        self._truncated_at = []
         start_path = "/config/"
         if path_filter:
             start_path = path_filter if path_filter.startswith("/") else f"/{path_filter}"
             if not start_path.endswith("/"):
                 start_path += "/"
         try:
-            self._walk_tree(start_path, points, depth=0, max_depth=10)
+            self._walk_tree(start_path, points, depth=0,
+                            max_depth=MAX_DISCOVERY_DEPTH)
         except ObixError as e:
             logger.error("Discovery error at %s: %s", start_path, e)
         except requests.RequestException as e:
@@ -890,12 +904,25 @@ class ObixClient:
             "Discovered %d points, %d with a trend log",
             len(points), len(self._history_links),
         )
+        # Never let this be silent again. A station re-created its main
+        # incoming meter as a proxy inside a proxy, one level past the old
+        # limit, and the meter simply did not exist as far as the bridge was
+        # concerned — through three rescans, with nothing in the log and the
+        # absence blamed on the station's export.
+        if self._truncated_at:
+            logger.warning(
+                "Stopped descending at depth %d in %d place(s), so there "
+                "may be points below these that are not here: %s",
+                MAX_DISCOVERY_DEPTH, len(self._truncated_at),
+                ", ".join(self._truncated_at[:5]),
+            )
         return points
 
     def _walk_tree(
         self, path: str, points: list[NiagaraPoint], depth: int, max_depth: int
     ) -> None:
         if depth > max_depth:
+            self._truncated_at.append(path)
             return
         try:
             root = self._get(path)
