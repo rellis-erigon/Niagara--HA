@@ -3,6 +3,17 @@
 The add-on and the Home Assistant integration are released as a matched
 pair and share a version number. CI fails the build if they drift.
 
+## 3.32.1 — 2026-10-19
+
+- **Fix**: A meter removed from the energy dashboard no longer comes back.
+  Published meters were added on every refresh if they were not on the
+  dashboard at that moment, so taking one off lasted only until the next
+  poll. A duplicate of a site's main meter, removed by hand, kept
+  returning and doubled the total. Each meter is now offered once, and the
+  ones offered are remembered in `.storage/niagara.energy_offered`. On the
+  first run with that memory, a dashboard somebody has already arranged is
+  left exactly as it is; only meters published after that are added.
+
 ## 3.29.0 — 2026-10-08
 
 - **Fix**: Entities no longer write a database row on every poll. Home

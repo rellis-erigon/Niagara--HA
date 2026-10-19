@@ -7,8 +7,12 @@ says nothing about why anything is missing. Having gone to the trouble of
 typing a device as a meter and publishing it, being made to do that again in
 another screen is a poor reward.
 
-So publishing is the trigger. This only ever adds: a source someone removed
-deliberately is not put back, and nothing already configured is touched.
+So publishing is the trigger. This only ever adds, and nothing already
+configured is touched. Each meter is offered once: the ones offered are
+remembered in storage, so a meter someone removed from the dashboard stays
+removed. Without that memory every refresh put a removed meter straight
+back — a duplicate of the main meter, deleted three times in one afternoon,
+kept returning and doubling the site's total.
 """
 from __future__ import annotations
 
@@ -49,13 +53,17 @@ def _configured_entities(prefs: dict) -> set[str]:
 
 
 def plan_additions(
-    prefs: dict, meters: list[dict],
+    prefs: dict, meters: list[dict], offered: frozenset[str] = frozenset(),
 ) -> tuple[dict, list[str]]:
     """Work out what to add. Returns (new prefs, what changed).
+
+    `offered` is every meter put forward before; those are left alone
+    whether or not they are still on the dashboard.
 
     Split out from the async plumbing so the decisions can be tested without
     a running Home Assistant, which is where the risk actually lives.
     """
+    meters = [m for m in meters if m.get("entity_id") not in offered]
     prefs = {
         "energy_sources": list(prefs.get("energy_sources", []) or []),
         "device_consumption": list(prefs.get("device_consumption", []) or []),
@@ -166,12 +174,25 @@ def plan_additions(
     return prefs, changes
 
 
+STORAGE_KEY = "niagara.energy_offered"
+STORAGE_VERSION = 1
+
+
+def has_been_arranged(prefs: dict) -> bool:
+    """Whether somebody has already set the dashboard up."""
+    return bool(prefs.get("device_consumption")) or any(
+        s.get("type") != "grid" or s.get("stat_energy_from") or s.get("flow_from")
+        for s in prefs.get("energy_sources", []) or []
+    )
+
+
 async def async_add_published_meters(
     hass: "HomeAssistant", meters: list[dict],
 ) -> list[str]:
-    """Add any published meter that is not already on the dashboard."""
+    """Add any published meter that has not been offered before."""
     if not meters:
         return []
+    from homeassistant.helpers.storage import Store
     try:
         from homeassistant.components.energy import data as energy_data
     except ImportError:
@@ -188,7 +209,21 @@ async def async_add_published_meters(
     if not current:
         current = {"energy_sources": [], "device_consumption": []}
 
-    updated, changes = plan_additions(current, meters)
+    store: Store = Store(hass, STORAGE_VERSION, STORAGE_KEY)
+    saved = await store.async_load()
+    seen = {m["entity_id"] for m in meters if m.get("entity_id")}
+    if saved is None and has_been_arranged(current):
+        # First run with this memory, on a dashboard somebody has already
+        # arranged. What is missing from it now may have been taken off on
+        # purpose, and there is no telling which; so nothing is added and
+        # everything published so far counts as offered.
+        await store.async_save({"offered": sorted(seen)})
+        return []
+    offered = frozenset((saved or {}).get("offered", []))
+
+    updated, changes = plan_additions(current, meters, offered)
+    if seen - offered:
+        await store.async_save({"offered": sorted(offered | seen)})
     if not changes:
         return []
 

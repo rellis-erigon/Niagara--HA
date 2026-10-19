@@ -205,3 +205,48 @@ def test_a_meter_already_on_the_dashboard_is_not_counted_as_ambiguity():
     out, _ = energy.plan_additions(
         prefs, [water("sensor.main", "Main-Water-Meter")])
     assert len(sources(out, "water")) == 1
+
+
+# -- A meter is offered once ---------------------------------------------
+#
+# Removing a meter from the dashboard is a decision. Re-adding everything
+# not currently configured on each refresh overrode it: a duplicate of the
+# main meter, removed by hand, was back within minutes, doubling the total.
+
+def test_a_meter_offered_before_is_not_put_back_after_removal():
+    prefs, changes = energy.plan_additions(
+        EMPTY, [meter("sensor.dup", "energy_total")],
+        offered=frozenset({"sensor.dup"}))
+    assert prefs["device_consumption"] == []
+    assert not any("sensor.dup" in c for c in changes)
+
+
+def test_a_new_meter_is_still_added_beside_ones_offered_before():
+    prefs, _ = energy.plan_additions(
+        EMPTY, [meter("sensor.old", "energy_total"),
+                meter("sensor.new", "energy_total", "DB-New")],
+        offered=frozenset({"sensor.old"}))
+    assert prefs["device_consumption"] == [
+        {"stat_consumption": "sensor.new", "name": "DB-New"}]
+
+
+def test_offered_water_meters_do_not_make_a_new_one_ambiguous():
+    """Only meters still to be offered compete to be the supply."""
+    prefs, _ = energy.plan_additions(
+        {}, [water("sensor.old", "Old-Meter"), water("sensor.main", "Main")],
+        offered=frozenset({"sensor.old"}))
+    assert [s["stat_energy_from"] for s in sources(prefs, "water")] == [
+        "sensor.main"]
+
+
+def test_an_empty_dashboard_has_not_been_arranged():
+    assert not energy.has_been_arranged(EMPTY)
+    assert not energy.has_been_arranged({"energy_sources": [
+        {"type": "grid", "flow_from": [], "flow_to": []}]})
+
+
+def test_a_dashboard_with_devices_or_a_chosen_supply_has_been_arranged():
+    assert energy.has_been_arranged(
+        {"device_consumption": [{"stat_consumption": "sensor.a"}]})
+    assert energy.has_been_arranged({"energy_sources": [
+        {"type": "grid", "stat_energy_from": "sensor.main"}]})
