@@ -346,7 +346,7 @@ So the contract is checked in three places:
 **When faceplates change, refresh the catalogue in the same change:**
 
 ```sh
-cp ../HA-Cards/faceplates/index.json niagara-ha/faceplates.json
+sh niagara-ha/scripts/sync-faceplates.sh [path/to/cards/faceplates/index.json]
 ```
 
 It does not update itself, and a stale one means the device dialog does not

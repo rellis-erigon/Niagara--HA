@@ -1,5 +1,5 @@
 {
-  "generated": "2026-10-08",
+  "generated": "2026-10-22",
   "faceplates": [
     {
       "id": "av-room-controller",
@@ -354,6 +354,45 @@
         "unit1_fault",
         "unit1_run",
         "unit1_tank_temp"
+      ]
+    },
+    {
+      "id": "indoor-unit",
+      "name": "Indoor Unit (full status)",
+      "card": "hvac-controller-card",
+      "description": "Every point an indoor unit reports: room against setpoint, what it is doing as well as what it is set to, the manufacturer's fault code, and lamps for run, alarm, filter, compressor, fan, heater, comms, eco and forced thermostat off, with keys for setpoint, on/off and clearing the filter sign, and drop-downs for mode and fan speed. For one unit you are looking into, where fcu-unit is for two hundred in a grid.",
+      "emulates": "Generic VRV or BMS indoor unit",
+      "pages": [
+        "status",
+        "more"
+      ],
+      "roles": [
+        "central_rejected",
+        "comms",
+        "compressor",
+        "energy_saving",
+        "energy_total",
+        "fan_running",
+        "fan_speed",
+        "fault",
+        "fault_code",
+        "filter",
+        "filter_reset",
+        "forced_off",
+        "gas_total",
+        "heater",
+        "hvac_action",
+        "hvac_mode",
+        "lock_mode",
+        "lock_power",
+        "lock_setpoint",
+        "room_temp",
+        "run",
+        "setpoint",
+        "swing",
+        "thermo_off",
+        "ventilation_amount",
+        "ventilation_mode"
       ]
     },
     {

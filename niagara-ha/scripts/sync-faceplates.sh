@@ -5,8 +5,14 @@
 # installed cards can render. Vendoring the list keeps the add-on working
 # offline; this script is how it stops being stale.
 set -eu
-SRC="${1:-../HA-Cards/faceplates/index.json}"
+# Default: a clone of the cards repo beside this one, under either name.
+SRC="${1:-}"
+if [ -z "$SRC" ]; then
+  for d in ../HA-rellis-erigon-Cards ../HA-Cards; do
+    [ -f "$d/faceplates/index.json" ] && { SRC="$d/faceplates/index.json"; break; }
+  done
+fi
 DEST="$(dirname "$0")/../faceplates.json"
-[ -f "$SRC" ] || { echo "no catalogue at $SRC" >&2; exit 1; }
+[ -n "$SRC" ] && [ -f "$SRC" ] || { echo "no catalogue found; pass its path" >&2; exit 1; }
 cp "$SRC" "$DEST"
 echo "faceplates.json <- $SRC"
