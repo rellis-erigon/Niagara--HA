@@ -11,7 +11,12 @@ covers real IP addresses, station and processor hostnames, property names,
 room numbers, and real device or point paths.
 
 `scripts/check-no-site-detail.py` enforces it and runs first in CI. Run it
-before committing anything that quotes a path you saw on a site:
+before committing anything that quotes a path you saw on a site. The
+site's own words (names, room numbers, tags) are not in the script, since a
+public list of them would name the site: they live in
+`site-detail-patterns.txt` beside the repository folder, or wherever
+`$SITE_DETAIL_PATTERNS` points. CI has only the generic rules.
+
 
 ```bash
 python3 scripts/check-no-site-detail.py
