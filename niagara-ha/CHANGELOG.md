@@ -3,6 +3,11 @@
 The add-on and the Home Assistant integration are released as a matched
 pair and share a version number. CI fails the build if they drift.
 
+## 3.32.2 — 2026-10-23
+
+- **Fix**: The device dialog offers every current faceplate again. The
+  bundled catalogue had fallen behind the cards (it lacked `indoor-unit`).
+
 ## 3.32.1 — 2026-10-19
 
 - **Fix**: A meter removed from the energy dashboard no longer comes back.
