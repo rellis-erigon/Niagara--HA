@@ -40,6 +40,7 @@ def _station_of_path(path: str) -> str:
 SERVICE_GENERATE_CARD = "generate_card"
 SERVICE_GENERATE_CARDS = "generate_cards"
 SERVICE_FIX_STATISTICS = "fix_statistics_units"
+SERVICE_REPAIR_RESETS = "repair_meter_resets"
 SERVICE_RUN_DIAGNOSTICS = "run_diagnostics"
 SERVICE_ADD_TO_ENERGY = "add_meters_to_energy"
 SERVICE_RESCAN = "rescan"
@@ -160,6 +161,30 @@ async def _async_register_extra_services(hass: HomeAssistant) -> None:
         DOMAIN, SERVICE_FIX_STATISTICS, handle_fix_statistics,
         schema=vol.Schema({vol.Optional("dry_run", default=False): bool}),
         supports_response=SupportsResponse.ONLY,
+    )
+
+    async def handle_repair_resets(call: ServiceCall) -> ServiceResponse:
+        from .statistics import async_repair_false_resets
+
+        found = await async_repair_false_resets(
+            hass,
+            entity_id=call.data.get("entity_id"),
+            days=call.data["days"],
+            dry_run=call.data["dry_run"],
+        )
+        return {"count": len(found), "resets": found}
+
+    # Optional rather than only: it is worth running from an automation or a
+    # dashboard button, where nothing reads the response. The findings are
+    # logged either way.
+    hass.services.async_register(
+        DOMAIN, SERVICE_REPAIR_RESETS, handle_repair_resets,
+        schema=vol.Schema({
+            vol.Optional("entity_id"): str,
+            vol.Optional("days", default=90): vol.All(int, vol.Range(min=1, max=3650)),
+            vol.Optional("dry_run", default=True): bool,
+        }),
+        supports_response=SupportsResponse.OPTIONAL,
     )
     async def handle_rescan(call: ServiceCall) -> ServiceResponse:
         entries = hass.data.get(DOMAIN, {})

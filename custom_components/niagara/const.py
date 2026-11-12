@@ -6,6 +6,7 @@ CONF_ADDON_URL = "addon_url"
 CONF_DEVICE_NAME = "device_name"
 CONF_AREA_DEPTH = "area_depth"
 CONF_DEVICE_NAME_DEPTH = "device_name_depth"
+CONF_AUTO_REPAIR = "auto_repair_meter_resets"
 
 # The add-on's hostname carries a per-install repository hash
 # (e.g. b7c7a509-niagara-ha), so it cannot be hardcoded. The config flow asks
@@ -24,3 +25,15 @@ DEFAULT_AREA_DEPTH = 1
 # the previous behaviour was the integration name plus three segments, which
 # produced names too long to read in any dashboard.
 DEFAULT_DEVICE_NAME_DEPTH = 1
+
+# Meter statistics are checked for false resets (see meter_guard) on their
+# own: first a while after startup, once the recorder has compiled the hour
+# a restart may have split, then at this interval, over this many days.
+DEFAULT_AUTO_REPAIR = True
+AUTO_REPAIR_FIRST_DELAY_MIN = 15
+AUTO_REPAIR_INTERVAL_H = 6
+AUTO_REPAIR_DAYS = 7
+# A sensor flagged more often than this in one check is not behaving like a
+# running total at all (an instantaneous reading mislabelled as one). Its
+# statistics are left for a person to look at rather than rewritten.
+AUTO_REPAIR_MAX_PER_ENTITY = 3

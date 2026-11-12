@@ -27,7 +27,12 @@
         "data": {
           "scan_interval": "Poll interval (seconds)",
           "device_name": "Device name prefix",
-          "area_depth": "Area mapping depth"
+          "area_depth": "Area mapping depth",
+          "device_name_depth": "Device name depth",
+          "auto_repair_meter_resets": "Automatically repair false meter resets"
+        },
+        "data_description": {
+          "auto_repair_meter_resets": "Every few hours, find hours where a meter's statistics jumped by its whole lifetime total after a bad reading, and take the excess back out."
         }
       }
     }

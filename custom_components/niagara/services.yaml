@@ -31,6 +31,39 @@ fix_statistics_units:
       selector:
         boolean:
 
+repair_meter_resets:
+  name: Repair false meter resets
+  description: >-
+    Find hours where a running total briefly dipped and Home Assistant
+    counted the meter's whole lifetime again as new consumption, and take
+    that excess back out of the statistics. Runs as a dry run unless told
+    otherwise; findings are logged and returned.
+  fields:
+    entity_id:
+      name: Entity
+      description: Only this meter. Leave empty for every Niagara meter.
+      required: false
+      selector:
+        entity:
+          integration: niagara
+          domain: sensor
+    days:
+      name: Days
+      description: How far back to look.
+      required: false
+      default: 90
+      selector:
+        number:
+          min: 1
+          max: 3650
+    dry_run:
+      name: Dry run
+      description: Report what would change without changing anything.
+      required: false
+      default: true
+      selector:
+        boolean:
+
 run_diagnostics:
   name: Run diagnostics
   description: >-

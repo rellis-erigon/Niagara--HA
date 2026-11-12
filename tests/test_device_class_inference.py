@@ -16,6 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from custom_components.niagara.sensor import (  # noqa: E402
     VALID_UNITS_FOR_CLASS,
+    _is_mislabelled_power,
     infer_device_class_and_unit,
 )
 
@@ -101,3 +102,23 @@ def test_assigned_class_always_permits_its_unit(unit):
         assert valid is None or resolved in valid, (
             f"{device_class} assigned with unit {resolved!r} from name {name!r}"
         )
+
+
+# -- a power reading tagged kWh is not an energy total --------------------
+
+@pytest.mark.parametrize("name", [
+    "Active_Power_P1", "3Phase_Active_Power", "Active$20Power", "Reactive Power",
+])
+def test_power_reading_tagged_kwh_is_mislabelled(name):
+    """It rises and falls; as a running total every fall reads as a reset."""
+    assert _is_mislabelled_power(name, "kWh")
+
+
+@pytest.mark.parametrize("name,unit", [
+    ("TotalActivePower", "kWh"),   # some stations' name for the energy register
+    ("MeterTotal", "kWh"),
+    ("Active_Power_P1", "kW"),     # correctly tagged: an ordinary power sensor
+    ("Active_Power_P1", None),
+])
+def test_energy_registers_and_true_power_are_left_alone(name, unit):
+    assert not _is_mislabelled_power(name, unit)

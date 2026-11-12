@@ -12,6 +12,7 @@ from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 
+from .auto_repair import async_start_auto_repair
 from .const import DOMAIN
 from .coordinator import NiagaraCoordinator
 from .services import async_setup_services, async_unload_services
@@ -48,6 +49,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     coordinator.async_start_listener()
 
     await async_setup_services(hass)
+
+    # Checks meter statistics for false resets and repairs them; see
+    # auto_repair. Off when the option is.
+    async_start_auto_repair(hass, entry)
 
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))
     return True

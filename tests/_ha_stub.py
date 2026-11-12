@@ -335,6 +335,10 @@ def install() -> None:
             HomeAssistantError=type("HomeAssistantError", (Exception,), {}),
             ConfigEntryNotReady=type("ConfigEntryNotReady", (Exception,), {}))
 
+    _module("homeassistant.util")
+    _module("homeassistant.util.dt",
+            utcnow=lambda: __import__("datetime").datetime.now(
+                __import__("datetime").timezone.utc))
     _module("homeassistant.components")
     _module("homeassistant.components.climate", ClimateEntity=_Entity,
             ClimateEntityFeature=_ClimateEntityFeature,
@@ -342,6 +346,7 @@ def install() -> None:
     _module("homeassistant.components.fan", FanEntity=_Entity,
             FanEntityFeature=_FanEntityFeature)
     _module("homeassistant.components.sensor", SensorEntity=_Entity,
+            RestoreSensor=_Entity,
             SensorDeviceClass=_SensorDeviceClass,
             SensorStateClass=_SensorStateClass)
     _module("homeassistant.components.binary_sensor",
@@ -370,6 +375,9 @@ def install() -> None:
     _module("homeassistant.helpers.aiohttp_client",
             async_get_clientsession=lambda hass: None)
     _module("homeassistant.helpers.config_validation")
+    _module("homeassistant.helpers.event",
+            async_call_later=lambda *a, **k: (lambda: None),
+            async_track_time_interval=lambda *a, **k: (lambda: None))
     _module("homeassistant.helpers.issue_registry",
             IssueSeverity=StrEnum("IssueSeverity", "CRITICAL ERROR WARNING"),
             async_create_issue=lambda *a, **k: None,

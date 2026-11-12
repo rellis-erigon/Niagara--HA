@@ -15,10 +15,12 @@ from .const import (
     ADDON_SLUG_SUFFIX,
     CONF_ADDON_URL,
     CONF_AREA_DEPTH,
+    CONF_AUTO_REPAIR,
     CONF_DEVICE_NAME,
     CONF_DEVICE_NAME_DEPTH,
     DEFAULT_ADDON_URL,
     DEFAULT_AREA_DEPTH,
+    DEFAULT_AUTO_REPAIR,
     DEFAULT_DEVICE_NAME_DEPTH,
     DEFAULT_DEVICE_NAME,
     DEFAULT_INGRESS_PORT,
@@ -167,5 +169,9 @@ class NiagaraOptionsFlow(OptionsFlow):
                         CONF_DEVICE_NAME_DEPTH, DEFAULT_DEVICE_NAME_DEPTH,
                     ),
                 ): vol.All(int, vol.Range(min=1, max=4)),
+                vol.Optional(
+                    CONF_AUTO_REPAIR,
+                    default=current.get(CONF_AUTO_REPAIR, DEFAULT_AUTO_REPAIR),
+                ): bool,
             }),
         )

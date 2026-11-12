@@ -4,10 +4,12 @@ import logging
 import re
 
 from homeassistant.components.sensor import (
+    RestoreSensor,
     SensorDeviceClass,
     SensorEntity,
     SensorStateClass,
 )
+from homeassistant.util import dt as dt_util
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -16,6 +18,7 @@ from .alarm_state import alarm_attributes
 from .const import DOMAIN
 from .coordinator import NiagaraCoordinator, NiagaraPoint
 from .entity import NiagaraEntity, NiagaraStationEntity
+from .meter_guard import TotalDipGuard
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -104,6 +107,21 @@ def _refine_volume_class(name: str, path: str) -> SensorDeviceClass:
     if _GAS_RE.search(text):
         return SensorDeviceClass.GAS
     return SensorDeviceClass.WATER
+
+
+# "Active_Power_P1", "3Phase_Active_Power": an instantaneous reading, even
+# when the station tags it kWh. "TotalActivePower" (a letter right before)
+# is what some stations call their energy register, so it is not matched.
+_INSTANT_POWER_RE = re.compile(
+    r"(?<![a-z])(?:re)?active(?:[\s_-]|\$20)?power"
+    r"|(?<![a-z])apparent(?:[\s_-]|\$20)?power",
+    re.I,
+)
+
+
+def _is_mislabelled_power(name: str, unit: str | None) -> bool:
+    """A power reading the station has given an energy unit."""
+    return bool(unit in ENERGY_UNITS and _INSTANT_POWER_RE.search(name or ""))
 
 
 def _infer_state_class(
@@ -249,8 +267,13 @@ class NiagaraAlarmCount(NiagaraStationEntity, SensorEntity):
         return alarm_attributes(self._records)
 
 
-class NiagaraNumericSensor(NiagaraEntity, SensorEntity):
-    """Numeric sensor from a Niagara BMS point."""
+class NiagaraNumericSensor(NiagaraEntity, RestoreSensor):
+    """Numeric sensor from a Niagara BMS point.
+
+    Running totals go through a `TotalDipGuard`, so one bad poll cannot make
+    Home Assistant count the meter's whole lifetime again. The last reading
+    is restored at startup so a dip straddling a restart is caught too.
+    """
 
     def __init__(self, coordinator: NiagaraCoordinator, point: NiagaraPoint) -> None:
         super().__init__(coordinator, point)
@@ -275,6 +298,17 @@ class NiagaraNumericSensor(NiagaraEntity, SensorEntity):
                 # name-based guessing removed in 2.4.1.
                 if unit is None and point.slot_units:
                     unit = point.slot_units[0]
+
+        # An instantaneous power reading tagged kWh would otherwise become an
+        # energy total; it rises and falls, so Home Assistant would count a
+        # "reset" — and the whole reading again — every time it fell.
+        if (
+            not point.slot_state_class
+            and device_class in (None, SensorDeviceClass.ENERGY)
+            and _is_mislabelled_power(point.name, unit)
+        ):
+            device_class = None
+            unit = None
 
         if device_class is not None:
             self._attr_device_class = device_class
@@ -302,8 +336,25 @@ class NiagaraNumericSensor(NiagaraEntity, SensorEntity):
             if icon:
                 self._attr_icon = icon
 
+        self._guard: TotalDipGuard | None = (
+            TotalDipGuard()
+            if self._attr_state_class == SensorStateClass.TOTAL_INCREASING
+            else None
+        )
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        if self._guard is None:
+            return
+        last = await self.async_get_last_sensor_data()
+        if last is not None and last.native_value is not None:
+            try:
+                self._guard.seed(float(last.native_value))
+            except (ValueError, TypeError):
+                pass
+
     @property
-    def native_value(self) -> float | None:
+    def _raw_value(self) -> float | None:
         point = self._current_point
         if point and point.value is not None:
             try:
@@ -311,6 +362,32 @@ class NiagaraNumericSensor(NiagaraEntity, SensorEntity):
             except (ValueError, TypeError):
                 return None
         return None
+
+    @property
+    def native_value(self) -> float | None:
+        raw = self._raw_value
+        if self._guard is None:
+            return raw
+        if not self.available:
+            return self._guard.offline()
+        was_holding = self._guard.holding
+        held = self._guard.last_good
+        value = self._guard.filter(raw, dt_util.utcnow())
+        if self._guard.holding and not was_holding:
+            _LOGGER.info(
+                "%s fell from %s to %s; holding the last reading for up to %s "
+                "in case it is a glitch rather than a reset",
+                self.entity_id, held, raw, self._guard.grace,
+            )
+        elif was_holding and not self._guard.holding:
+            if raw is not None and held is not None and raw < held:
+                _LOGGER.warning(
+                    "%s stayed at %s (below %s) for %s; accepting it as a "
+                    "meter reset", self.entity_id, raw, held, self._guard.grace,
+                )
+            else:
+                _LOGGER.info("%s recovered to %s; dip ignored", self.entity_id, raw)
+        return value
 
 
 class NiagaraEnumSensor(NiagaraEntity, SensorEntity):

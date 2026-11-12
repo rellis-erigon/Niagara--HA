@@ -3,6 +3,39 @@
 The add-on and the Home Assistant integration are released as a matched
 pair and share a version number. CI fails the build if they drift.
 
+## 3.33.0 — 2026-11-12
+
+- **Fix**: A running total that dips for a moment no longer counts the
+  meter's whole lifetime again. Home Assistant treats any fall of more than
+  10% in a `total_increasing` sensor as a reset to zero, so one bad poll
+  followed by the true reading added the meter's entire history to a single
+  hour. Running totals now hold their last good reading while they read
+  lower, for up to 30 minutes; a dip that recovers inside that is never
+  reported, and a drop that lasts (a daily register at midnight, a replaced
+  meter) is accepted once it has. The last reading is restored at startup,
+  so a dip across a restart is caught too.
+  Time a point spends unavailable does not count towards the 30 minutes,
+  and whatever an offline point returns is ignored, so an outage longer
+  than that is not mistaken for a reset either.
+- **New**: `niagara.repair_meter_resets` finds hours in a meter's long-term
+  statistics already inflated this way and takes the excess back out —
+  the adjustment Developer Tools → Statistics makes by hand, found and made
+  for every Niagara meter at once. Dry run by default.
+- **New**: The same repair now runs on its own — 15 minutes after startup
+  and every 6 hours, over the last 7 days — so a spike that gets past the
+  guard is gone within hours without anyone noticing it. It only repairs
+  isolated hours: a sensor flagged more than three times is left alone and
+  logged, since that is a reading which is not a running total at all.
+  Turn it off under the integration's options (*Automatically repair false
+  meter resets*).
+- **Fix**: A power reading the station tags with an energy unit
+  (`Active_Power_P1` in kWh) is no longer made an energy total. It rises
+  and falls, so Home Assistant counted a reset, and the whole reading
+  again, every time it fell. It is now a plain measurement, like its
+  sibling phases. Energy registers some stations name `TotalActivePower`
+  are unaffected. Home Assistant may ask once to update the old
+  statistics for the two-or-so sensors this changes.
+
 ## 3.32.2 — 2026-10-23
 
 - **Fix**: The device dialog offers every current faceplate again. The
